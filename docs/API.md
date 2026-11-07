@@ -4,6 +4,7 @@ API HTTP para buscar filmes/séries (TMDB) e obter uma URL de vídeo pronta para
 tocar (HLS em H.264 ou arquivo direto).
 
 - **Base:** `https://SEU-BACKEND` (Render/Railway/Fly/VPS)
+- **Produção atual:** <https://fdsflix.onrender.com> (interface + API no mesmo host)
 - **CORS:** liberado (`Access-Control-Allow-Origin: *`)
 - **Formato:** JSON
 - **Autenticação:** opcional — se o backend tiver `API_KEY`, envie

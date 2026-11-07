@@ -5,6 +5,16 @@ Player de filmes e séries: busca no **TMDB** e reprodução do stream via
 
 ![Player funcionando](docs/screenshot.png)
 
+## Produção
+
+| O quê | URL |
+| :--- | :--- |
+| App + API (Render) | <https://fdsflix.onrender.com> |
+| Documentação viva | <https://fdsflix.onrender.com/api> |
+
+O **mesmo serviço do Render** entrega a interface e a API — a Vercel é opcional.
+Basta abrir <https://fdsflix.onrender.com> para usar o site.
+
 ## Como rodar
 
 ```bash
@@ -108,27 +118,45 @@ O backend também pode ser consumido por qualquer outro projeto. As respostas de
 basta tocar a URL devolvida.
 
 ```bash
-curl "https://SEU-BACKEND/api/stream?id=603&type=movie&res=480&hevc=0"
+curl "https://fdsflix.onrender.com/api/stream?id=603&type=movie&res=480&hevc=0"
 ```
 
 ```json
 {
   "mode": "hls",
-  "url": "https://SEU-BACKEND/hls/abc123/index.m3u8",
+  "url": "https://fdsflix.onrender.com/hls/abc123/index.m3u8",
   "quality": 480,
-  "captions": [{ "label": "Português", "srclang": "pt", "url": "https://SEU-BACKEND/api/subtitle?t=..." }]
+  "captions": [{ "label": "Português", "srclang": "pt", "url": "https://fdsflix.onrender.com/api/subtitle?t=..." }]
 }
 ```
 
+Em outro projeto (navegador ou Node 18+):
+
+```js
+const res = await fetch('https://fdsflix.onrender.com/api/stream?id=603&type=movie&res=480&hevc=0');
+const { mode, url, captions } = await res.json();
+// mode === 'hls' -> toque com hls.js; mode === 'direct' -> <video src={url}>
+```
+
 - Documentação completa: [docs/API.md](docs/API.md)
-- Documentação viva: `GET /api`
+- Documentação viva: <https://fdsflix.onrender.com/api>
 - CORS liberado para qualquer origem
+- `hevc=0` força H.264 (Chrome/Linux); `hevc=1` usa HEVC nativo (Safari/Windows)
 - `API_KEY` (opcional): protege `/api/search`, `/api/popular` e `/api/stream`
   via header `x-api-key` ou `?key=`
 
 ## Deploy
 
-### Por que não dá para rodar tudo na Vercel
+### Modo atual: tudo no Render
+
+O serviço `fdsflix` no Render roda o `Dockerfile` e serve **interface + API** na
+mesma URL (<https://fdsflix.onrender.com>). Não é necessário criar nada na
+Vercel.
+
+Se quiser separar (UI na Vercel + API no Render), os arquivos `vercel.json` e
+`scripts/write-config.js` já deixam isso pronto — veja `docs/DEPLOY-RENDER.md`.
+
+### Por que não dá para rodar só na Vercel
 
 O player depende de `ffmpeg` e de um **processo que gera a playlist HLS em disco
 ao longo do tempo**. A Vercel roda funções serverless:
