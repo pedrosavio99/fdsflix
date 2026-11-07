@@ -91,6 +91,13 @@
   .tv-controls{display:flex;gap:.4rem;align-items:center}
   .video-wrap{position:relative;border-radius:10px;overflow:hidden;background:#000}
   video{display:block;width:100%;aspect-ratio:16/9;background:#000}
+  #embedFrame{display:block;width:100%;aspect-ratio:16/9;border:0;background:#000}
+  #embedFrame[hidden]{display:none}
+  .embed-bar{margin-top:.6rem;padding:.6rem .75rem;border:1px solid var(--border,#2a2a36);border-radius:10px;background:rgba(255,255,255,.03);font-size:.82rem}
+  .embed-bar[hidden]{display:none}
+  .embed-bar .embed-note{color:var(--muted);margin-bottom:.45rem;line-height:1.35}
+  .embed-btns{display:flex;flex-wrap:wrap;gap:.4rem}
+  .embed-btns button.active{border-color:var(--brand);color:var(--brand)}
   .overlay{
     position:absolute;inset:0;display:flex;flex-direction:column;gap:.75rem;
     align-items:center;justify-content:center;text-align:center;
@@ -229,12 +236,22 @@
 
     <div class="video-wrap">
       <video id="nativePlayer" controls playsinline preload="metadata" crossorigin="anonymous"></video>
+      <iframe id="embedFrame" hidden title="Player alternativo" allowfullscreen
+        allow="autoplay; fullscreen; encrypted-media; picture-in-picture" referrerpolicy="origin"></iframe>
       <div id="overlay" class="overlay">
         <div id="spinner" class="spinner"></div>
         <div id="overlayText" class="msg">Carregando…</div>
         <button id="overlayRetry" class="ghost" type="button" hidden>Tentar de novo</button>
         <button id="overlayCancel" class="ghost" type="button" hidden>Cancelar</button>
       </div>
+    </div>
+
+    <div id="embedBar" class="embed-bar" hidden>
+      <div class="embed-note">
+        Nenhuma fonte direta tem este título. Dá para tentar um <strong>player alternativo (embed)</strong>.
+        Eles rodam no site de terceiros: podem ter anúncios e <em>não</em> salvam o progresso.
+      </div>
+      <div id="embedBtns" class="embed-btns"></div>
     </div>
 
     <div id="subBar" class="sub-bar" hidden>
@@ -688,6 +705,84 @@
     setTimeout(function () {
       if (state.resumePending) doNetResume();
     }, 2000 * state.netRetries);
+  }
+
+
+  /* ---------------------------------------------------------------- */
+  /* Players alternativos (embed) — opcionais, só quando nada direto   */
+  /* ---------------------------------------------------------------- */
+
+  // Cada serviço abre por ID do TMDB. São páginas de terceiros (iframe),
+  // por isso só aparecem quando a cascata direta não achou o título e
+  // nunca carregam sozinhas.
+  var EMBED_PROVIDERS = [
+    { name: 'Vidsrc', url: function (t, id, s, e) {
+      return t === 'movie' ? 'https://vidsrc.net/embed/movie?tmdb=' + id
+        : 'https://vidsrc.net/embed/tv?tmdb=' + id + '&season=' + s + '&episode=' + e; } },
+    { name: 'Vidsrc.cc', url: function (t, id, s, e) {
+      return t === 'movie' ? 'https://vidsrc.cc/v2/embed/movie/' + id
+        : 'https://vidsrc.cc/v2/embed/tv/' + id + '/' + s + '/' + e; } },
+    { name: 'VidLink', url: function (t, id, s, e) {
+      return t === 'movie' ? 'https://vidlink.pro/movie/' + id
+        : 'https://vidlink.pro/tv/' + id + '/' + s + '/' + e; } },
+    { name: 'VidFast', url: function (t, id, s, e) {
+      return t === 'movie' ? 'https://vidfast.pro/movie/' + id
+        : 'https://vidfast.pro/tv/' + id + '/' + s + '/' + e; } },
+    { name: '2Embed', url: function (t, id, s, e) {
+      return t === 'movie' ? 'https://www.2embed.cc/embed/' + id
+        : 'https://www.2embed.cc/embedtv/' + id + '&s=' + s + '&e=' + e; } },
+    { name: 'AutoEmbed', url: function (t, id, s, e) {
+      return t === 'movie' ? 'https://autoembed.co/movie/tmdb/' + id
+        : 'https://autoembed.co/tv/tmdb/' + id + '-' + s + '-' + e; } },
+    { name: 'Embed.su', url: function (t, id, s, e) {
+      return t === 'movie' ? 'https://embed.su/embed/movie/' + id
+        : 'https://embed.su/embed/tv/' + id + '/' + s + '/' + e; } }
+  ];
+
+  function hideEmbed() {
+    var frame = $('embedFrame');
+    frame.hidden = true;
+    frame.removeAttribute('src');
+    $('nativePlayer').hidden = false;
+    $('embedBar').hidden = true;
+    Array.prototype.slice.call($('embedBtns').children).forEach(function (btn) {
+      btn.classList.remove('active');
+    });
+  }
+
+  function showEmbedOptions() {
+    var item = state.selected;
+    if (!item || !/^\d+$/.test(String(item.id))) return;
+
+    var box = $('embedBtns');
+    box.innerHTML = '';
+    EMBED_PROVIDERS.forEach(function (provider, index) {
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'ghost';
+      btn.textContent = provider.name;
+      btn.setAttribute('data-embed', String(index));
+      box.appendChild(btn);
+    });
+    $('embedBar').hidden = false;
+  }
+
+  function playEmbed(index) {
+    var item = state.selected;
+    var provider = EMBED_PROVIDERS[index];
+    if (!item || !provider) return;
+
+    var url = provider.url(item.type, item.id, state.curS, state.curE);
+    try { $('nativePlayer').pause(); } catch (err) { /* ignore */ }
+    hideOverlay();
+    $('nativePlayer').hidden = true;
+    $('embedFrame').hidden = false;
+    $('embedFrame').src = url;
+
+    Array.prototype.slice.call($('embedBtns').children).forEach(function (btn) {
+      btn.classList.toggle('active', btn.getAttribute('data-embed') === String(index));
+    });
+    setStatus('warn', 'Player alternativo: ' + provider.name + ' (site de terceiros — pode ter anúncios; não salva o progresso). Se não abrir, tente outro.');
   }
 
   /* ---------------------------------------------------------------- */
@@ -1149,6 +1244,7 @@
     if (!item) return;
 
     clearAutoNext();
+    hideEmbed();
 
     // Guarda onde estava antes de derrubar o vídeo atual.
     progRemember(true);
@@ -1253,6 +1349,7 @@
         }
         if (autoNextFallback()) return;
         fail(err.message || 'Erro ao preparar o vídeo.');
+        showEmbedOptions();
       });
   }
 
@@ -1312,6 +1409,7 @@
   }
 
   function closePlayer() {
+    hideEmbed();
     clearAutoNext();
     state.autoNextStage = null;
     progRemember(true);
@@ -1495,6 +1593,11 @@
   } else {
     video.textTracks.onchange = syncSubLangFromTracks;
   }
+
+  $('embedBtns').addEventListener('click', function (event) {
+    var btn = event.target.closest ? event.target.closest('[data-embed]') : null;
+    if (btn) playEmbed(Number(btn.getAttribute('data-embed')));
+  });
 
   $('overlayCancel').addEventListener('click', function () {
     clearAutoNext();

@@ -64,6 +64,10 @@ O fdsFlix utiliza uma **cascata de fallback inteligente**: ao buscar um título,
 
 > Se os serviços auxiliares locais não estiverem rodando na máquina, a cascata passa por eles instantaneamente e usa os provedores online nativos (VidLink Pro, Vidsrc, etc.) sem travar nem degradar o tempo de resposta.
 
+## Player alternativo (embed) — quando nenhuma fonte direta acha o título
+
+Se a cascata direta não encontra o título, o player mostra uma barra com serviços de embed (Vidsrc, Vidsrc.cc, VidLink, VidFast, 2Embed, AutoEmbed, Embed.su). Eles abrem por ID do TMDB dentro de um `<iframe>`. **Nunca carregam sozinhos** (clique para abrir): são sites de terceiros, podem ter anúncios e não salvam o progresso. A lista fica em `EMBED_PROVIDERS` no `public/index.html`.
+
 ## Retomar de onde parou
 
 O player guarda, no `localStorage` do navegador, **título, temporada/episódio e minuto** de cada coisa que você assiste. Nada vai para o servidor.
