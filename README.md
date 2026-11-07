@@ -47,6 +47,35 @@ Além disso, o CDN responde **HTTP 428** para `User-Agent` que comece com
 mas reproduzir só o áudio (sem nenhum frame, `videoWidth === 0`), o player
 detecta e refaz o pedido forçando a transcodificação para H.264.
 
+## Cascata de Fallbacks (Multi-Provedor)
+
+O fdsFlix utiliza uma **cascata de fallback inteligente**: ao buscar um título, o servidor testa os provedores em ordem de prioridade (o **VidLink Pro** é sempre o primeiro, como era antes) até encontrar uma URL de stream válida. Isso garante alta disponibilidade e cobertura que vai de lançamentos a novelas e filmes antigos.
+
+| Provedor | Tipo | Foco |
+| :--- | :--- | :--- |
+| **VidLink Pro** | Extrator Nativo | Blockbusters e séries com múltiplas qualidades e legendas. |
+| **CinePro Core** | API OMSS (`:3001`) | Agregador de 50+ provedores de streaming. |
+| **CineWinx API** | Telegram Bridge (`:3002`) | Filmes antigos, clássicos e novelas brasileiras. |
+| **Stream-Winx API** | FastAPI / Telethon (`:3004`) | Alternativa em Python para o canal CineWinx. |
+| **Consumet API** | Scraper API (`:3003`) | FlixHQ, DramaCool (doramas e novelas asiáticas/latinas). |
+| **Vidsrc Scraper** | Scraper HLS | VidSrc scraper via `@definisi/vidsrc-scraper`. |
+| **Embed.su** | Scraper HLS | Bypass de Embed.su / vidsrc.rip. |
+| **MegaMoviesLibre** | Libreflix API (`:3005`) | Produções brasileiras independentes e filmes cults de livre exibição. |
+
+> Se os serviços auxiliares locais não estiverem rodando na máquina, a cascata passa por eles instantaneamente e usa os provedores online nativos (VidLink Pro, Vidsrc, etc.) sem travar nem degradar o tempo de resposta.
+
+## Retomar de onde parou
+
+O player guarda, no `localStorage` do navegador, **título, temporada/episódio e minuto** de cada coisa que você assiste. Nada vai para o servidor.
+
+- Ao reabrir o site aparece **"Continuar assistindo"** (até 12 títulos, com barra de progresso). Clicar volta no episódio e no minuto certos (com 8 s de "rebobinada").
+- Cada episódio lembra a própria posição: voltar ao episódio 5 retoma o episódio 5.
+- Terminou o episódio? O "continuar" já aponta para o próximo. Filme concluído sai da lista.
+- **Queda de conexão:** se a rede cair no meio, o player recria o stream do ponto onde parou — sozinho assim que a internet volta (até 5 tentativas, com espera crescente).
+- Leve por desenho: grava no máximo a cada 5 s (e ao pausar/fechar a aba), guarda 40 títulos × 40 episódios e descarta o que tem mais de 120 dias.
+- O progresso é por navegador/dispositivo (não sincroniza entre aparelhos).
+- **Auto-próximo (opcional):** nas séries há uma chave **Auto-próximo** no player (desligada por padrão; a escolha fica salva). Ligada, ao terminar o episódio aparece uma contagem de 5 s (com **Cancelar**) e o próximo abre do início. Se o episódio seguinte não existir, tenta uma vez o episódio 1 da próxima temporada; se também não existir, para e avisa.
+
 ## Rotas da API
 
 | Rota | Descrição |
@@ -78,6 +107,7 @@ transcodificação quando necessário.
 
 ```
 server.js              Express: rotas, montagem das respostas
+lib/fallbackCascade.js Cascata de fallback multi-fonte (CinePro, CineWinx, Consumet, VidLink, Vidsrc, etc.)
 lib/streamExtractor.js Token cifrado + extração de qualidades e legendas
 lib/proxy.js           Proxy de vídeo com Range e renovação da assinatura
 lib/transcoder.js      Sessões HLS do ffmpeg (HEVC -> H.264) com limpeza automática

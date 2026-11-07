@@ -11,6 +11,10 @@
     "node": ">=18"
   },
   "dependencies": {
+    "@definisi/vidsrc-scraper": "^2.0.2",
+    "@usm0n/stream-utils": "^1.0.0",
+    "axios": "^1.21.0",
+    "cheerio": "^1.2.0",
     "dotenv": "^18.0.9",
     "express": "^4.19.2",
     "tweetnacl": "^1.0.3"

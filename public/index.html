@@ -61,6 +61,20 @@
   .card .info{padding:.5rem .55rem}
   .card .title{font-weight:600;font-size:.82rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .card .meta{color:var(--muted);font-size:.72rem;margin-top:.15rem}
+  .switch{display:inline-flex;align-items:center;gap:.4rem;cursor:pointer;user-select:none;font-size:.78rem;color:var(--muted)}
+  .switch input{position:absolute;opacity:0;width:0;height:0}
+  .switch .slider{position:relative;width:34px;height:18px;border-radius:999px;background:#3a3a48;transition:background .18s;flex:0 0 auto}
+  .switch .slider::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:#fff;transition:transform .18s}
+  .switch input:checked + .slider{background:var(--brand)}
+  .switch input:checked + .slider::after{transform:translateX(16px)}
+  .switch input:focus-visible + .slider{outline:2px solid var(--brand);outline-offset:2px}
+  .sec-title{color:var(--muted);font-size:.92rem;margin:.75rem 0 .6rem}
+  #continueSection{margin-bottom:1rem}
+  .cont-bar{position:absolute;left:0;right:0;bottom:0;height:4px;background:rgba(255,255,255,.18)}
+  .cont-bar span{display:block;height:100%;background:var(--brand)}
+  .cont-x{position:absolute;top:.3rem;right:.3rem;width:1.5rem;height:1.5rem;border:0;border-radius:50%;background:rgba(0,0,0,.72);color:#fff;font-size:.95rem;line-height:1;cursor:pointer;padding:0;opacity:.0;transition:opacity .15s}
+  .card:hover .cont-x,.cont-x:focus{opacity:1}
+  @media (hover:none){.cont-x{opacity:.85}}
   .badge-type{position:absolute;top:.4rem;left:.4rem;background:rgba(0,0,0,.72);color:#fff;font-size:.62rem;font-weight:700;padding:.15rem .4rem;border-radius:4px;text-transform:uppercase;letter-spacing:.04em}
 
   .player-section{
@@ -172,6 +186,11 @@
     <button id="noticeRetry" class="link-btn" type="button" hidden>Tentar de novo</button>
   </div>
 
+  <section id="continueSection" hidden>
+    <div class="sec-title">Continuar assistindo</div>
+    <div id="continueRow" class="results"></div>
+  </section>
+
   <div id="sectionTitle">Populares</div>
   <div id="results" class="results"></div>
 
@@ -185,6 +204,11 @@
         <span id="tvControls" class="tv-controls" hidden>
           <label>T <input id="seasonInput" type="number" min="1" value="1"></label>
           <label>E <input id="episodeInput" type="number" min="1" value="1"></label>
+          <label class="switch" title="Ao terminar o episódio, abre o próximo sozinho (com contagem de 5 s para cancelar)">
+            <input id="autoNextToggle" type="checkbox">
+            <span class="slider"></span>
+            <span>Auto-próximo</span>
+          </label>
         </span>
         <label>Qualidade
           <select id="qualitySelect">
@@ -209,6 +233,7 @@
         <div id="spinner" class="spinner"></div>
         <div id="overlayText" class="msg">Carregando…</div>
         <button id="overlayRetry" class="ghost" type="button" hidden>Tentar de novo</button>
+        <button id="overlayCancel" class="ghost" type="button" hidden>Cancelar</button>
       </div>
     </div>
 
@@ -292,6 +317,17 @@
     forceTranscode: false,
     lastMode: null,
     pendingSeek: 0,
+    baseOffset: 0,
+    transcoded: false,
+    curS: 1,
+    curE: 1,
+    lastAbs: 0,
+    lastSaveAt: 0,
+    progReady: false,
+    resumePending: false,
+    netRetries: 0,
+    autoNextTimer: null,
+    autoNextStage: null,
     subOffset: 0,
     subKey: null,
     subLang: null,
@@ -333,6 +369,325 @@
     el.hidden = false;
     clearTimeout(toast._timer);
     toast._timer = setTimeout(function () { el.hidden = true; }, 6000);
+  }
+
+
+  /* ---------------------------------------------------------------- */
+  /* Progresso salvo (onde parou) + retomada após queda de conexão     */
+  /* ---------------------------------------------------------------- */
+
+  // Tudo fica no localStorage do navegador: zero carga no servidor e
+  // sobrevive a reinício do backend. Só guardamos o essencial (alguns
+  // números por título), com teto de títulos/episódios e validade.
+  var PROG_KEY = 'fdsflix.progress.v1';
+  var PROG_MAX_TITLES = 40;
+  var PROG_MAX_EPS = 40;
+  var PROG_TTL_MS = 120 * 24 * 3600 * 1000;
+  var PROG_MIN_SECONDS = 15;
+  var PROG_SAVE_EVERY_MS = 5000;
+  var PROG_REWIND_SECONDS = 8;
+  var NET_MAX_RETRIES = 5;
+
+  function progLoad() {
+    try {
+      var raw = JSON.parse(localStorage.getItem(PROG_KEY) || '{}');
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+      var now = Date.now();
+      var out = {};
+      Object.keys(raw).forEach(function (key) {
+        var entry = raw[key];
+        if (entry && entry.id != null && entry.type && now - (entry.u || 0) < PROG_TTL_MS) out[key] = entry;
+      });
+      return out;
+    } catch (err) {
+      return {};
+    }
+  }
+
+  var progress = progLoad();
+
+  function progPersist() {
+    var keys = Object.keys(progress);
+    if (keys.length > PROG_MAX_TITLES) {
+      keys.sort(function (a, b) { return (progress[b].u || 0) - (progress[a].u || 0); });
+      keys.slice(PROG_MAX_TITLES).forEach(function (key) { delete progress[key]; });
+    }
+    try {
+      localStorage.setItem(PROG_KEY, JSON.stringify(progress));
+    } catch (err) { /* ignore */ }
+  }
+
+  function progKeyOf(item) {
+    return item.type + ':' + item.id;
+  }
+
+  function fmtTime(seconds) {
+    seconds = Math.max(0, Math.floor(Number(seconds) || 0));
+    var h = Math.floor(seconds / 3600);
+    var m = Math.floor((seconds % 3600) / 60);
+    var s = seconds % 60;
+    var mm = h ? ('0' + m).slice(-2) : String(m);
+    return (h ? h + ':' : '') + mm + ':' + ('0' + s).slice(-2);
+  }
+
+  function secondsToStartMinutes(seconds) {
+    if (!seconds || seconds < PROG_MIN_SECONDS) return 0;
+    return (Math.max(0, seconds - PROG_REWIND_SECONDS) / 60).toFixed(1);
+  }
+
+  // Posição real no filme. No modo convertido (ffmpeg -ss) o <video> começa em 0
+  // a partir do ponto "start", então a posição real é start + currentTime.
+  function progCurrentAbs() {
+    var t = $('nativePlayer').currentTime;
+    if (!isFinite(t)) return 0;
+    return state.baseOffset + t;
+  }
+
+  function progEntryFor(item) {
+    var key = progKeyOf(item);
+    var entry = progress[key];
+    if (!entry) {
+      entry = progress[key] = { id: item.id, type: item.type, s: 1, e: 1, t: 0, d: 0, eps: {} };
+    }
+    entry.title = item.title;
+    entry.year = item.year || '';
+    entry.poster = item.poster || '';
+    return entry;
+  }
+
+  function progEpisodePos(item, s, e) {
+    var entry = progress[progKeyOf(item)];
+    return (entry && entry.eps && entry.eps[s + ':' + e]) || 0;
+  }
+
+  function progFinished() {
+    var item = state.selected;
+    state.progReady = false;
+    if (!item) return;
+    if (item.type === 'movie') {
+      delete progress[progKeyOf(item)];
+    } else {
+      var entry = progEntryFor(item);
+      if (entry.eps) delete entry.eps[state.curS + ':' + state.curE];
+      // Terminou o episódio: o "continuar" aponta para o próximo, do início.
+      entry.s = state.curS;
+      entry.e = state.curE + 1;
+      entry.t = 0;
+      entry.d = 0;
+      entry.u = Date.now();
+    }
+    progPersist();
+  }
+
+  function progRemember(force) {
+    var item = state.selected;
+    if (!item || !state.progReady) return;
+
+    var abs = progCurrentAbs();
+    state.lastAbs = abs;
+
+    var now = Date.now();
+    if (!force && now - state.lastSaveAt < PROG_SAVE_EVERY_MS) return;
+    if (abs < PROG_MIN_SECONDS) return;
+    state.lastSaveAt = now;
+
+    // A playlist convertida cresce enquanto o ffmpeg trabalha (duração parcial),
+    // então só confiamos na duração do arquivo no modo direto/HLS nativo.
+    var video = $('nativePlayer');
+    var dur = (!state.transcoded && isFinite(video.duration) && video.duration > 0) ? video.duration : 0;
+
+    if (dur && dur - abs < Math.max(60, dur * 0.03)) {
+      progFinished();
+      return;
+    }
+
+    var entry = progEntryFor(item);
+    entry.s = state.curS;
+    entry.e = state.curE;
+    entry.t = Math.floor(abs);
+    entry.d = Math.floor(dur);
+    entry.u = now;
+
+    if (item.type === 'tv') {
+      entry.eps = entry.eps || {};
+      entry.eps[state.curS + ':' + state.curE] = Math.floor(abs);
+      var epKeys = Object.keys(entry.eps);
+      if (epKeys.length > PROG_MAX_EPS) {
+        // descarta os mais antigos (ordem de inserção: o atual é reinserido no fim)
+        var current = entry.eps[state.curS + ':' + state.curE];
+        delete entry.eps[state.curS + ':' + state.curE];
+        epKeys = Object.keys(entry.eps);
+        epKeys.slice(0, epKeys.length - PROG_MAX_EPS + 1).forEach(function (k) { delete entry.eps[k]; });
+        entry.eps[state.curS + ':' + state.curE] = current;
+      }
+    }
+
+    progPersist();
+  }
+
+  function renderContinue() {
+    var keys = Object.keys(progress).filter(function (key) {
+      var entry = progress[key];
+      return entry.t >= PROG_MIN_SECONDS || (entry.type === 'tv' && entry.e > 1);
+    });
+    keys.sort(function (a, b) { return (progress[b].u || 0) - (progress[a].u || 0); });
+    keys = keys.slice(0, 12);
+
+    var section = $('continueSection');
+    if (!keys.length) {
+      section.hidden = true;
+      $('continueRow').innerHTML = '';
+      return;
+    }
+
+    var html = '';
+    keys.forEach(function (key) {
+      var entry = progress[key];
+      var isTv = entry.type === 'tv';
+      var poster = entry.poster ? 'https://image.tmdb.org/t/p/w342' + entry.poster : '';
+      var img = poster
+        ? '<img src="' + escapeHtml(poster) + '" alt="" loading="lazy" onerror="this.remove()">'
+        : '';
+      var pct = entry.d > 0 ? Math.min(100, Math.round((entry.t / entry.d) * 100)) : 0;
+      var label = isTv ? 'T' + entry.s + ' E' + entry.e : 'Filme';
+      var meta = entry.t >= PROG_MIN_SECONDS
+        ? label + ' · ' + fmtTime(entry.t)
+        : 'Próximo: ' + label;
+
+      html +=
+        '<div class="card cont" data-key="' + escapeHtml(key) + '" title="' + escapeHtml(entry.title) + '">' +
+          '<div class="poster-wrap">' +
+            '<div class="poster-fallback">' + escapeHtml(entry.title) + '</div>' +
+            '<span class="badge-type">' + (isTv ? 'Série' : 'Filme') + '</span>' +
+            img +
+            '<button class="cont-x" type="button" data-remove="' + escapeHtml(key) + '" title="Remover da lista" aria-label="Remover da lista">×</button>' +
+            (pct ? '<div class="cont-bar"><span style="width:' + pct + '%"></span></div>' : '') +
+          '</div>' +
+          '<div class="info">' +
+            '<div class="title">' + escapeHtml(entry.title) + '</div>' +
+            '<div class="meta">' + escapeHtml(meta) + '</div>' +
+          '</div>' +
+        '</div>';
+    });
+
+    $('continueRow').innerHTML = html;
+    section.hidden = false;
+  }
+
+  /* ---- Auto-próximo episódio (opcional, chave no player) ---- */
+
+  var AUTONEXT_KEY = 'fdsflix.autonext';
+  var AUTONEXT_SECONDS = 5;
+
+  function autoNextEnabled() {
+    try { return localStorage.getItem(AUTONEXT_KEY) === '1'; } catch (err) { return false; }
+  }
+
+  function setAutoNextEnabled(on) {
+    try { localStorage.setItem(AUTONEXT_KEY, on ? '1' : '0'); } catch (err) { /* ignore */ }
+  }
+
+  function clearAutoNext() {
+    if (state.autoNextTimer) {
+      clearInterval(state.autoNextTimer);
+      state.autoNextTimer = null;
+    }
+    $('overlayCancel').hidden = true;
+  }
+
+  function playEpisode(season, episode) {
+    $('seasonInput').value = season;
+    $('episodeInput').value = episode;
+    $('startInput').value = 0;
+    renderPlayer();
+  }
+
+  function maybeAutoNext() {
+    var item = state.selected;
+    if (!item || item.type !== 'tv' || !autoNextEnabled()) return;
+
+    clearAutoNext();
+    var nextS = state.curS;
+    var nextE = state.curE + 1;
+    var left = AUTONEXT_SECONDS;
+    var label = 'T' + nextS + ' E' + nextE;
+
+    function paint() {
+      showOverlay('Próximo episódio (' + label + ') em ' + left + 's…', false);
+    }
+    paint();
+    $('overlayCancel').hidden = false;
+
+    state.autoNextTimer = setInterval(function () {
+      left -= 1;
+      if (left > 0) { paint(); return; }
+      clearAutoNext();
+      state.autoNextStage = 'episode';
+      playEpisode(nextS, nextE);
+    }, 1000);
+  }
+
+  // O próximo episódio não existe (fim da temporada)? Tenta T+1 E1 uma única vez.
+  function autoNextFallback() {
+    if (state.autoNextStage === 'episode') {
+      state.autoNextStage = 'season';
+      playEpisode(state.curS + 1, 1);
+      return true;
+    }
+    if (state.autoNextStage === 'season') {
+      state.autoNextStage = null;
+      // volta o "continuar" para o último episódio que existe
+      var item = state.selected;
+      if (item && progress[progKeyOf(item)]) {
+        var entry = progress[progKeyOf(item)];
+        entry.s = Math.max(1, state.curS - 1);
+        entry.e = Math.max(1, (entry.e || 2) - 1);
+        progPersist();
+      }
+      fail('Acabaram os episódios disponíveis. 🎉');
+      return true;
+    }
+    return false;
+  }
+
+  // Perdeu a conexão no meio do filme: guarda a posição e recria o stream
+  // do ponto onde parou (também cobre sessão de conversão perdida no servidor).
+  function doNetResume() {
+    state.resumePending = false;
+    if (state.selected) renderPlayer();
+  }
+
+  function scheduleNetResume(reason) {
+    if (!state.selected || state.resumePending) return;
+
+    progRemember(true);
+    state.resumePending = true;
+    if (state.lastAbs >= PROG_MIN_SECONDS) {
+      $('startInput').value = secondsToStartMinutes(state.lastAbs);
+    }
+    var at = state.lastAbs >= PROG_MIN_SECONDS ? ' de ' + fmtTime(state.lastAbs) : '';
+
+    if (!navigator.onLine) {
+      showOverlay('Sem conexão. Retomo' + at + ' assim que a internet voltar…', true);
+      setStatus('warn', 'Sem conexão — vou retomar sozinho quando voltar.');
+      return;
+    }
+
+    if (state.netRetries >= NET_MAX_RETRIES) {
+      state.resumePending = false;
+      var giveUp = (reason || 'Conexão instável.') + ' Retomo' + at + ' quando você tentar de novo.';
+      showOverlay(giveUp, false);
+      setStatus('error', giveUp);
+      $('overlayRetry').hidden = false;
+      return;
+    }
+
+    state.netRetries += 1;
+    showOverlay('Conexão instável. Retomando' + at + '… (tentativa ' + state.netRetries + '/' + NET_MAX_RETRIES + ')', true);
+    setStatus('warn', 'Conexão instável — retomando…');
+    setTimeout(function () {
+      if (state.resumePending) doNetResume();
+    }, 2000 * state.netRetries);
   }
 
   /* ---------------------------------------------------------------- */
@@ -727,7 +1082,7 @@
     rebuildCaptions();
   }
 
-  function attachHls(url, video) {
+  function attachHls(url, video, startPosition) {
     if (!window.Hls || !Hls.isSupported()) {
       if (video.canPlayType('application/vnd.apple.mpegurl')) {
         video.src = url;
@@ -737,7 +1092,7 @@
     }
 
     var hls = new Hls({
-      startPosition: 0,
+      startPosition: startPosition > 0 ? startPosition : 0,
       enableWorker: true,
       lowLatencyMode: false,
       maxBufferLength: 30,
@@ -757,6 +1112,11 @@
       fatalCount += 1;
       console.warn('[hls]', data.type, data.details);
 
+      if (data.type === Hls.ErrorTypes.NETWORK_ERROR && (!navigator.onLine || fatalCount > 4)) {
+        // Sem internet (ou o servidor perdeu a sessão): recria o stream de onde parou.
+        scheduleNetResume('A conexão com o vídeo caiu.');
+        return;
+      }
       if (fatalCount > 4) {
         fail('A conversão falhou (' + data.details + '). Tente recarregar ou escolher outra qualidade.');
         return;
@@ -788,6 +1148,14 @@
     var item = state.selected;
     if (!item) return;
 
+    clearAutoNext();
+
+    // Guarda onde estava antes de derrubar o vídeo atual.
+    progRemember(true);
+    state.progReady = false;
+    state.baseOffset = 0;
+    state.transcoded = false;
+
     stopPlayback();
     resetVideo();
 
@@ -795,6 +1163,9 @@
     var episode = Math.max(1, Number($('episodeInput').value) || 1);
     var quality = $('qualitySelect').value;
     var startSeconds = Math.max(0, Math.round((Number($('startInput').value) || 0) * 60));
+
+    state.curS = season;
+    state.curE = episode;
 
     state.subKey = subtitleKey(item, season, episode);
     state.subOffset = loadSubOffset(state.subKey);
@@ -809,6 +1180,7 @@
     params.set('hevc', state.hevc && !state.forceTranscode ? '1' : '0');
     params.set('start', String(startSeconds));
     if (quality) params.set('res', quality);
+    if (item.title) params.set('title', item.title);
 
     state.pendingSeek = startSeconds;
     showOverlay('Extraindo o stream…', true);
@@ -840,6 +1212,10 @@
 
         state.sessionId = data.sessionId || null;
         state.lastMode = data.mode;
+        state.transcoded = Boolean(data.transcoded);
+        state.baseOffset = data.transcoded ? startSeconds : 0;
+        // No stream convertido o servidor já começa em "start": não buscar de novo.
+        if (data.mode === 'hls' && data.transcoded) state.pendingSeek = 0;
         state.captions = Array.isArray(data.captions) ? data.captions : [];
         addCaptions(state.captions);
         populateSubLang(state.captions);
@@ -849,8 +1225,8 @@
         var video = $('nativePlayer');
 
         if (data.mode === 'hls') {
-          showOverlay('Convertendo para H.264…', true);
-          attachHls(apiUrl(data.url), video);
+          showOverlay(data.transcoded ? 'Convertendo para H.264…' : 'Carregando stream…', true);
+          attachHls(apiUrl(data.url), video, data.transcoded ? 0 : startSeconds);
         } else if (data.mode === 'direct') {
           video.src = apiUrl(data.url);
           video.play().catch(function () {
@@ -871,13 +1247,32 @@
         clearTimeout(slowTimer);
         if (err && err.name === 'AbortError') return;
         if (playToken !== state.playToken) return;
+        if (!navigator.onLine || /failed to fetch|networkerror|load failed/i.test((err && err.message) || '')) {
+          scheduleNetResume('Sem conexão com o servidor.');
+          return;
+        }
+        if (autoNextFallback()) return;
         fail(err.message || 'Erro ao preparar o vídeo.');
       });
   }
 
   function selectItem(index) {
     var item = state.items[index];
+    if (item) openItem(item);
+  }
+
+  function openItem(item) {
     if (!item) return;
+
+    clearAutoNext();
+    state.autoNextStage = null;
+
+    // Antes de trocar de título, salva a posição do que estava tocando.
+    progRemember(true);
+    state.progReady = false;
+    state.lastAbs = 0;
+    state.netRetries = 0;
+    state.resumePending = false;
 
     state.selected = item;
     $('playerTitle').textContent = item.title;
@@ -890,10 +1285,26 @@
       $('episodeInput').value = 1;
     }
     $('startInput').value = 0;
+
+    // Já assistiu antes? Volta no episódio e no minuto onde parou.
+    var saved = progress[progKeyOf(item)];
+    if (saved) {
+      if (item.type === 'tv') {
+        $('seasonInput').value = Math.max(1, Number(saved.s) || 1);
+        $('episodeInput').value = Math.max(1, Number(saved.e) || 1);
+      }
+      if (saved.t >= PROG_MIN_SECONDS) {
+        $('startInput').value = secondsToStartMinutes(saved.t);
+        toast('Retomando de ' + fmtTime(saved.t) + (item.type === 'tv' ? ' (T' + saved.s + ' E' + saved.e + ')' : ''));
+      } else if (item.type === 'tv') {
+        toast('Continuando em T' + saved.s + ' E' + saved.e);
+      }
+    }
     $('playerSection').hidden = false;
 
     Array.prototype.slice.call(document.querySelectorAll('.card')).forEach(function (card) {
-      card.classList.toggle('active', Number(card.dataset.index) === index);
+      var cardItem = card.dataset.index !== undefined ? state.items[Number(card.dataset.index)] : null;
+      card.classList.toggle('active', Boolean(cardItem) && String(cardItem.id) === String(item.id) && cardItem.type === item.type);
     });
 
     $('playerSection').scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -901,9 +1312,15 @@
   }
 
   function closePlayer() {
+    clearAutoNext();
+    state.autoNextStage = null;
+    progRemember(true);
+    state.progReady = false;
+    state.resumePending = false;
     stopPlayback();
     resetVideo();
     state.selected = null;
+    renderContinue();
     $('playerSection').hidden = true;
     Array.prototype.slice.call(document.querySelectorAll('.card')).forEach(function (card) {
       card.classList.remove('active');
@@ -930,7 +1347,16 @@
   });
 
   $('clearBtn').addEventListener('click', clearSearch);
-  $('reloadBtn').addEventListener('click', renderPlayer);
+  $('reloadBtn').addEventListener('click', function () {
+    // "Recarregar" volta ao ponto atual, não ao início configurado.
+    if (state.selected) {
+      progRemember(true);
+      if (state.lastAbs >= PROG_MIN_SECONDS) $('startInput').value = secondsToStartMinutes(state.lastAbs);
+      state.netRetries = 0;
+      state.resumePending = false;
+    }
+    renderPlayer();
+  });
   $('closeBtn').addEventListener('click', closePlayer);
 
   $('subLangSelect').addEventListener('change', function () {
@@ -944,16 +1370,42 @@
 
   $('qualitySelect').addEventListener('change', function () {
     var video = $('nativePlayer');
-    if (state.selected && video.currentTime > 5) {
-      $('startInput').value = (video.currentTime / 60).toFixed(1);
+    if (state.selected && progCurrentAbs() > 5) {
+      $('startInput').value = (progCurrentAbs() / 60).toFixed(1);
     }
     if (state.selected) renderPlayer();
   });
 
-  ['seasonInput', 'episodeInput', 'startInput'].forEach(function (id) {
+  // Trocar de episódio: começa de onde parou NESSE episódio (ou do zero).
+  ['seasonInput', 'episodeInput'].forEach(function (id) {
     $(id).addEventListener('change', function () {
-      if (state.selected) renderPlayer();
+      if (!state.selected) return;
+      var s = Math.max(1, Number($('seasonInput').value) || 1);
+      var e = Math.max(1, Number($('episodeInput').value) || 1);
+      $('startInput').value = secondsToStartMinutes(progEpisodePos(state.selected, s, e));
+      renderPlayer();
     });
+  });
+
+  $('startInput').addEventListener('change', function () {
+    if (state.selected) renderPlayer();
+  });
+
+  $('continueRow').addEventListener('click', function (event) {
+    var target = event.target;
+    var removeBtn = target.closest ? target.closest('[data-remove]') : null;
+    if (removeBtn) {
+      event.stopPropagation();
+      delete progress[removeBtn.getAttribute('data-remove')];
+      progPersist();
+      renderContinue();
+      return;
+    }
+    var card = target.closest ? target.closest('.card') : null;
+    if (!card) return;
+    var entry = progress[card.getAttribute('data-key')];
+    if (!entry) return;
+    openItem({ id: entry.id, type: entry.type, title: entry.title, year: entry.year, poster: entry.poster });
   });
 
   var video = $('nativePlayer');
@@ -980,7 +1432,21 @@
 
   video.addEventListener('playing', function () {
     hideOverlay();
+    state.progReady = true;
+    clearAutoNext();
+    state.autoNextStage = null;
+    state.netRetries = 0;
+    state.resumePending = false;
+    $('overlayRetry').hidden = true;
     checkDirectDecoding();
+  });
+
+  video.addEventListener('timeupdate', function () { progRemember(false); });
+  video.addEventListener('pause', function () { progRemember(true); });
+  video.addEventListener('seeked', function () { progRemember(true); });
+  video.addEventListener('ended', function () {
+    progFinished();
+    maybeAutoNext();
   });
 
   video.addEventListener('waiting', function () {
@@ -1014,6 +1480,12 @@
       return;
     }
 
+    // Queda de rede no meio do vídeo: retoma sozinho do minuto onde parou.
+    if (error.code === 2 || (error.code === 4 && !navigator.onLine)) {
+      scheduleNetResume(messages[error.code]);
+      return;
+    }
+
     fail(messages[error.code] || 'Erro desconhecido ao reproduzir o vídeo.');
   });
 
@@ -1024,18 +1496,59 @@
     video.textTracks.onchange = syncSubLangFromTracks;
   }
 
+  $('overlayCancel').addEventListener('click', function () {
+    clearAutoNext();
+    hideOverlay();
+  });
+
+  $('autoNextToggle').checked = autoNextEnabled();
+  $('autoNextToggle').addEventListener('change', function () {
+    setAutoNextEnabled(this.checked);
+    if (!this.checked) clearAutoNext();
+    toast(this.checked ? 'Auto-próximo ligado.' : 'Auto-próximo desligado.');
+  });
+
   $('overlayRetry').addEventListener('click', function () {
+    state.netRetries = 0;
+    state.resumePending = false;
     if (state.selected) renderPlayer();
   });
 
   window.addEventListener('beforeunload', function () {
+    progRemember(true);
     beaconStop(state.sessionId);
+  });
+  window.addEventListener('pagehide', function () { progRemember(true); });
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'hidden') progRemember(true);
+  });
+
+  window.addEventListener('offline', function () {
+    if (state.selected) toast('Sem conexão. O vídeo segue do buffer e retomo de onde parou quando voltar.');
+  });
+
+  window.addEventListener('online', function () {
+    if (!state.selected) return;
+    if (state.resumePending) {
+      toast('Conexão de volta — retomando…');
+      doNetResume();
+      return;
+    }
+    // Voltou a internet mas o vídeo ficou travado esperando dados: refaz o stream.
+    setTimeout(function () {
+      var v = $('nativePlayer');
+      if (state.selected && !state.resumePending && !v.ended && !v.paused && v.readyState < 3) {
+        state.netRetries = 0;
+        scheduleNetResume('Conexão restabelecida.');
+      }
+    }, 2500);
   });
 
   /* ---------------------------------------------------------------- */
   /* Inicialização                                                     */
   /* ---------------------------------------------------------------- */
 
+  renderContinue();
   loadPopular();
 
   if (API_BASE) {

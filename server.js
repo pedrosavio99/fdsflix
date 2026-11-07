@@ -7,6 +7,7 @@ const path = require('path');
 const fs = require('fs');
 
 const { getVidLinkStream, probeVideo } = require('./lib/streamExtractor');
+const { getFallbackStream, getProviderList } = require('./lib/fallbackCascade');
 const {
   startHlsSession,
   stopSession,
@@ -197,11 +198,17 @@ function buildCaptions(rawCaptions, autoShift = 0) {
   return captions;
 }
 
-function makeRefresher({ id, type, season, episode, qualityKey }) {
+function makeRefresher({ id, type, season, episode, qualityKey, provider, title }) {
   return async () => {
-    const fresh = await getVidLinkStream({ id, type, season, episode, force: true });
+    if (provider === 'VidLink Pro') {
+      const fresh = await getVidLinkStream({ id, type, season, episode, force: true });
+      if (!fresh) return null;
+      if (qualityKey && fresh.qualities && fresh.qualities[qualityKey]) return fresh.qualities[qualityKey].url;
+      return fresh.url;
+    }
+    const fresh = await getFallbackStream({ id, type, season, episode, title });
     if (!fresh) return null;
-    if (qualityKey && fresh.qualities[qualityKey]) return fresh.qualities[qualityKey].url;
+    if (qualityKey && fresh.qualities && fresh.qualities[qualityKey]) return fresh.qualities[qualityKey].url;
     return fresh.url;
   };
 }
@@ -297,7 +304,8 @@ app.get('/api/config', (req, res) => {
     hasTmdbKey: Boolean(TMDB_API_KEY),
     ffmpeg: FFMPEG_OK,
     transcode: FFMPEG_OK,
-    version: 2
+    version: 2,
+    fallbacks: getProviderList().map((p) => p.name)
   });
 });
 
@@ -306,7 +314,8 @@ app.get('/api/health', (req, res) => {
     ok: true,
     ffmpeg: FFMPEG_OK,
     tmdb: Boolean(TMDB_API_KEY),
-    sessions: activeSessions()
+    sessions: activeSessions(),
+    fallbacks: getProviderList().map((p) => p.name)
   });
 });
 
@@ -387,24 +396,51 @@ app.get('/api/stream', requireApiKey, async (req, res) => {
   const hevcOk = String(req.query.hevc || '') === '1';
   const preferred = Number(req.query.res) || 0;
   const startAt = Math.max(0, Math.min(6 * 3600, Math.floor(Number(req.query.start) || 0)));
+  const title = String(req.query.title || '').trim();
 
   console.log(
-    `[stream] id=${id} type=${type} s=${season} e=${episode} res=${preferred || 'auto'} hevc=${hevcOk ? 'sim' : 'não'} start=${startAt}s`
+    `[stream] id=${id} type=${type} s=${season} e=${episode} res=${preferred || 'auto'} hevc=${hevcOk ? 'sim' : 'não'} start=${startAt}s${title ? ` title="${title}"` : ''}`
   );
 
   try {
-    const info = await getVidLinkStream({ id, type, season, episode });
+    const streamInfo = await getFallbackStream({ id, type, season, episode, title });
 
-    if (!info || !info.url) {
-      console.log('[stream] provedor não retornou URL');
+    if (!streamInfo || !streamInfo.url) {
+      console.log('[stream] nenhuma fonte encontrou esse título');
       return res.status(404).json({
-        error: 'O provedor não encontrou esse título. Tente outro filme/episódio.'
+        error: 'Nenhuma fonte encontrou o stream para este título. Tente outro filme/episódio ou verifique os serviços locais.'
       });
     }
 
-    let codec = String(info.codec || '').toLowerCase();
+    // VidLink Pro mantém sempre o fluxo original (proxy + sonda de codec + transcodificação).
+    // O atalho HLS direto é só para as fontes externas da cascata.
+    const isHlsUrl =
+      streamInfo.provider !== 'VidLink Pro' &&
+      (streamInfo.isHls || /\.m3u8(\?|$)/i.test(streamInfo.url));
+
+    if (isHlsUrl) {
+      console.log(`[stream] modo HLS nativo (${streamInfo.provider})`);
+      const captions = buildCaptions(streamInfo.captions, 0).map((caption) => ({
+        ...caption,
+        url: absoluteUrl(req, caption.url)
+      }));
+
+      return res.json({
+        mode: 'hls',
+        url: absoluteUrl(req, streamInfo.url),
+        quality: streamInfo.quality || 'auto',
+        codec: streamInfo.codec || 'h264',
+        sourceCodec: streamInfo.codec || 'h264',
+        transcoded: false,
+        provider: streamInfo.provider,
+        captions,
+        note: null
+      });
+    }
+
+    let codec = String(streamInfo.codec || '').toLowerCase();
     if (!codec) {
-      const probe = await probeVideo(info.url);
+      const probe = await probeVideo(streamInfo.url);
       codec = String(probe.codec || '').toLowerCase();
     }
 
@@ -416,16 +452,16 @@ app.get('/api/stream', requireApiKey, async (req, res) => {
     let outHeight = 0;
 
     if (transcode) {
-      qualityKey = pickQualityKeyAtMost(info.qualities, target);
-      const sourceHeight = Number(qualityKey) || (info.height ? Number(info.height) : 1080);
+      qualityKey = pickQualityKeyAtMost(streamInfo.qualities, target);
+      const sourceHeight = Number(qualityKey) || (streamInfo.height ? Number(streamInfo.height) : 1080);
       outHeight = Math.max(240, Math.round(Math.min(target, sourceHeight) / 2) * 2);
     } else {
-      qualityKey = pickQualityKey(info.qualities, preferred);
+      qualityKey = pickQualityKey(streamInfo.qualities, preferred);
     }
 
-    const qualityUrl = (qualityKey && info.qualities[qualityKey] && info.qualities[qualityKey].url) || info.url;
+    const qualityUrl = (qualityKey && streamInfo.qualities && streamInfo.qualities[qualityKey] && streamInfo.qualities[qualityKey].url) || streamInfo.url;
 
-    const refresher = makeRefresher({ id, type, season, episode, qualityKey });
+    const refresher = makeRefresher({ id, type, season, episode, qualityKey, provider: streamInfo.provider, title });
     const token = registry.register(
       'video',
       { url: qualityUrl, refresh: refresher, expiresAt: Date.now() + TOKEN_TTL_MS },
@@ -436,21 +472,21 @@ app.get('/api/stream', requireApiKey, async (req, res) => {
     // tempo para 0; então as legendas precisam voltar `startAt` segundos.
     // No modo direct o vídeo é o arquivo original (o cliente só faz seek),
     // logo a legenda já está alinhada.
-    const captions = buildCaptions(info.captions, transcode ? -startAt : 0).map((caption) => ({
+    const captions = buildCaptions(streamInfo.captions, transcode ? -startAt : 0).map((caption) => ({
       ...caption,
       url: absoluteUrl(req, caption.url)
     }));
 
     if (!transcode) {
-      console.log(`[stream] modo direto ${qualityKey || 'auto'} (codec ${codec || '?'})`);
+      console.log(`[stream] modo direto ${qualityKey || 'auto'} (${streamInfo.provider}, codec ${codec || '?'})`);
       return res.json({
         mode: 'direct',
         url: absoluteUrl(req, `/api/proxy?t=${token}`),
-        quality: Number(qualityKey) || 'auto',
+        quality: Number(qualityKey) || streamInfo.quality || 'auto',
         codec: codec || 'desconhecido',
         sourceCodec: codec || 'desconhecido',
         transcoded: false,
-        provider: info.provider,
+        provider: streamInfo.provider,
         captions,
         note: null
       });
@@ -468,18 +504,18 @@ app.get('/api/stream', requireApiKey, async (req, res) => {
     const inputUrl = `http://127.0.0.1:${PORT}/api/proxy?t=${token}`;
     const session = await startHlsSession({ source: inputUrl, height: outHeight, startAt });
 
-    console.log(`[stream] HLS ${session.id} ${outHeight}p (origem ${codec} ${qualityKey || 'auto'})`);
+    console.log(`[stream] HLS ${session.id} ${outHeight}p (${streamInfo.provider}, origem ${codec} ${qualityKey || 'auto'})`);
 
     res.json({
       mode: 'hls',
       url: absoluteUrl(req, `/hls/${session.id}/index.m3u8`),
       sessionId: session.id,
       quality: outHeight,
-      sourceQuality: Number(qualityKey) || 'auto',
+      sourceQuality: Number(qualityKey) || streamInfo.quality || 'auto',
       codec: 'h264',
       sourceCodec: codec,
       transcoded: true,
-      provider: info.provider,
+      provider: streamInfo.provider,
       captions,
       note:
         `O provedor entrega HEVC e seu navegador não decodifica esse codec. ` +
@@ -591,6 +627,11 @@ const server = app.listen(PORT, () => {
   console.log('🎬 fdsFlix rodando em http://localhost:' + PORT);
   console.log('   TMDB API : ' + (TMDB_API_KEY ? 'configurada' : 'NÃO configurada'));
   console.log('   ffmpeg   : ' + (FFMPEG_OK ? 'disponível (transcodificação ativa)' : 'NÃO encontrado'));
+  console.log('   Fallbacks: ' + getProviderList().map((p) => p.name).join(' → '));
+  console.log('   Serviços auxiliares (opcionais para catálogo expandido/novelas):');
+  console.log('     - CinePro:    ' + (process.env.CINEPRO_API_BASE || 'http://localhost:3001'));
+  console.log('     - CineWinx:   ' + (process.env.CINEWINX_API_BASE || 'http://localhost:3002'));
+  console.log('     - Consumet:   ' + (process.env.CONSUMET_API_BASE || 'http://localhost:3003'));
   if (!FFMPEG_OK) {
     console.log('   ⚠️  Sem ffmpeg o player não consegue converter HEVC para H.264.');
   }
