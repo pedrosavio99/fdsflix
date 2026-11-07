@@ -138,6 +138,9 @@
   }
   .sub-bar[hidden]{display:none}
   .sub-bar .sub-title{font-weight:700;color:var(--text);margin-right:.15rem}
+  .sub-bar .sub-lang{display:flex;align-items:center;gap:.35rem;color:var(--muted);font-weight:600}
+  .sub-bar .sub-lang select{padding:.35rem .5rem;font-size:.8rem;max-width:190px}
+  .sub-divider{width:1px;height:18px;background:var(--line);margin:0 .15rem}
   .sub-bar input[type="number"]{width:84px;padding:.35rem .45rem;font-size:.8rem}
   .step-btn{
     background:var(--panel);border:1px solid var(--line);color:var(--text);
@@ -210,7 +213,11 @@
     </div>
 
     <div id="subBar" class="sub-bar" hidden>
-      <span class="sub-title">Sincronia da legenda</span>
+      <label class="sub-lang">Legenda
+        <select id="subLangSelect" aria-label="Idioma da legenda"></select>
+      </label>
+      <span class="sub-divider"></span>
+      <span class="sub-title">Sincronia</span>
       <button id="subMinus" class="step-btn" type="button" title="Adiantar a legenda 0,5 s">−0,5s</button>
       <input id="subOffsetInput" type="number" step="0.5" min="-600" max="600" value="0"
              title="Atraso em segundos (positivo = legenda mais tarde)" aria-label="Atraso da legenda em segundos">
@@ -287,6 +294,9 @@
     pendingSeek: 0,
     subOffset: 0,
     subKey: null,
+    subLang: null,
+    langToken: 0,
+    applyingLang: false,
     captions: []
   };
 
@@ -536,11 +546,11 @@
     try { video.pause(); } catch (err) { /* ignore */ }
     video.removeAttribute('src');
     video.load();
+    state.captions = [];
     Array.prototype.slice.call(video.querySelectorAll('track')).forEach(function (track) {
       track.remove();
     });
     state.pendingSeek = 0;
-    state.captions = [];
     $('subBar').hidden = true;
   }
 
@@ -574,7 +584,21 @@
       'shift=' + encodeURIComponent(String(offset));
   }
 
-  function addCaptions(captions, mode) {
+  function loadSubLang(key) {
+    try {
+      return localStorage.getItem(key + '.lang');
+    } catch (err) {
+      return null;
+    }
+  }
+
+  function saveSubLang(key, value) {
+    try {
+      localStorage.setItem(key + '.lang', value);
+    } catch (err) { /* ignore */ }
+  }
+
+  function addCaptions(captions) {
     var video = $('nativePlayer');
 
     (captions || []).forEach(function (caption) {
@@ -584,38 +608,112 @@
       track.label = caption.label || 'Legenda';
       track.srclang = caption.srclang || 'und';
       track.src = subtitleUrl(caption.url, state.subOffset);
-      if (caption.default) track.default = true;
       video.appendChild(track);
     });
+  }
 
-    // Ao reconstruir, mantém a faixa que estava ativa (ou tudo desligado).
-    if (mode !== undefined) {
-      setTimeout(function () {
-        var tracks = video.textTracks;
-        for (var i = 0; i < tracks.length; i++) {
-          tracks[i].mode = mode !== 'off' && tracks[i].language === mode ? 'showing' : 'disabled';
-        }
-      }, 30);
+  function populateSubLang(captions) {
+    var select = $('subLangSelect');
+    if (!select) return;
+
+    var html = '<option value="off">Desligada</option>';
+    (captions || []).forEach(function (caption, index) {
+      html += '<option value="' + index + '">' +
+        escapeHtml(caption.label || ('Legenda ' + (index + 1))) + '</option>';
+    });
+    select.innerHTML = html;
+  }
+
+  function activeSubIndex() {
+    var video = $('nativePlayer');
+    for (var i = 0; i < video.textTracks.length; i++) {
+      if (video.textTracks[i].mode === 'showing') return i;
     }
+    return -1;
+  }
+
+  function applySubLangByIndex(index) {
+    var video = $('nativePlayer');
+    var tracks = video.textTracks;
+    var off = index === -1 || index === null || index === undefined;
+
+    state.applyingLang = true;
+
+    for (var i = 0; i < tracks.length; i++) {
+      tracks[i].mode = !off && i === index ? 'showing' : 'disabled';
+    }
+
+    var select = $('subLangSelect');
+    if (select) select.value = off ? 'off' : String(index);
+
+    state.subLang = off ? 'off' : (state.captions[index] ? state.captions[index].label : 'off');
+    if (state.subKey) saveSubLang(state.subKey, state.subLang);
+
+    // As tracks terminam de registrar de forma assíncrona; ignora os eventos
+    // de change disparados pela própria aplicação.
+    setTimeout(function () { state.applyingLang = false; }, 250);
+  }
+
+  function applySubLangSoon(index, delay) {
+    var token = ++state.langToken;
+    setTimeout(function () {
+      if (token !== state.langToken) return;
+      applySubLangByIndex(index);
+    }, delay || 120);
+  }
+
+  function applySavedSubLang(captions) {
+    var saved = state.subKey ? loadSubLang(state.subKey) : null;
+    var index = -1;
+
+    if (saved && saved !== 'off') {
+      for (var i = 0; i < captions.length; i++) {
+        if (captions[i].label === saved) { index = i; break; }
+      }
+    }
+
+    if (index === -1 && saved !== 'off') {
+      for (var j = 0; j < captions.length; j++) {
+        if (captions[j].default) { index = j; break; }
+      }
+      if (index === -1 && captions.length) index = 0;
+    }
+
+    var select = $('subLangSelect');
+    if (select) select.value = index === -1 ? 'off' : String(index);
+
+    applySubLangSoon(index, 150);
+  }
+
+  function syncSubLangFromTracks() {
+    if (!state.captions.length) return;
+    if (state.applyingLang) return;
+    if (!$('nativePlayer').querySelector('track')) return; // durante rebuild
+
+    var index = activeSubIndex();
+    var select = $('subLangSelect');
+    if (select) select.value = index === -1 ? 'off' : String(index);
+
+    state.subLang = index === -1 ? 'off' : (state.captions[index] ? state.captions[index].label : 'off');
+    if (state.subKey) saveSubLang(state.subKey, state.subLang);
   }
 
   function rebuildCaptions() {
-    var video = $('nativePlayer');
     if (!state.captions.length) return;
 
-    var active = null;
-    for (var i = 0; i < video.textTracks.length; i++) {
-      if (video.textTracks[i].mode === 'showing') {
-        active = video.textTracks[i].language;
-        break;
-      }
-    }
+    var select = $('subLangSelect');
+    var active = select && select.value !== 'off' ? Number(select.value) : -1;
+    var video = $('nativePlayer');
 
     Array.prototype.slice.call(video.querySelectorAll('track')).forEach(function (track) {
       track.remove();
     });
 
-    addCaptions(state.captions, active || 'off');
+    addCaptions(state.captions);
+    populateSubLang(state.captions);
+    if (select) select.value = active === -1 ? 'off' : String(active);
+
+    applySubLangSoon(active, 80);
   }
 
   function applySubOffset(value) {
@@ -744,6 +842,8 @@
         state.lastMode = data.mode;
         state.captions = Array.isArray(data.captions) ? data.captions : [];
         addCaptions(state.captions);
+        populateSubLang(state.captions);
+        applySavedSubLang(state.captions);
         $('subBar').hidden = state.captions.length === 0;
 
         var video = $('nativePlayer');
@@ -833,6 +933,10 @@
   $('reloadBtn').addEventListener('click', renderPlayer);
   $('closeBtn').addEventListener('click', closePlayer);
 
+  $('subLangSelect').addEventListener('change', function () {
+    applySubLangByIndex(this.value === 'off' ? -1 : Number(this.value));
+  });
+
   $('subMinus').addEventListener('click', function () { applySubOffset(state.subOffset - 0.5); });
   $('subPlus').addEventListener('click', function () { applySubOffset(state.subOffset + 0.5); });
   $('subReset').addEventListener('click', function () { applySubOffset(0); });
@@ -912,6 +1016,13 @@
 
     fail(messages[error.code] || 'Erro desconhecido ao reproduzir o vídeo.');
   });
+
+  // Mantém o seletor sincronizado quando o usuário usa o menu CC nativo.
+  if (video.textTracks.addEventListener) {
+    video.textTracks.addEventListener('change', syncSubLangFromTracks);
+  } else {
+    video.textTracks.onchange = syncSubLangFromTracks;
+  }
 
   $('overlayRetry').addEventListener('click', function () {
     if (state.selected) renderPlayer();

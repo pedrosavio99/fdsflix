@@ -116,9 +116,12 @@ docs/DEPLOY-RENDER.md  Guia do Render + Vercel (passo a passo)
 - **Automático:** ao usar o campo **Início (min)**, o backend desloca a legenda
   em `-start` segundos. Antes ela ficava exatamente o tempo do salto fora de
   sincronia (ex.: começar em 10 min deixava a legenda 600 s adiantada).
-- **Manual:** abaixo do player há a barra **Sincronia da legenda**
+- **Idioma:** a barra abaixo do player tem um seletor **Legenda** (Desligada /
+  Português / English / …), sincronizado com o menu CC nativo. A escolha é salva
+  por título no `localStorage`.
+- **Manual:** a mesma barra tem o ajuste de **Sincronia**
   (`−0,5s` / `+0,5s` / campo livre / `0`). Valores positivos atrasam a legenda.
-  O ajuste é salvo por título no `localStorage` e sobrevive a recarregar a página.
+  O ajuste também é salvo por título e sobrevive a recarregar a página.
 - O deslocamento é aplicado no servidor (`/api/subtitle?t=TOKEN&shift=1.5`), sem
   reiniciar o vídeo nem recarregar o stream.
 
