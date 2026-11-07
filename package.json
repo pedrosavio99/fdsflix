@@ -1,0 +1,18 @@
+{
+  "name": "fdsflix",
+  "version": "2.0.0",
+  "description": "Player de filmes e séries com busca no TMDB e stream via VidLink Pro (proxy + transcodificação HEVC->H.264)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "dotenv": "^18.0.9",
+    "express": "^4.19.2",
+    "tweetnacl": "^1.0.3"
+  }
+}

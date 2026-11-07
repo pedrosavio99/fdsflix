@@ -1,0 +1,836 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>fdsFlix — Filmes e Séries</title>
+<style>
+  :root{
+    --bg:#0b0b10;
+    --panel:#14141d;
+    --panel-2:#1b1b27;
+    --line:#2a2a3a;
+    --text:#ececf3;
+    --muted:#9a9ab0;
+    --brand:#e50914;
+    --ok:#35d07f;
+    --warn:#ffb020;
+    --err:#ff5c5c;
+    --radius:12px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:radial-gradient(1200px 600px at 50% -10%, #1d1d2b 0%, var(--bg) 55%);
+    color:var(--text);
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    min-height:100vh;
+    padding:1.25rem;
+  }
+  .container{max-width:1180px;margin:0 auto}
+  header{display:flex;align-items:baseline;gap:.75rem;flex-wrap:wrap;margin-bottom:1rem}
+  h1{margin:0;font-size:1.6rem;letter-spacing:-.02em}
+  h1 span{color:var(--brand)}
+  .sub{color:var(--muted);font-size:.88rem;margin:0}
+  .search-row{display:flex;gap:.5rem;margin:1rem 0 .4rem}
+  input[type="text"],input[type="number"],select{
+    background:var(--panel-2);border:1px solid var(--line);border-radius:8px;
+    color:var(--text);padding:.65rem .8rem;font-size:.95rem;outline:none;
+  }
+  input[type="text"]:focus,input[type="number"]:focus,select:focus{border-color:var(--brand)}
+  #searchInput{flex:1}
+  button{
+    background:var(--brand);color:#fff;border:0;border-radius:8px;
+    padding:.6rem 1rem;font-weight:600;cursor:pointer;font-size:.9rem;
+  }
+  button:hover{filter:brightness(1.08)}
+  button.ghost{background:transparent;border:1px solid var(--line);color:var(--text)}
+  button.ghost:hover{background:var(--panel-2)}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  #sectionTitle{color:var(--muted);font-size:.92rem;margin:.75rem 0 .6rem}
+  .results{display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:.85rem}
+  .card{
+    background:var(--panel);border:1px solid transparent;border-radius:var(--radius);
+    overflow:hidden;cursor:pointer;transition:transform .14s ease,border-color .14s ease;
+  }
+  .card:hover{transform:translateY(-3px);border-color:var(--brand)}
+  .card.active{border-color:var(--brand);box-shadow:0 0 0 1px var(--brand) inset}
+  .poster-wrap{position:relative;aspect-ratio:2/3;background:linear-gradient(160deg,#23232f,#15151d)}
+  .poster-fallback{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:.6rem;text-align:center;font-size:.8rem;color:var(--muted)}
+  .poster-wrap img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
+  .card .info{padding:.5rem .55rem}
+  .card .title{font-weight:600;font-size:.82rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .card .meta{color:var(--muted);font-size:.72rem;margin-top:.15rem}
+  .badge-type{position:absolute;top:.4rem;left:.4rem;background:rgba(0,0,0,.72);color:#fff;font-size:.62rem;font-weight:700;padding:.15rem .4rem;border-radius:4px;text-transform:uppercase;letter-spacing:.04em}
+
+  .player-section{
+    margin-top:1.5rem;background:var(--panel);border:1px solid var(--line);
+    border-radius:var(--radius);padding:1rem;
+  }
+  .player-header{display:flex;justify-content:space-between;gap:.75rem;flex-wrap:wrap;align-items:flex-start;margin-bottom:.8rem}
+  #playerTitle{font-size:1.1rem;font-weight:700}
+  #playerMeta{color:var(--muted);font-size:.82rem;margin-top:.15rem}
+  .controls{display:flex;gap:.45rem;align-items:center;flex-wrap:wrap;font-size:.82rem;color:var(--muted)}
+  .controls label{display:flex;align-items:center;gap:.35rem}
+  .controls input[type="number"]{width:72px;padding:.4rem .5rem}
+  .controls select{padding:.4rem .5rem}
+  .tv-controls{display:flex;gap:.4rem;align-items:center}
+  .video-wrap{position:relative;border-radius:10px;overflow:hidden;background:#000}
+  video{display:block;width:100%;aspect-ratio:16/9;background:#000}
+  .overlay{
+    position:absolute;inset:0;display:flex;flex-direction:column;gap:.75rem;
+    align-items:center;justify-content:center;text-align:center;
+    background:rgba(0,0,0,.62);backdrop-filter:blur(2px);
+    padding:1rem;pointer-events:none;z-index:2;
+  }
+  .overlay[hidden]{display:none}
+  .overlay .msg{max-width:520px;font-size:.92rem;line-height:1.4}
+  .overlay button{pointer-events:auto}
+  .spinner{
+    width:38px;height:38px;border-radius:50%;
+    border:3px solid rgba(255,255,255,.18);border-top-color:var(--brand);
+    animation:spin .8s linear infinite;
+  }
+  .spinner[hidden]{display:none}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  .status{display:flex;gap:.5rem;align-items:flex-start;margin-top:.7rem;font-size:.82rem;color:var(--muted);line-height:1.45}
+  .badge{flex:0 0 auto;padding:.15rem .5rem;border-radius:5px;font-size:.66rem;font-weight:800;letter-spacing:.05em;margin-top:.05rem}
+  .badge.working{background:var(--warn);color:#241a00}
+  .badge.ok{background:var(--ok);color:#04220f}
+  .badge.warn{background:var(--warn);color:#241a00}
+  .badge.error{background:var(--err);color:#2a0000}
+  .empty{color:var(--muted);padding:1rem 0}
+  .toast{
+    position:fixed;left:50%;bottom:1.2rem;transform:translateX(-50%);
+    background:#211f2e;border:1px solid var(--line);border-left:3px solid var(--err);
+    color:var(--text);padding:.7rem 1rem;border-radius:8px;font-size:.85rem;
+    box-shadow:0 10px 30px rgba(0,0,0,.5);z-index:50;max-width:90vw;
+  }
+  .toast[hidden]{display:none}
+  .server-notice{
+    display:flex;align-items:center;gap:.55rem;margin:.7rem 0 0;
+    padding:.55rem .8rem;border-radius:8px;font-size:.82rem;line-height:1.35;
+    border:1px solid var(--line);background:var(--panel-2);color:var(--muted);
+  }
+  .server-notice[hidden]{display:none}
+  .server-notice .dot{width:9px;height:9px;border-radius:50%;background:var(--muted);flex:0 0 auto}
+  .server-notice.checking .dot,.server-notice.waking .dot{background:var(--warn);animation:pulse 1.1s ease-in-out infinite}
+  .server-notice.ok .dot{background:var(--ok)}
+  .server-notice.warn .dot{background:var(--warn)}
+  .server-notice.error .dot{background:var(--err)}
+  .server-notice.error{color:#ffd0d0;border-color:rgba(255,92,92,.45)}
+  .server-notice.warn{color:#ffe0a8;border-color:rgba(255,176,32,.4)}
+  .link-btn{
+    background:none;border:0;color:var(--brand);font-weight:700;cursor:pointer;
+    padding:0;font-size:.82rem;text-decoration:underline;
+  }
+  @keyframes pulse{0%,100%{opacity:.25}50%{opacity:1}}
+  .deploy-hint{
+    margin:1.6rem auto 0;padding-top:.9rem;border-top:1px solid var(--line);
+    color:var(--muted);font-size:.75rem;line-height:1.55;text-align:center;max-width:760px;
+  }
+  .deploy-hint[hidden]{display:none}
+  @media (max-width:640px){
+    .results{grid-template-columns:repeat(auto-fill,minmax(110px,1fr))}
+    .controls{gap:.35rem}
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>🎬 fds<span>Flix</span></h1>
+    <p class="sub">Busca no TMDB · player sem anúncios · legendas em português</p>
+  </header>
+
+  <div class="search-row">
+    <input id="searchInput" type="text" placeholder="Buscar filme ou série…" autocomplete="off" spellcheck="false">
+    <button id="clearBtn" class="ghost" type="button">Limpar</button>
+  </div>
+
+  <div id="serverNotice" class="server-notice" hidden>
+    <span class="dot"></span>
+    <span id="noticeText"></span>
+    <button id="noticeRetry" class="link-btn" type="button" hidden>Tentar de novo</button>
+  </div>
+
+  <div id="sectionTitle">Populares</div>
+  <div id="results" class="results"></div>
+
+  <section id="playerSection" class="player-section" hidden>
+    <div class="player-header">
+      <div>
+        <div id="playerTitle"></div>
+        <div id="playerMeta"></div>
+      </div>
+      <div class="controls">
+        <span id="tvControls" class="tv-controls" hidden>
+          <label>T <input id="seasonInput" type="number" min="1" value="1"></label>
+          <label>E <input id="episodeInput" type="number" min="1" value="1"></label>
+        </span>
+        <label>Qualidade
+          <select id="qualitySelect">
+            <option value="">Auto</option>
+            <option value="1080">1080p</option>
+            <option value="720">720p</option>
+            <option value="480">480p</option>
+            <option value="360">360p</option>
+          </select>
+        </label>
+        <label>Início (min)
+          <input id="startInput" type="number" min="0" step="0.5" value="0">
+        </label>
+        <button id="reloadBtn" class="ghost" type="button">Recarregar</button>
+        <button id="closeBtn" class="ghost" type="button">Fechar</button>
+      </div>
+    </div>
+
+    <div class="video-wrap">
+      <video id="nativePlayer" controls playsinline preload="metadata" crossorigin="anonymous"></video>
+      <div id="overlay" class="overlay">
+        <div id="spinner" class="spinner"></div>
+        <div id="overlayText" class="msg">Carregando…</div>
+        <button id="overlayRetry" class="ghost" type="button" hidden>Tentar de novo</button>
+      </div>
+    </div>
+
+    <div id="playerStatus" class="status">
+      <span id="statusBadge" class="badge working">PREPARANDO</span>
+      <span id="statusText">Selecione um título…</span>
+    </div>
+  </section>
+
+  <p id="deployHint" class="deploy-hint" hidden>
+    Backend no Render (plano gratuito): o primeiro acesso do dia pode levar até ~1 minuto
+    para a máquina acordar. O aviso acima mostra o progresso.
+  </p>
+</div>
+
+<div id="toast" class="toast" hidden></div>
+
+<script src="/config.js"></script>
+<script src="/vendor/hls.min.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  var FALLBACK_POPULAR = [
+    { id: 27205, title: 'A Origem', year: '2010', type: 'movie', poster: '/9gk7adHYeDvHkCSEqAvQNLV5Uge.jpg' },
+    { id: 155, title: 'Batman: O Cavaleiro das Trevas', year: '2008', type: 'movie', poster: '/qJ2tW6WMUDux911r6m7haRef0WH.jpg' },
+    { id: 157336, title: 'Interestelar', year: '2014', type: 'movie', poster: '/gEU2QniE6E77NI6lCU6MxlNBvIx.jpg' },
+    { id: 603, title: 'Matrix', year: '1999', type: 'movie', poster: '/f89U3ADr1oiB1s9GkdPOEpXUk5H.jpg' },
+    { id: 550, title: 'Clube da Luta', year: '1999', type: 'movie', poster: '/pB8BM7pdSp6B6Ih7QZ4DrQ3PmJK.jpg' },
+    { id: 238, title: 'O Poderoso Chefão', year: '1972', type: 'movie', poster: '/3bhkrj58Vtu7enYsRolD1fZdja1.jpg' },
+    { id: 1396, title: 'Breaking Bad', year: '2008', type: 'tv', poster: '/ggFHVNu6YYI5L9pCfOacjizRGt.jpg' },
+    { id: 1399, title: 'Game of Thrones', year: '2011', type: 'tv', poster: '/1XS1oqL89opfnbLl8WnZY1O1uJx.jpg' },
+    { id: 66732, title: 'Stranger Things', year: '2016', type: 'tv', poster: '/49WJfeN0moxb9IPfGn8AIqMGskD.jpg' },
+    { id: 100088, title: 'The Last of Us', year: '2023', type: 'tv', poster: '' }
+  ];
+
+  var $ = function (id) { return document.getElementById(id); };
+
+  // Permite rodar o frontend na Vercel e o backend (Node + ffmpeg) em outro host.
+  var CONFIG = window.__FDSFLIX_CONFIG__ || {};
+  var API_BASE = String(CONFIG.apiBase || '').replace(/\/+$/, '');
+
+  function apiUrl(path) {
+    if (!path) return path;
+    if (/^https?:\/\//i.test(path)) return path;
+    if (!API_BASE) return path;
+    return API_BASE + (path.charAt(0) === '/' ? path : '/' + path);
+  }
+
+  // fetch com a API key opcional (header x-api-key).
+  function apiFetch(path, options) {
+    var opts = options || {};
+    var headers = Object.assign({}, opts.headers || {});
+    if (CONFIG.apiKey) headers['x-api-key'] = CONFIG.apiKey;
+    opts.headers = headers;
+    return fetch(apiUrl(path), opts);
+  }
+
+  var state = {
+    items: [],
+    selected: null,
+    hls: null,
+    sessionId: null,
+    controller: null,
+    playToken: 0,
+    hevc: detectHevc(),
+    forceTranscode: false,
+    lastMode: null,
+    pendingSeek: 0
+  };
+
+  /* ---------------------------------------------------------------- */
+  /* Utilidades                                                        */
+  /* ---------------------------------------------------------------- */
+
+  function escapeHtml(value) {
+    return String(value == null ? '' : value).replace(/[&<>"']/g, function (char) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char];
+    });
+  }
+
+  function detectHevc() {
+    try {
+      var video = document.createElement('video');
+      var types = [
+        'video/mp4; codecs="hvc1.1.6.L93.B0"',
+        'video/mp4; codecs="hev1.1.6.L93.B0"'
+      ];
+      for (var i = 0; i < types.length; i++) {
+        if (video.canPlayType(types[i]) === 'probably') return true;
+        if (window.MediaSource && MediaSource.isTypeSupported(types[i])) return true;
+      }
+      return false;
+    } catch (err) {
+      return false;
+    }
+  }
+
+  function toast(message) {
+    var el = $('toast');
+    el.textContent = message;
+    el.hidden = false;
+    clearTimeout(toast._timer);
+    toast._timer = setTimeout(function () { el.hidden = true; }, 6000);
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Aviso de cold start (Render gratuito)                            */
+  /* ---------------------------------------------------------------- */
+
+  function setNotice(kind, text, showRetry) {
+    var notice = $('serverNotice');
+    notice.hidden = false;
+    notice.className = 'server-notice ' + kind;
+    $('noticeText').textContent = text;
+    $('noticeRetry').hidden = !showRetry;
+  }
+
+  function wakeServer() {
+    var notice = $('serverNotice');
+
+    if (!API_BASE) {
+      notice.hidden = true;
+      return;
+    }
+
+    var settled = false;
+    var slowTimer = setTimeout(function () {
+      if (settled) return;
+      setNotice(
+        'waking',
+        'Acordando o servidor do Render… no plano gratuito isso pode levar até ~1 minuto.',
+        false
+      );
+    }, 2500);
+
+    setNotice('checking', 'Conectando ao servidor…', false);
+
+    apiFetch('/api/health', { cache: 'no-store' })
+      .then(function (response) {
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        return response.json();
+      })
+      .then(function (data) {
+        settled = true;
+        clearTimeout(slowTimer);
+        if (!data.ffmpeg) {
+          setNotice('warn', 'Servidor online, mas sem ffmpeg: vídeos HEVC não serão convertidos.', false);
+          return;
+        }
+        setNotice('ok', 'Servidor online e pronto.', false);
+        setTimeout(function () {
+          if (!notice.className.includes('ok')) return;
+          notice.hidden = true;
+        }, 3000);
+      })
+      .catch(function () {
+        settled = true;
+        clearTimeout(slowTimer);
+        setNotice(
+          'error',
+          'Servidor não respondeu ainda. No Render gratuito ele pode estar acordando: aguarde ~1 min e tente de novo.',
+          true
+        );
+      });
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Catálogo                                                          */
+  /* ---------------------------------------------------------------- */
+
+  function renderCards(items, title) {
+    state.items = items || [];
+    $('sectionTitle').textContent = title || '';
+
+    var box = $('results');
+    if (!state.items.length) {
+      box.innerHTML = '<p class="empty">Nenhum resultado encontrado.</p>';
+      return;
+    }
+
+    var html = '';
+    for (var i = 0; i < state.items.length; i++) {
+      var item = state.items[i];
+      var poster = item.poster ? 'https://image.tmdb.org/t/p/w342' + item.poster : '';
+      var img = poster
+        ? '<img src="' + escapeHtml(poster) + '" alt="" loading="lazy" onerror="this.remove()">'
+        : '';
+      var active = state.selected && state.selected.id === item.id && state.selected.type === item.type;
+
+      html +=
+        '<div class="card' + (active ? ' active' : '') + '" data-index="' + i + '" title="' + escapeHtml(item.title) + '">' +
+          '<div class="poster-wrap">' +
+            '<div class="poster-fallback">' + escapeHtml(item.title) + '</div>' +
+            '<span class="badge-type">' + (item.type === 'tv' ? 'Série' : 'Filme') + '</span>' +
+            img +
+          '</div>' +
+          '<div class="info">' +
+            '<div class="title">' + escapeHtml(item.title) + '</div>' +
+            '<div class="meta">' + escapeHtml(item.year || '') + (item.year ? ' · ' : '') + (item.type === 'tv' ? 'Série' : 'Filme') + '</div>' +
+          '</div>' +
+        '</div>';
+    }
+    box.innerHTML = html;
+  }
+
+  function loadPopular() {
+    renderCards(FALLBACK_POPULAR, 'Populares');
+
+    apiFetch('/api/popular')
+      .then(function (response) { return response.ok ? response.json() : null; })
+      .then(function (data) {
+        if (data && Array.isArray(data.results) && data.results.length) {
+          renderCards(data.results, 'Populares');
+        }
+      })
+      .catch(function () { /* mantém o fallback */ });
+  }
+
+  var searchTimer = null;
+
+  function onSearchInput() {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(runSearch, 350);
+  }
+
+  function runSearch() {
+    var query = $('searchInput').value.trim();
+    if (!query) {
+      renderCards(FALLBACK_POPULAR, 'Populares');
+      loadPopular();
+      return;
+    }
+
+    $('sectionTitle').textContent = 'Buscando “' + query + '”…';
+
+    apiFetch('/api/search?q=' + encodeURIComponent(query))
+      .then(function (response) {
+        return response.json().then(function (data) {
+          if (!response.ok) throw new Error(data.error || 'Falha na busca');
+          return data;
+        });
+      })
+      .then(function (data) {
+        var items = (data.results || []).map(function (item) {
+          return {
+            id: item.id,
+            title: item.title,
+            year: item.year,
+            type: item.type,
+            poster: item.poster || ''
+          };
+        });
+        renderCards(items, 'Resultados (' + items.length + ')');
+      })
+      .catch(function (err) {
+        $('results').innerHTML = '<p class="empty">Erro na busca: ' + escapeHtml(err.message) + '</p>';
+      });
+  }
+
+  function clearSearch() {
+    $('searchInput').value = '';
+    loadPopular();
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Player                                                            */
+  /* ---------------------------------------------------------------- */
+
+  function showOverlay(text, showSpinner) {
+    $('overlay').hidden = false;
+    $('overlayText').textContent = text || '';
+    $('spinner').hidden = !showSpinner;
+  }
+
+  function hideOverlay() {
+    $('overlay').hidden = true;
+  }
+
+  function setStatus(kind, text) {
+    var badge = $('statusBadge');
+    var labels = { working: 'PREPARANDO', ok: 'PRONTO', warn: 'ATENÇÃO', error: 'ERRO' };
+    badge.className = 'badge ' + kind;
+    badge.textContent = labels[kind] || 'INFO';
+    $('statusText').textContent = text || '';
+  }
+
+  function fail(message) {
+    hideOverlay();
+    setStatus('error', message);
+  }
+
+  function beaconStop(sessionId) {
+    if (!sessionId) return;
+    try {
+      navigator.sendBeacon(apiUrl('/api/stream/stop?sid=' + encodeURIComponent(sessionId)));
+    } catch (err) { /* ignore */ }
+  }
+
+  function stopPlayback() {
+    if (state.controller) {
+      try { state.controller.abort(); } catch (err) { /* ignore */ }
+      state.controller = null;
+    }
+    if (state.hls) {
+      try { state.hls.destroy(); } catch (err) { /* ignore */ }
+      state.hls = null;
+    }
+    beaconStop(state.sessionId);
+    state.sessionId = null;
+  }
+
+  function resetVideo() {
+    var video = $('nativePlayer');
+    try { video.pause(); } catch (err) { /* ignore */ }
+    video.removeAttribute('src');
+    video.load();
+    Array.prototype.slice.call(video.querySelectorAll('track')).forEach(function (track) {
+      track.remove();
+    });
+    state.pendingSeek = 0;
+  }
+
+  function addCaptions(captions) {
+    var video = $('nativePlayer');
+    (captions || []).forEach(function (caption) {
+      if (!caption || !caption.url) return;
+      var track = document.createElement('track');
+      track.kind = 'subtitles';
+      track.label = caption.label || 'Legenda';
+      track.srclang = caption.srclang || 'und';
+      track.src = apiUrl(caption.url);
+      if (caption.default) track.default = true;
+      video.appendChild(track);
+    });
+  }
+
+  function attachHls(url, video) {
+    if (!window.Hls || !Hls.isSupported()) {
+      if (video.canPlayType('application/vnd.apple.mpegurl')) {
+        video.src = url;
+        return;
+      }
+      throw new Error('Este navegador não tem suporte a HLS.');
+    }
+
+    var hls = new Hls({
+      startPosition: 0,
+      enableWorker: true,
+      lowLatencyMode: false,
+      maxBufferLength: 30,
+      maxMaxBufferLength: 60,
+      backBufferLength: 90,
+      manifestLoadingMaxRetry: 8,
+      levelLoadingMaxRetry: 8,
+      fragLoadingMaxRetry: 8,
+      fragLoadingRetryDelay: 800
+    });
+    state.hls = hls;
+
+    var fatalCount = 0;
+
+    hls.on(Hls.Events.ERROR, function (event, data) {
+      if (!data || !data.fatal) return;
+      fatalCount += 1;
+      console.warn('[hls]', data.type, data.details);
+
+      if (fatalCount > 4) {
+        fail('A conversão falhou (' + data.details + '). Tente recarregar ou escolher outra qualidade.');
+        return;
+      }
+      if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+        setStatus('warn', 'Reconectando ao servidor de vídeo…');
+        hls.startLoad();
+      } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+        setStatus('warn', 'Recuperando o decodificador…');
+        hls.recoverMediaError();
+      } else {
+        fail('Falha na reprodução (' + data.details + ').');
+      }
+    });
+
+    hls.on(Hls.Events.MANIFEST_PARSED, function () {
+      var videoEl = $('nativePlayer');
+      videoEl.play().catch(function () {
+        hideOverlay();
+        setStatus('warn', 'O navegador bloqueou o autoplay — clique no ▶ do vídeo.');
+      });
+    });
+
+    hls.loadSource(url);
+    hls.attachMedia(video);
+  }
+
+  function renderPlayer() {
+    var item = state.selected;
+    if (!item) return;
+
+    stopPlayback();
+    resetVideo();
+
+    var season = Math.max(1, Number($('seasonInput').value) || 1);
+    var episode = Math.max(1, Number($('episodeInput').value) || 1);
+    var quality = $('qualitySelect').value;
+    var startSeconds = Math.max(0, Math.round((Number($('startInput').value) || 0) * 60));
+
+    var params = new URLSearchParams();
+    params.set('id', String(item.id));
+    params.set('type', item.type);
+    params.set('s', String(season));
+    params.set('e', String(episode));
+    params.set('hevc', state.hevc && !state.forceTranscode ? '1' : '0');
+    params.set('start', String(startSeconds));
+    if (quality) params.set('res', quality);
+
+    state.pendingSeek = startSeconds;
+    showOverlay('Extraindo o stream…', true);
+    setStatus('working', 'Pedindo o vídeo ao servidor…');
+
+    var controller = new AbortController();
+    state.controller = controller;
+    var playToken = ++state.playToken;
+
+    // Se o backend estiver dormindo (Render free), avisa em vez de parecer travado.
+    var slowTimer = setTimeout(function () {
+      if (playToken !== state.playToken) return;
+      showOverlay('Acordando o servidor… no Render gratuito isso pode levar até ~1 minuto.', true);
+      setStatus('working', 'Acordando o servidor (Render gratuito)…');
+    }, 6000);
+
+    apiFetch('/api/stream?' + params.toString(), { signal: controller.signal })
+      .then(function (response) {
+        return response.json().catch(function () { return {}; }).then(function (data) {
+          if (!response.ok || !data.url) {
+            throw new Error(data.error || 'O servidor não retornou um vídeo.');
+          }
+          return data;
+        });
+      })
+      .then(function (data) {
+        clearTimeout(slowTimer);
+        if (playToken !== state.playToken) return;
+
+        state.sessionId = data.sessionId || null;
+        state.lastMode = data.mode;
+        addCaptions(data.captions);
+
+        var video = $('nativePlayer');
+
+        if (data.mode === 'hls') {
+          showOverlay('Convertendo para H.264…', true);
+          attachHls(apiUrl(data.url), video);
+        } else if (data.mode === 'direct') {
+          video.src = apiUrl(data.url);
+          video.play().catch(function () {
+            hideOverlay();
+            setStatus('warn', 'O navegador bloqueou o autoplay — clique no ▶ do vídeo.');
+          });
+        } else {
+          throw new Error('Modo de reprodução desconhecido.');
+        }
+
+        var details = [];
+        details.push('Fonte: ' + (data.provider || 'desconhecida'));
+        details.push(data.transcoded ? ('convertido para ' + data.quality + 'p') : ('qualidade ' + data.quality + 'p'));
+        if (data.note) details.push(data.note);
+        setStatus('ok', details.join(' · '));
+      })
+      .catch(function (err) {
+        clearTimeout(slowTimer);
+        if (err && err.name === 'AbortError') return;
+        if (playToken !== state.playToken) return;
+        fail(err.message || 'Erro ao preparar o vídeo.');
+      });
+  }
+
+  function selectItem(index) {
+    var item = state.items[index];
+    if (!item) return;
+
+    state.selected = item;
+    $('playerTitle').textContent = item.title;
+    $('playerMeta').textContent =
+      (item.year ? item.year + ' · ' : '') + (item.type === 'tv' ? 'Série' : 'Filme');
+
+    $('tvControls').hidden = item.type !== 'tv';
+    if (item.type === 'tv') {
+      $('seasonInput').value = 1;
+      $('episodeInput').value = 1;
+    }
+    $('startInput').value = 0;
+    $('playerSection').hidden = false;
+
+    Array.prototype.slice.call(document.querySelectorAll('.card')).forEach(function (card) {
+      card.classList.toggle('active', Number(card.dataset.index) === index);
+    });
+
+    $('playerSection').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    renderPlayer();
+  }
+
+  function closePlayer() {
+    stopPlayback();
+    resetVideo();
+    state.selected = null;
+    $('playerSection').hidden = true;
+    Array.prototype.slice.call(document.querySelectorAll('.card')).forEach(function (card) {
+      card.classList.remove('active');
+    });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Eventos                                                           */
+  /* ---------------------------------------------------------------- */
+
+  $('results').addEventListener('click', function (event) {
+    var card = event.target.closest ? event.target.closest('.card') : null;
+    if (!card) return;
+    selectItem(Number(card.dataset.index));
+  });
+
+  $('searchInput').addEventListener('input', onSearchInput);
+  $('searchInput').addEventListener('keydown', function (event) {
+    if (event.key === 'Enter') {
+      clearTimeout(searchTimer);
+      runSearch();
+    }
+  });
+
+  $('clearBtn').addEventListener('click', clearSearch);
+  $('reloadBtn').addEventListener('click', renderPlayer);
+  $('closeBtn').addEventListener('click', closePlayer);
+
+  $('qualitySelect').addEventListener('change', function () {
+    var video = $('nativePlayer');
+    if (state.selected && video.currentTime > 5) {
+      $('startInput').value = (video.currentTime / 60).toFixed(1);
+    }
+    if (state.selected) renderPlayer();
+  });
+
+  ['seasonInput', 'episodeInput', 'startInput'].forEach(function (id) {
+    $(id).addEventListener('change', function () {
+      if (state.selected) renderPlayer();
+    });
+  });
+
+  var video = $('nativePlayer');
+
+  var directCheckTimer = null;
+
+  // Alguns navegadores dizem não suportar HEVC, mas "tocam" assim mesmo:
+  // avançam o tempo e reproduzem só o áudio, sem decodificar nenhum frame
+  // (videoWidth fica 0) e sem disparar erro. Nesse caso força a conversão.
+  function checkDirectDecoding() {
+    clearTimeout(directCheckTimer);
+    if (state.lastMode !== 'direct' || state.forceTranscode) return;
+
+    directCheckTimer = setTimeout(function () {
+      var v = $('nativePlayer');
+      if (state.lastMode !== 'direct' || state.forceTranscode) return;
+      if (v.currentTime > 0.3 && (v.videoWidth === 0 || v.videoHeight === 0)) {
+        state.forceTranscode = true;
+        toast('O navegador não decodificou a imagem do vídeo original. Convertendo para H.264…');
+        renderPlayer();
+      }
+    }, 3000);
+  }
+
+  video.addEventListener('playing', function () {
+    hideOverlay();
+    checkDirectDecoding();
+  });
+
+  video.addEventListener('waiting', function () {
+    if (state.selected) showOverlay('Armazenando buffer…', true);
+  });
+
+  video.addEventListener('loadedmetadata', function () {
+    if (state.selected && state.pendingSeek > 0 && !state.hls) {
+      try { video.currentTime = state.pendingSeek; } catch (err) { /* ignore */ }
+    }
+    state.pendingSeek = 0;
+  });
+
+  video.addEventListener('error', function () {
+    if (!state.selected) return;
+    var error = video.error;
+    if (!error) return;
+    var messages = {
+      1: 'Carregamento interrompido.',
+      2: 'Erro de rede ao carregar o vídeo.',
+      3: 'Falha ao decodificar o vídeo (codec não suportado).',
+      4: 'Formato de vídeo não suportado.'
+    };
+
+    // Rede de segurança: o navegador disse que suportava HEVC mas não decodificou.
+    // Refaz o pedido forçando a transcodificação para H.264.
+    if ((error.code === 3 || error.code === 4) && state.lastMode === 'direct' && !state.forceTranscode) {
+      state.forceTranscode = true;
+      toast('O navegador não decodificou o vídeo original. Convertendo para H.264…');
+      renderPlayer();
+      return;
+    }
+
+    fail(messages[error.code] || 'Erro desconhecido ao reproduzir o vídeo.');
+  });
+
+  $('overlayRetry').addEventListener('click', function () {
+    if (state.selected) renderPlayer();
+  });
+
+  window.addEventListener('beforeunload', function () {
+    beaconStop(state.sessionId);
+  });
+
+  /* ---------------------------------------------------------------- */
+  /* Inicialização                                                     */
+  /* ---------------------------------------------------------------- */
+
+  loadPopular();
+
+  if (API_BASE) {
+    $('deployHint').hidden = false;
+    wakeServer();
+  }
+
+  $('noticeRetry').addEventListener('click', wakeServer);
+
+  apiFetch('/api/config')
+    .then(function (response) { return response.ok ? response.json() : null; })
+    .then(function (config) {
+      if (config && config.ffmpeg === false) {
+        toast('ffmpeg não encontrado no servidor: vídeos HEVC não poderão ser convertidos.');
+      }
+    })
+    .catch(function () { /* ignore */ });
+})();
+</script>
+</body>
+</html>

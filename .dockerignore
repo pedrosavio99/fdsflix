@@ -1,0 +1,14 @@
+node_modules
+npm-debug.log
+.env
+.env.*
+!.env.example
+.tmp-hls
+.scratch
+.legacy
+.npm-cache
+.npm-logs
+.git
+.gitignore
+docs
+Dockerfile

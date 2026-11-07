@@ -1,0 +1,31 @@
+# Blueprint do Render para o backend do fdsFlix.
+# No Render: New → Blueprint → conecte o repositório. Ele lê este arquivo.
+#
+# As duas chaves (sync: false) são pedidas no momento do deploy.
+# O restante já vai pronto. A URL pública do serviço é detectada pelo
+# RENDER_EXTERNAL_URL, então não precisa preencher PUBLIC_BASE_URL.
+
+services:
+  - type: web
+    name: fdsflix
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: TMDB_API_KEY
+        sync: false
+      - key: VIDLINK_KEY_HEX
+        sync: false
+      - key: VIDLINK_API_URL
+        value: https://vidlink.pro/api/b
+      # Render Free tem só 0.1 CPU: 360p + 1 sessão é o que dá para tentar.
+      # Se subir para Starter/Standard, aumente para 480/720.
+      - key: MAX_TRANSCODE_HEIGHT
+        value: "360"
+      - key: MAX_SESSIONS
+        value: "1"

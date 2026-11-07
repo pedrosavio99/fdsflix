@@ -1,0 +1,13 @@
+# Exemplo de Caddyfile para o backend na Oracle Cloud.
+# Troque pelo seu domínio (DuckDNS ou próprio).
+#
+#   sudo cp deploy/Caddyfile.example /etc/caddy/Caddyfile
+#   sudo sed -i 's/fdsflix.duckdns.org/SEU-DOMINIO/' /etc/caddy/Caddyfile
+#   sudo systemctl reload caddy
+
+fdsflix.duckdns.org {
+	reverse_proxy 127.0.0.1:3000
+	header {
+		-Server
+	}
+}
