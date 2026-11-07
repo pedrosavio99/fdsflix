@@ -171,3 +171,18 @@ video.appendChild(track);
   plano com pelo menos 1 CPU ou outro host (Railway/Fly/VPS).
 - **Abuso:** esta API faz proxy de vídeo e inicia ffmpeg. Se for divulgar,
   defina `API_KEY` e/ou coloque um rate limit na frente (Cloudflare, etc.).
+
+## Ajuste de sincronia da legenda
+
+A URL devolvida em `captions[].url` já inclui o deslocamento automático quando
+`start` é usado (o vídeo começa em 0, mas a legenda é do arquivo original).
+
+Para ajuste manual, acrescente `&shift=` em segundos (positivo = legenda mais
+tarde, negativo = mais cedo):
+
+```bash
+curl "https://fdsflix.onrender.com/api/subtitle?t=TOKEN&shift=1.5"
+```
+
+O player faz isso pela barra **Sincronia da legenda** e salva o valor por título
+no `localStorage`. O ajuste vale para todas as línguas daquele título.

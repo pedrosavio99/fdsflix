@@ -17,7 +17,7 @@ const {
   shutdown
 } = require('./lib/transcoder');
 const { proxyVideo, USER_AGENT, TOKEN_TTL_MS } = require('./lib/proxy');
-const { srtToVtt } = require('./lib/subtitles');
+const { srtToVtt, shiftVtt } = require('./lib/subtitles');
 const registry = require('./lib/registry');
 
 const app = express();
@@ -177,9 +177,9 @@ function pickQualityKeyAtMost(qualities, limit) {
   return available[available.length - 1].key;
 }
 
-function buildCaptions(rawCaptions) {
+function buildCaptions(rawCaptions, autoShift = 0) {
   const captions = (Array.isArray(rawCaptions) ? rawCaptions : []).map((caption) => {
-    const token = registry.register('subtitle', { url: caption.url }, TOKEN_TTL_MS);
+    const token = registry.register('subtitle', { url: caption.url, autoShift }, TOKEN_TTL_MS);
     return {
       label: caption.language || 'Legenda',
       srclang: normalizeLang(caption.language),
@@ -432,7 +432,11 @@ app.get('/api/stream', requireApiKey, async (req, res) => {
       TOKEN_TTL_MS
     );
 
-    const captions = buildCaptions(info.captions).map((caption) => ({
+    // No modo HLS o ffmpeg começa em `startAt` e o player rebobina a linha do
+    // tempo para 0; então as legendas precisam voltar `startAt` segundos.
+    // No modo direct o vídeo é o arquivo original (o cliente só faz seek),
+    // logo a legenda já está alinhada.
+    const captions = buildCaptions(info.captions, transcode ? -startAt : 0).map((caption) => ({
       ...caption,
       url: absoluteUrl(req, caption.url)
     }));
@@ -509,30 +513,40 @@ app.get('/api/subtitle', async (req, res) => {
   const entry = registry.resolve('subtitle', String(req.query.t || ''));
   if (!entry) return res.status(404).json({ error: 'Legenda expirada. Recarregue o player.' });
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 15000);
-
   try {
-    const response = await fetch(entry.url, {
-      signal: controller.signal,
-      headers: { 'User-Agent': USER_AGENT }
-    });
+    // Baixa/converte uma vez e reaproveita: trocar o atraso não refaz o download.
+    if (!entry.vtt) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 15000);
+      try {
+        const response = await fetch(entry.url, {
+          signal: controller.signal,
+          headers: { 'User-Agent': USER_AGENT }
+        });
 
-    if (!response.ok) {
-      return res.status(502).json({ error: `Falha ao baixar legenda (HTTP ${response.status})` });
+        if (!response.ok) {
+          return res.status(502).json({ error: `Falha ao baixar legenda (HTTP ${response.status})` });
+        }
+
+        const text = await response.text();
+        entry.vtt = /^\s*\uFEFF?WEBVTT/.test(text) ? text : srtToVtt(text);
+      } finally {
+        clearTimeout(timer);
+      }
     }
 
-    const text = await response.text();
-    const vtt = /^\s*\uFEFF?WEBVTT/.test(text) ? text : srtToVtt(text);
+    // autoShift compensa o "Início (min)"; shift é o ajuste manual do usuário.
+    const autoShift = Number(entry.autoShift) || 0;
+    const manual = Math.max(-600, Math.min(600, Number(req.query.shift) || 0));
+    const total = autoShift + manual;
+    const body = Math.abs(total) > 0.001 ? shiftVtt(entry.vtt, total) : entry.vtt;
 
     res.setHeader('Content-Type', 'text/vtt; charset=utf-8');
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Cache-Control', 'public, max-age=3600');
-    res.send(vtt);
+    res.send(body);
   } catch (err) {
     res.status(502).json({ error: 'Falha ao baixar legenda: ' + err.message });
-  } finally {
-    clearTimeout(timer);
   }
 });
 

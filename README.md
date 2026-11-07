@@ -55,7 +55,7 @@ detecta e refaz o pedido forçando a transcodificação para H.264.
 | `GET /api/search?q=` | Busca no TMDB |
 | `GET /api/stream?id=&type=&s=&e=&res=&start=&hevc=` | Escolhe stream direto ou HLS transcodificado, legendas e sessão |
 | `GET /api/proxy?t=` | Proxy do arquivo de vídeo (Range/206) |
-| `GET /api/subtitle?t=` | Legenda convertida para WebVTT |
+| `GET /api/subtitle?t=&shift=` | Legenda em WebVTT (`shift` em segundos, opcional) |
 | `GET /hls/:id/index.m3u8` | Playlist HLS gerada pelo ffmpeg |
 | `GET /api/health` | Status do servidor, ffmpeg e sessões ativas |
 
@@ -110,6 +110,17 @@ docs/DEPLOY-RENDER.md  Guia do Render + Vercel (passo a passo)
   caem após 5 minutos.
 - O campo **Início (min)** reinicia a conversão a partir do minuto informado —
   útil para conferir uma cena sem esperar o filme inteiro.
+
+## Legendas
+
+- **Automático:** ao usar o campo **Início (min)**, o backend desloca a legenda
+  em `-start` segundos. Antes ela ficava exatamente o tempo do salto fora de
+  sincronia (ex.: começar em 10 min deixava a legenda 600 s adiantada).
+- **Manual:** abaixo do player há a barra **Sincronia da legenda**
+  (`−0,5s` / `+0,5s` / campo livre / `0`). Valores positivos atrasam a legenda.
+  O ajuste é salvo por título no `localStorage` e sobrevive a recarregar a página.
+- O deslocamento é aplicado no servidor (`/api/subtitle?t=TOKEN&shift=1.5`), sem
+  reiniciar o vídeo nem recarregar o stream.
 
 ## API pública (usar em outros projetos)
 
