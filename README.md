@@ -68,6 +68,19 @@ O fdsFlix utiliza uma **cascata de fallback inteligente**: ao buscar um título,
 
 Se a cascata direta não encontra o título, o player mostra uma barra com serviços de embed (Vidsrc, Vidsrc.cc, VidLink, VidFast, 2Embed, AutoEmbed, Embed.su). Eles abrem por ID do TMDB dentro de um `<iframe>`. **Nunca carregam sozinhos** (clique para abrir): são sites de terceiros, podem ter anúncios e não salvam o progresso. A lista fica em `EMBED_PROVIDERS` no `public/index.html`.
 
+**Modo seguro (ligado por padrão):** o iframe roda com `sandbox` sem `allow-popups` e sem `allow-top-navigation`, então o player de terceiros não consegue abrir novas abas nem redirecionar a página. Alguns players detectam o sandbox e se recusam a tocar; nesse caso desligue a chave "Modo seguro" na barra (a escolha fica salva). Anúncios desenhados *dentro* do próprio player não dá para remover pelo site — para isso use um bloqueador (ex.: uBlock Origin) no navegador.
+
+## CinePro Core embutido (50+ fontes) — opcional
+
+No **Docker** (Render, VPS, compose) o fdsFlix baixa e compila o [CinePro Core](https://github.com/cinepro-org/core) e o sobe sozinho em `127.0.0.1:3001`. Quando o VidLink não acha o título, a cascata consulta o CinePro (`/v1/movies/:id`, `/v1/tv/:id/seasons/:s/episodes/:e`).
+
+- O VidLink continua sendo o primeiro; o CinePro só entra se ele falhar. Nada muda para os títulos que já funcionavam.
+- Vídeo, playlists HLS e legendas do CinePro saem por rotas **com token nosso** (`/api/proxy`, `/api/hls-proxy`, `/api/subtitle`). O `/v1/proxy` dele **não é exposto** (não assina as URLs; expor seria um proxy aberto).
+- `GET /api/health` mostra `cinepro: { running, restarts, giveUp }`.
+- **Memória:** é um segundo processo Node (~150–250 MB). No Render Free (512 MB) pode faltar RAM; se o serviço reiniciar, defina `CINEPRO_EMBEDDED=0`.
+- **Licença:** PolyForm Noncommercial — só uso sem fins comerciais (veja `THIRD_PARTY.md`).
+- Sem Docker (`npm start` local) nada disso roda e o comportamento é o de antes.
+
 ## Retomar de onde parou
 
 O player guarda, no `localStorage` do navegador, **título, temporada/episódio e minuto** de cada coisa que você assiste. Nada vai para o servidor.

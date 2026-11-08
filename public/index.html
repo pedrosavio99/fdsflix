@@ -98,6 +98,7 @@
   .embed-bar .embed-note{color:var(--muted);margin-bottom:.45rem;line-height:1.35}
   .embed-btns{display:flex;flex-wrap:wrap;gap:.4rem}
   .embed-btns button.active{border-color:var(--brand);color:var(--brand)}
+  .embed-safe{margin-top:.6rem}
   .overlay{
     position:absolute;inset:0;display:flex;flex-direction:column;gap:.75rem;
     align-items:center;justify-content:center;text-align:center;
@@ -252,6 +253,11 @@
         Eles rodam no site de terceiros: podem ter anúncios e <em>não</em> salvam o progresso.
       </div>
       <div id="embedBtns" class="embed-btns"></div>
+      <label class="switch embed-safe" title="Impede o player de terceiros de abrir pop-ups, novas abas e de redirecionar esta página. Alguns players se recusam a tocar em modo seguro: se der erro, desligue.">
+        <input id="embedSafeToggle" type="checkbox">
+        <span class="slider"></span>
+        <span>Modo seguro (bloquear pop-ups e novas abas)</span>
+      </label>
     </div>
 
     <div id="subBar" class="sub-bar" hidden>
@@ -345,6 +351,7 @@
     netRetries: 0,
     autoNextTimer: null,
     autoNextStage: null,
+    embedIndex: -1,
     subOffset: 0,
     subKey: null,
     subLang: null,
@@ -739,7 +746,17 @@
         : 'https://embed.su/embed/tv/' + id + '/' + s + '/' + e; } }
   ];
 
+  // Sem allow-popups / allow-top-navigation: o player não abre abas nem
+  // redireciona esta página. Fullscreen e reprodução continuam liberados.
+  var EMBED_SANDBOX = 'allow-scripts allow-same-origin allow-forms allow-presentation allow-pointer-lock';
+  var EMBED_SAFE_KEY = 'fdsflix.embedsafe';
+
+  function embedSafeEnabled() {
+    try { return localStorage.getItem(EMBED_SAFE_KEY) !== '0'; } catch (err) { return true; }
+  }
+
   function hideEmbed() {
+    state.embedIndex = -1;
     var frame = $('embedFrame');
     frame.hidden = true;
     frame.removeAttribute('src');
@@ -776,13 +793,22 @@
     try { $('nativePlayer').pause(); } catch (err) { /* ignore */ }
     hideOverlay();
     $('nativePlayer').hidden = true;
-    $('embedFrame').hidden = false;
-    $('embedFrame').src = url;
+
+    var frame = $('embedFrame');
+    frame.hidden = false;
+    // O sandbox só vale na próxima navegação: define antes do src.
+    frame.removeAttribute('src');
+    if (embedSafeEnabled()) frame.setAttribute('sandbox', EMBED_SANDBOX);
+    else frame.removeAttribute('sandbox');
+    frame.src = url;
+    state.embedIndex = index;
 
     Array.prototype.slice.call($('embedBtns').children).forEach(function (btn) {
       btn.classList.toggle('active', btn.getAttribute('data-embed') === String(index));
     });
-    setStatus('warn', 'Player alternativo: ' + provider.name + ' (site de terceiros — pode ter anúncios; não salva o progresso). Se não abrir, tente outro.');
+    setStatus('warn', 'Player alternativo: ' + provider.name +
+      (embedSafeEnabled() ? ' · modo seguro ligado (sem pop-ups)' : ' · modo seguro DESLIGADO') +
+      ' — site de terceiros, não salva o progresso. Se der erro de sandbox, desligue o modo seguro; se não abrir, tente outro.');
   }
 
   /* ---------------------------------------------------------------- */
@@ -1593,6 +1619,13 @@
   } else {
     video.textTracks.onchange = syncSubLangFromTracks;
   }
+
+  $('embedSafeToggle').checked = embedSafeEnabled();
+  $('embedSafeToggle').addEventListener('change', function () {
+    try { localStorage.setItem(EMBED_SAFE_KEY, this.checked ? '1' : '0'); } catch (err) { /* ignore */ }
+    // Recarrega o embed aberto já com a nova regra.
+    if (state.embedIndex >= 0) playEmbed(state.embedIndex);
+  });
 
   $('embedBtns').addEventListener('click', function (event) {
     var btn = event.target.closest ? event.target.closest('[data-embed]') : null;

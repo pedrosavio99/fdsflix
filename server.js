@@ -8,6 +8,8 @@ const fs = require('fs');
 
 const { getVidLinkStream, probeVideo } = require('./lib/streamExtractor');
 const { getFallbackStream, getProviderList } = require('./lib/fallbackCascade');
+const cineproRunner = require('./lib/cineproRunner');
+const { Readable } = require('stream');
 const {
   startHlsSession,
   stopSession,
@@ -315,7 +317,8 @@ app.get('/api/health', (req, res) => {
     ffmpeg: FFMPEG_OK,
     tmdb: Boolean(TMDB_API_KEY),
     sessions: activeSessions(),
-    fallbacks: getProviderList().map((p) => p.name)
+    fallbacks: getProviderList().map((p) => p.name),
+    cinepro: cineproRunner.getStatus()
   });
 });
 
@@ -420,6 +423,11 @@ app.get('/api/stream', requireApiKey, async (req, res) => {
 
     if (isHlsUrl) {
       console.log(`[stream] modo HLS nativo (${streamInfo.provider})`);
+      // O HLS do CinePro só é alcançável de dentro do servidor (127.0.0.1):
+      // sai pela nossa ponte com token, nunca pelo /v1/proxy dele.
+      const hlsUrl = streamInfo.viaCinePro
+        ? absoluteUrl(req, `/api/hls-proxy?t=${registry.register('hls', { url: streamInfo.url })}`)
+        : absoluteUrl(req, streamInfo.url);
       const captions = buildCaptions(streamInfo.captions, 0).map((caption) => ({
         ...caption,
         url: absoluteUrl(req, caption.url)
@@ -427,7 +435,7 @@ app.get('/api/stream', requireApiKey, async (req, res) => {
 
       return res.json({
         mode: 'hls',
-        url: absoluteUrl(req, streamInfo.url),
+        url: hlsUrl,
         quality: streamInfo.quality || 'auto',
         codec: streamInfo.codec || 'h264',
         sourceCodec: streamInfo.codec || 'h264',
@@ -545,6 +553,115 @@ app.get('/api/proxy', (req, res) => {
   proxyVideo(req, res, entry);
 });
 
+
+/* ------------------------------------------------------------------ */
+/* Ponte HLS do CinePro (tokens próprios; nunca expõe o /v1/proxy)     */
+/* ------------------------------------------------------------------ */
+
+// O /v1/proxy do CinePro aceita um JSON {url, headers} SEM assinatura. Expô-lo
+// direto seria um proxy aberto (SSRF). Aqui só buscamos URLs que apareceram em
+// playlists que NÓS pedimos ao CinePro, e só da origem do próprio CinePro.
+function cineproOrigin() {
+  try {
+    return new URL(process.env.CINEPRO_API_BASE || 'http://localhost:3001').origin;
+  } catch (err) {
+    return null;
+  }
+}
+
+function rewritePlaylist(text, upstreamUrl, req) {
+  const origin = cineproOrigin();
+  const cache = new Map();
+
+  const toBridge = (raw) => {
+    let abs;
+    try {
+      abs = new URL(raw, upstreamUrl).toString();
+    } catch (err) {
+      return raw;
+    }
+    // Fora da origem do CinePro: não tocamos (o navegador resolve por conta dele).
+    if (new URL(abs).origin !== origin) return abs;
+    if (!cache.has(abs)) {
+      cache.set(abs, absoluteUrl(req, `/api/hls-proxy?t=${registry.register('hls', { url: abs })}`));
+    }
+    return cache.get(abs);
+  };
+
+  return text
+    .split(/\r?\n/)
+    .map((line) => {
+      if (!line.trim()) return line;
+      if (line.startsWith('#')) {
+        return line.replace(/URI="([^"]+)"/g, (m, uri) => `URI="${toBridge(uri)}"`);
+      }
+      return toBridge(line.trim());
+    })
+    .join('\n');
+}
+
+app.get('/api/hls-proxy', async (req, res) => {
+  const entry = registry.resolve('hls', String(req.query.t || ''));
+  if (!entry) return res.status(404).json({ error: 'Sessão de vídeo expirada. Recarregue o player.' });
+
+  // Defesa extra: mesmo com token válido, só falamos com o CinePro.
+  let target;
+  try {
+    target = new URL(entry.url);
+  } catch (err) {
+    return res.status(400).json({ error: 'URL inválida' });
+  }
+  if (target.origin !== cineproOrigin()) return res.status(403).json({ error: 'Origem não permitida' });
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 30000);
+  res.on('close', () => controller.abort());
+
+  try {
+    const headers = { 'User-Agent': USER_AGENT, Accept: '*/*' };
+    if (req.headers.range) headers.Range = req.headers.range;
+
+    const upstream = await fetch(target, { headers, signal: controller.signal, redirect: 'manual' });
+    clearTimeout(timer);
+
+    if (upstream.status >= 300 && upstream.status < 400) {
+      return res.status(502).json({ error: 'Redirecionamento do provedor bloqueado.' });
+    }
+    if (!upstream.ok && upstream.status !== 206) {
+      return res.status(502).json({ error: `O provedor respondeu HTTP ${upstream.status}.` });
+    }
+
+    const contentType = String(upstream.headers.get('content-type') || '');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Cache-Control', 'no-store');
+
+    const maybePlaylist = /mpegurl|m3u8|text\/|json|octet-stream/i.test(contentType) && !/video\/|audio\//i.test(contentType);
+    if (maybePlaylist) {
+      const text = await upstream.text();
+      if (/^\s*#EXTM3U/.test(text)) {
+        res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
+        return res.send(rewritePlaylist(text, target.toString(), req));
+      }
+      // não era playlist (ex.: segmento sem content-type): devolve como veio
+      res.status(upstream.status);
+      res.setHeader('Content-Type', contentType || 'application/octet-stream');
+      return res.send(Buffer.from(text, 'latin1'));
+    }
+
+    res.status(upstream.status);
+    for (const name of ['content-type', 'content-length', 'content-range', 'accept-ranges']) {
+      const value = upstream.headers.get(name);
+      if (value) res.setHeader(name, value);
+    }
+    if (!upstream.body) return res.end();
+    Readable.fromWeb(upstream.body).on('error', () => res.destroy()).pipe(res);
+  } catch (err) {
+    clearTimeout(timer);
+    if (!res.headersSent) res.status(502).json({ error: 'Falha na ponte HLS: ' + err.message });
+    else res.destroy();
+  }
+});
+
 app.get('/api/subtitle', async (req, res) => {
   const entry = registry.resolve('subtitle', String(req.query.t || ''));
   if (!entry) return res.status(404).json({ error: 'Legenda expirada. Recarregue o player.' });
@@ -632,13 +749,19 @@ const server = app.listen(PORT, () => {
   console.log('     - CinePro:    ' + (process.env.CINEPRO_API_BASE || 'http://localhost:3001'));
   console.log('     - CineWinx:   ' + (process.env.CINEWINX_API_BASE || 'http://localhost:3002'));
   console.log('     - Consumet:   ' + (process.env.CONSUMET_API_BASE || 'http://localhost:3003'));
+  embeddedCinePro = cineproRunner.maybeStart({ tmdbKey: TMDB_API_KEY });
+  const embedded = embeddedCinePro;
+  console.log('   CinePro  : ' + (embedded.started ? 'embutido em ' + embedded.base : 'não iniciado — ' + embedded.reason));
   if (!FFMPEG_OK) {
     console.log('   ⚠️  Sem ffmpeg o player não consegue converter HEVC para H.264.');
   }
   console.log('');
 });
 
+let embeddedCinePro = null;
+
 function gracefulExit() {
+  if (embeddedCinePro) embeddedCinePro.stop();
   shutdown();
   server.close(() => process.exit(0));
   setTimeout(() => process.exit(0), 3000).unref();
