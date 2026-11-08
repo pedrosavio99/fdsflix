@@ -1,0 +1,7 @@
+name = "fdsflix-relay"
+main = "worker.js"
+compatibility_date = "2024-01-01"
+
+# Defina a chave secreta com:
+# npx wrangler secret put RELAY_KEY
+# ou configure no dashboard da Cloudflare em Settings -> Variables.

@@ -5,3 +5,6 @@ node_modules/
 .tmp-*
 .scratch/
 .legacy/
+
+# Projeto-base do player de música (só referência, não faz parte do fdsFlix)
+modulo-playlist-main/

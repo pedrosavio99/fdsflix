@@ -1,7 +1,7 @@
 # Blueprint do Render para o backend do fdsFlix.
 # No Render: New → Blueprint → conecte o repositório. Ele lê este arquivo.
 #
-# As duas chaves (sync: false) são pedidas no momento do deploy.
+# As chaves com sync: false são pedidas no momento do deploy.
 # O restante já vai pronto. A URL pública do serviço é detectada pelo
 # RENDER_EXTERNAL_URL, então não precisa preencher PUBLIC_BASE_URL.
 
@@ -23,6 +23,11 @@ services:
         sync: false
       - key: VIDLINK_API_URL
         value: https://vidlink.pro/api/b
+      # Worker repassador da Cloudflare (deploy/cloudflare-worker). Opcional: sem as duas, vai direto.
+      - key: VIDEO_RELAY_URL
+        sync: false
+      - key: VIDEO_RELAY_KEY
+        sync: false
       # Render Free tem só 0.1 CPU: 360p + 1 sessão é o que dá para tentar.
       # Se subir para Starter/Standard, aumente para 480/720.
       - key: MAX_TRANSCODE_HEIGHT

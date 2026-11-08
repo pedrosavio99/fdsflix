@@ -23,6 +23,7 @@ const {
 const { proxyVideo, USER_AGENT, TOKEN_TTL_MS } = require('./lib/proxy');
 const { srtToVtt, shiftVtt } = require('./lib/subtitles');
 const registry = require('./lib/registry');
+const { relayFetch, getRelayConfig } = require('./lib/relayFetch');
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
@@ -599,7 +600,7 @@ function profileHeaders(profile) {
 async function fetchBridged(url, headers, signal, profile) {
   let current = url;
   for (let hop = 0; hop < 4; hop++) {
-    const res = await fetch(current, { headers, signal, redirect: 'manual' });
+    const res = await relayFetch(current, { headers, signal, redirect: 'manual' });
     if (res.status >= 300 && res.status < 400) {
       const loc = res.headers.get('location');
       if (res.body) res.body.cancel().catch(() => {});
@@ -857,6 +858,8 @@ const server = app.listen(PORT, () => {
   console.log('   TMDB API : ' + (TMDB_API_KEY ? 'configurada' : 'NÃO configurada'));
   console.log('   ffmpeg   : ' + (FFMPEG_OK ? 'disponível (transcodificação ativa)' : 'NÃO encontrado'));
   console.log('   Fallbacks: ' + getProviderList().map((p) => p.name).join(' → '));
+  const relayCfg = getRelayConfig();
+  console.log('   Relay CF : ' + (relayCfg.enabled ? 'ativo (' + relayCfg.url + ')' : 'desativado (requisições diretas)'));
   console.log('   Serviços auxiliares (opcionais para catálogo expandido/novelas):');
   console.log('     - CinePro:    ' + (process.env.CINEPRO_API_BASE || 'http://localhost:3001'));
   console.log('     - CineWinx:   ' + (process.env.CINEWINX_API_BASE || 'http://localhost:3002'));
