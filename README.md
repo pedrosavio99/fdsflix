@@ -77,6 +77,8 @@ No **Docker** (Render, VPS, compose) o fdsFlix baixa e compila o [CinePro Core](
 - O VidLink continua sendo o primeiro; o CinePro só entra se ele falhar. Nada muda para os títulos que já funcionavam.
 - Vídeo, playlists HLS e legendas do CinePro saem por rotas **com token nosso** (`/api/proxy`, `/api/hls-proxy`, `/api/subtitle`). O `/v1/proxy` dele **não é exposto** (não assina as URLs; expor seria um proxy aberto).
 - `GET /api/health` mostra `cinepro: { running, restarts, giveUp }`.
+- **Validação de fontes:** o CinePro devolve várias fontes por título, e algumas têm a playlist liberada mas os segmentos recusados pela origem (403 em HTML). Antes de entregar ao player, o servidor baixa de verdade o começo do primeiro segmento de até 6 fontes em paralelo e usa a primeira que funcionar. Se nenhuma funcionar, devolve 404 limpo (e a barra de players alternativos aparece) em vez de deixar o player "armazenando buffer" para sempre.
+- **Diagnóstico:** `GET /api/debug/hls` mostra, sem URLs nem tokens, a última consulta ao CinePro (cada fonte, aprovada ou não, e o motivo) e os últimos eventos da ponte HLS.
 - **Memória:** é um segundo processo Node (~150–250 MB). No Render Free (512 MB) pode faltar RAM; se o serviço reiniciar, defina `CINEPRO_EMBEDDED=0`.
 - **Licença:** PolyForm Noncommercial — só uso sem fins comerciais (veja `THIRD_PARTY.md`).
 - Sem Docker (`npm start` local) nada disso roda e o comportamento é o de antes.

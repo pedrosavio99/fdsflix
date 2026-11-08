@@ -7,7 +7,7 @@ const path = require('path');
 const fs = require('fs');
 
 const { getVidLinkStream, probeVideo } = require('./lib/streamExtractor');
-const { getFallbackStream, getProviderList } = require('./lib/fallbackCascade');
+const { getFallbackStream, getProviderList, getCineProReport } = require('./lib/fallbackCascade');
 const cineproRunner = require('./lib/cineproRunner');
 const { normalizeCineProUrl } = require('./lib/cineproUrl');
 const {
@@ -602,7 +602,7 @@ function hlsEvent(event) {
 
 app.get('/api/debug/hls', (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
-  res.json({ cinepro: cineproRunner.getStatus(), events: hlsDebug.slice(-40) });
+  res.json({ cinepro: cineproRunner.getStatus(), ultimaConsulta: getCineProReport(), events: hlsDebug.slice(-40) });
 });
 
 let hlsBridgeLogged = 0;
