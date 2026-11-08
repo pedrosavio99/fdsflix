@@ -9,7 +9,7 @@ const fs = require('fs');
 const { getVidLinkStream, probeVideo } = require('./lib/streamExtractor');
 const { getFallbackStream, getProviderList } = require('./lib/fallbackCascade');
 const cineproRunner = require('./lib/cineproRunner');
-const { Readable } = require('stream');
+const { normalizeCineProUrl } = require('./lib/cineproUrl');
 const {
   startHlsSession,
   stopSession,
@@ -560,32 +560,20 @@ app.get('/api/proxy', (req, res) => {
 
 // O /v1/proxy do CinePro aceita um JSON {url, headers} SEM assinatura. Expô-lo
 // direto seria um proxy aberto (SSRF). Aqui só buscamos URLs que apareceram em
-// playlists que NÓS pedimos ao CinePro, e só da origem do próprio CinePro.
-function cineproOrigin() {
-  try {
-    return new URL(process.env.CINEPRO_API_BASE || 'http://localhost:3001').origin;
-  } catch (err) {
-    return null;
-  }
-}
-
+// playlists que NÓS pedimos ao CinePro, e só da máquina/porta do próprio CinePro.
 function rewritePlaylist(text, upstreamUrl, req) {
-  const origin = cineproOrigin();
   const cache = new Map();
 
   const toBridge = (raw) => {
-    let abs;
-    try {
-      abs = new URL(raw, upstreamUrl).toString();
-    } catch (err) {
-      return raw;
+    const inside = normalizeCineProUrl(raw, upstreamUrl);
+    if (!inside) {
+      // Fora do CinePro: não tocamos (o navegador resolve por conta dele).
+      try { return new URL(raw, upstreamUrl).toString(); } catch (err) { return raw; }
     }
-    // Fora da origem do CinePro: não tocamos (o navegador resolve por conta dele).
-    if (new URL(abs).origin !== origin) return abs;
-    if (!cache.has(abs)) {
-      cache.set(abs, absoluteUrl(req, `/api/hls-proxy?t=${registry.register('hls', { url: abs })}`));
+    if (!cache.has(inside)) {
+      cache.set(inside, absoluteUrl(req, `/api/hls-proxy?t=${registry.register('hls', { url: inside })}`));
     }
-    return cache.get(abs);
+    return cache.get(inside);
   };
 
   return text
@@ -600,63 +588,93 @@ function rewritePlaylist(text, upstreamUrl, req) {
     .join('\n');
 }
 
+let hlsBridgeLogged = 0;
+
 app.get('/api/hls-proxy', async (req, res) => {
   const entry = registry.resolve('hls', String(req.query.t || ''));
   if (!entry) return res.status(404).json({ error: 'Sessão de vídeo expirada. Recarregue o player.' });
 
   // Defesa extra: mesmo com token válido, só falamos com o CinePro.
-  let target;
-  try {
-    target = new URL(entry.url);
-  } catch (err) {
-    return res.status(400).json({ error: 'URL inválida' });
-  }
-  if (target.origin !== cineproOrigin()) return res.status(403).json({ error: 'Origem não permitida' });
+  const targetUrl = normalizeCineProUrl(entry.url);
+  if (!targetUrl) return res.status(403).json({ error: 'Origem não permitida' });
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 30000);
   res.on('close', () => controller.abort());
 
   try {
-    const headers = { 'User-Agent': USER_AGENT, Accept: '*/*' };
+    // identity: sem gzip, para o Content-Length repassado bater com o corpo.
+    const headers = { 'User-Agent': USER_AGENT, Accept: '*/*', 'Accept-Encoding': 'identity' };
     if (req.headers.range) headers.Range = req.headers.range;
 
-    const upstream = await fetch(target, { headers, signal: controller.signal, redirect: 'manual' });
+    const upstream = await fetch(targetUrl, { headers, signal: controller.signal, redirect: 'manual' });
     clearTimeout(timer);
 
     if (upstream.status >= 300 && upstream.status < 400) {
+      console.warn(`[hls-proxy] redirecionamento ${upstream.status} bloqueado`);
       return res.status(502).json({ error: 'Redirecionamento do provedor bloqueado.' });
     }
     if (!upstream.ok && upstream.status !== 206) {
+      console.warn(`[hls-proxy] provedor respondeu HTTP ${upstream.status}`);
       return res.status(502).json({ error: `O provedor respondeu HTTP ${upstream.status}.` });
     }
 
-    const contentType = String(upstream.headers.get('content-type') || '');
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Cache-Control', 'no-store');
 
-    const maybePlaylist = /mpegurl|m3u8|text\/|json|octet-stream/i.test(contentType) && !/video\/|audio\//i.test(contentType);
-    if (maybePlaylist) {
-      const text = await upstream.text();
-      if (/^\s*#EXTM3U/.test(text)) {
-        res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
-        return res.send(rewritePlaylist(text, target.toString(), req));
+    if (!upstream.body) return res.end();
+
+    // Espia o início do corpo: playlist começa com #EXTM3U; qualquer outra coisa
+    // (segmento, chave AES) segue como BYTES, sem passar por texto.
+    const reader = upstream.body.getReader();
+    const first = await reader.read();
+    const head = first.value ? Buffer.from(first.value) : Buffer.alloc(0);
+    const isPlaylist = /^(﻿)?\s*#EXTM3U/.test(head.subarray(0, 64).toString('utf8'));
+
+    if (isPlaylist) {
+      const chunks = [head];
+      for (;;) {
+        const part = await reader.read();
+        if (part.done) break;
+        chunks.push(Buffer.from(part.value));
       }
-      // não era playlist (ex.: segmento sem content-type): devolve como veio
-      res.status(upstream.status);
-      res.setHeader('Content-Type', contentType || 'application/octet-stream');
-      return res.send(Buffer.from(text, 'latin1'));
+      const text = Buffer.concat(chunks).toString('utf8');
+      const body = rewritePlaylist(text, targetUrl, req);
+      res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
+      if (hlsBridgeLogged < 20) {
+        hlsBridgeLogged += 1;
+        console.log(`[hls-proxy] playlist ${text.split('\n').filter((l) => l && !l.startsWith('#')).length} itens`);
+      }
+      return res.send(body);
     }
 
     res.status(upstream.status);
-    for (const name of ['content-type', 'content-length', 'content-range', 'accept-ranges']) {
+    for (const name of ['content-type', 'content-range', 'accept-ranges']) {
       const value = upstream.headers.get(name);
       if (value) res.setHeader(name, value);
     }
-    if (!upstream.body) return res.end();
-    Readable.fromWeb(upstream.body).on('error', () => res.destroy()).pipe(res);
+    // Só repassa o tamanho se o corpo não veio codificado.
+    if (!upstream.headers.get('content-encoding') && upstream.headers.get('content-length')) {
+      res.setHeader('Content-Length', upstream.headers.get('content-length'));
+    }
+    if (!res.getHeader('content-type')) res.setHeader('Content-Type', 'application/octet-stream');
+
+    if (hlsBridgeLogged < 20) {
+      hlsBridgeLogged += 1;
+      console.log(`[hls-proxy] mídia ${upstream.status} ${upstream.headers.get('content-type') || '?'} ${upstream.headers.get('content-length') || '?'}b`);
+    }
+
+    res.on('close', () => { reader.cancel().catch(() => {}); });
+    if (head.length && !res.write(head)) await new Promise((resolve) => res.once('drain', resolve));
+    for (;;) {
+      const part = await reader.read();
+      if (part.done) break;
+      if (!res.write(Buffer.from(part.value))) await new Promise((resolve) => res.once('drain', resolve));
+    }
+    res.end();
   } catch (err) {
     clearTimeout(timer);
+    console.warn('[hls-proxy] falha:', err.message);
     if (!res.headersSent) res.status(502).json({ error: 'Falha na ponte HLS: ' + err.message });
     else res.destroy();
   }
