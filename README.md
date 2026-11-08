@@ -83,6 +83,19 @@ No **Docker** (Render, VPS, compose) o fdsFlix baixa e compila o [CinePro Core](
 - **Licença:** PolyForm Noncommercial — só uso sem fins comerciais (veja `THIRD_PARTY.md`).
 - Sem Docker (`npm start` local) nada disso roda e o comportamento é o de antes.
 
+## Anime (AnimeFire, com dublado em português)
+
+Para **animação japonesa** (TMDB: gênero Animação + origem JP), a cascata consulta o **AnimeFire** logo depois do VidLink. Não afeta filmes e séries comuns: para eles nem faz chamada.
+
+- **Como acha o anime:** busca pelo título do TMDB (pt-BR, inglês e títulos alternativos), compara os nomes (ignora "Dublado", acentos e pontuação) e, em empate, prefere o que tem **dublado**.
+- **Como acha o episódio:** converte temporada/episódio do TMDB para o número absoluto da série (soma das temporadas anteriores) e, se não achar, tenta temporada/episódio como o AnimeFire numera.
+- **Áudio:** a faixa **dublada vem primeiro**; legendado é o reserva. Faixas marcadas offline são puladas.
+- **Validação:** antes de entregar, o servidor baixa o começo do primeiro segmento. Se o CDN recusar, passa para a próxima fonte (CinePro etc.).
+- **Segurança:** o vídeo sai pela ponte `/api/hls-proxy` com token, enviando o `Referer` que o CDN exige, **restrita ao domínio do CDN** (só https, sem IP literal, sem `localhost`, redirecionamentos conferidos salto a salto).
+- **Diagnóstico:** `GET /api/debug/hls` mostra `ultimaConsultaAnime` (qual anime, episódio, áudio e o motivo se foi recusado).
+- **Limitações honestas:** o AnimeFire lista títulos sem arquivo (episódios "offline"); animes que o TMDB divide em várias temporadas mas o AnimeFire em vários cadastros podem não casar; e se o site mudar a API, ajuste `ANIMEFIRE_API_BASE` / `ANIMEFIRE_SITE` ou desligue com `ANIMEFIRE_ENABLED=0`.
+- O contrato da API foi mapeado a partir do [GoAnime](https://github.com/alvarorichard/GoAnime) (MIT). Veja `THIRD_PARTY.md`.
+
 ## Retomar de onde parou
 
 O player guarda, no `localStorage` do navegador, **título, temporada/episódio e minuto** de cada coisa que você assiste. Nada vai para o servidor.

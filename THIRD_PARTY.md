@@ -20,3 +20,11 @@
 O repositório `consumet/api.consumet.org` retorna HTTP 403 no GitHub (indisponível). Não há
 código dele neste projeto; o adaptador em `lib/fallbackCascade.js` só funciona se você apontar
 `CONSUMET_API_BASE` para uma instância que você mesmo opere.
+
+## GoAnime (referência para o provedor de anime)
+
+- Projeto: <https://github.com/alvarorichard/GoAnime> — licença **MIT**, © 2023 Krone.
+- Uso: apenas como **documentação do contrato** da API do AnimeFire (rotas, campos, ordem de faixas,
+  numeração por temporada). `lib/animeFire.js` é uma implementação própria em Node; nenhum código Go foi copiado.
+- O AnimeFire é um serviço de terceiros sem relação com este projeto; a API pode mudar a qualquer momento
+  e vale o mesmo aviso de responsabilidade do CinePro (cumprir leis e termos de uso aplicáveis).

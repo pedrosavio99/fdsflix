@@ -8,6 +8,7 @@ const fs = require('fs');
 
 const { getVidLinkStream, probeVideo } = require('./lib/streamExtractor');
 const { getFallbackStream, getProviderList, getCineProReport } = require('./lib/fallbackCascade');
+const { getAnimeReport } = require('./lib/animeFire');
 const cineproRunner = require('./lib/cineproRunner');
 const { normalizeCineProUrl } = require('./lib/cineproUrl');
 const {
@@ -423,15 +424,16 @@ app.get('/api/stream', requireApiKey, async (req, res) => {
 
     if (isHlsUrl) {
       console.log(`[stream] modo HLS nativo (${streamInfo.provider})`);
-      // O HLS do CinePro só é alcançável de dentro do servidor (127.0.0.1):
-      // sai pela nossa ponte com token, nunca pelo /v1/proxy dele.
+      // Fontes que exigem servidor (CinePro em 127.0.0.1, CDN com Referer do site) saem
+      // pela nossa ponte com token, nunca por proxy aberto.
+      const bridgeProfile = streamInfo.viaCinePro ? { kind: 'cinepro' } : (streamInfo.bridge || null);
       if (streamInfo.viaCinePro) {
         probeVideo(streamInfo.url)
           .then((probe) => hlsEvent({ kind: 'sonda', codec: probe.codec, largura: probe.width, altura: probe.height, navegadorHevc: hevcOk }))
           .catch(() => {});
       }
-      const hlsUrl = streamInfo.viaCinePro
-        ? absoluteUrl(req, `/api/hls-proxy?t=${registry.register('hls', { url: streamInfo.url })}`)
+      const hlsUrl = bridgeProfile
+        ? absoluteUrl(req, `/api/hls-proxy?t=${registry.register('hls', { url: streamInfo.url, profile: bridgeProfile })}`)
         : absoluteUrl(req, streamInfo.url);
       const captions = buildCaptions(streamInfo.captions, 0).map((caption) => ({
         ...caption,
@@ -565,18 +567,63 @@ app.get('/api/proxy', (req, res) => {
 
 // O /v1/proxy do CinePro aceita um JSON {url, headers} SEM assinatura. Expô-lo
 // direto seria um proxy aberto (SSRF). Aqui só buscamos URLs que apareceram em
-// playlists que NÓS pedimos ao CinePro, e só da máquina/porta do próprio CinePro.
-function rewritePlaylist(text, upstreamUrl, req) {
+// playlists que NÓS pedimos, e só dos hosts do "perfil" do token:
+//   - { kind: 'cinepro' }                         -> a máquina/porta do CinePro embutido
+//   - { kind: 'domain', root, headers, allowLocal } -> o domínio do CDN (ex.: AnimeFire), só https,
+//                                                    sem IP literal nem localhost, com os cabeçalhos exigidos.
+function allowByProfile(raw, relativeTo, profile) {
+  if (!profile || profile.kind === 'cinepro') return normalizeCineProUrl(raw, relativeTo);
+  if (profile.kind !== 'domain' || !profile.root) return null;
+
+  let u;
+  try {
+    u = new URL(raw, relativeTo);
+  } catch (err) {
+    return null;
+  }
+  const host = u.hostname.toLowerCase();
+  if (profile.allowLocal === true) {
+    if (!/^https?:$/.test(u.protocol)) return null; // só testes locais
+  } else {
+    if (u.protocol !== 'https:') return null;
+    if (host === 'localhost' || /^\d{1,3}(\.\d{1,3}){3}$/.test(host) || host.includes(':')) return null;
+  }
+  return host === profile.root || host.endsWith('.' + profile.root) ? u.toString() : null;
+}
+
+function profileHeaders(profile) {
+  return profile && profile.kind === 'domain' ? profile.headers || {} : {};
+}
+
+/** Busca com redirecionamento manual: cada salto precisa passar pelo mesmo filtro de host. */
+async function fetchBridged(url, headers, signal, profile) {
+  let current = url;
+  for (let hop = 0; hop < 4; hop++) {
+    const res = await fetch(current, { headers, signal, redirect: 'manual' });
+    if (res.status >= 300 && res.status < 400) {
+      const loc = res.headers.get('location');
+      if (res.body) res.body.cancel().catch(() => {});
+      const next = loc && allowByProfile(loc, current, profile);
+      if (!next) return { blocked: true, status: res.status };
+      current = next;
+      continue;
+    }
+    return { res, finalUrl: current };
+  }
+  return { blocked: true, status: 310 };
+}
+
+function rewritePlaylist(text, upstreamUrl, req, profile) {
   const cache = new Map();
 
   const toBridge = (raw) => {
-    const inside = normalizeCineProUrl(raw, upstreamUrl);
+    const inside = allowByProfile(raw, upstreamUrl, profile);
     if (!inside) {
-      // Fora do CinePro: não tocamos (o navegador resolve por conta dele).
+      // Fora do permitido: não tocamos (o navegador resolve por conta dele).
       try { return new URL(raw, upstreamUrl).toString(); } catch (err) { return raw; }
     }
     if (!cache.has(inside)) {
-      cache.set(inside, absoluteUrl(req, `/api/hls-proxy?t=${registry.register('hls', { url: inside })}`));
+      cache.set(inside, absoluteUrl(req, `/api/hls-proxy?t=${registry.register('hls', { url: inside, profile })}`));
     }
     return cache.get(inside);
   };
@@ -602,7 +649,7 @@ function hlsEvent(event) {
 
 app.get('/api/debug/hls', (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
-  res.json({ cinepro: cineproRunner.getStatus(), ultimaConsulta: getCineProReport(), events: hlsDebug.slice(-40) });
+  res.json({ cinepro: cineproRunner.getStatus(), ultimaConsulta: getCineProReport(), ultimaConsultaAnime: getAnimeReport(), events: hlsDebug.slice(-40) });
 });
 
 let hlsBridgeLogged = 0;
@@ -611,8 +658,9 @@ app.get('/api/hls-proxy', async (req, res) => {
   const entry = registry.resolve('hls', String(req.query.t || ''));
   if (!entry) return res.status(404).json({ error: 'Sessão de vídeo expirada. Recarregue o player.' });
 
-  // Defesa extra: mesmo com token válido, só falamos com o CinePro.
-  const targetUrl = normalizeCineProUrl(entry.url);
+  // Defesa extra: mesmo com token válido, só falamos com os hosts do perfil.
+  const profile = entry.profile || { kind: 'cinepro' };
+  const targetUrl = allowByProfile(entry.url, undefined, profile);
   if (!targetUrl) return res.status(403).json({ error: 'Origem não permitida' });
 
   const controller = new AbortController();
@@ -621,17 +669,18 @@ app.get('/api/hls-proxy', async (req, res) => {
 
   try {
     // identity: sem gzip, para o Content-Length repassado bater com o corpo.
-    const headers = { 'User-Agent': USER_AGENT, Accept: '*/*', 'Accept-Encoding': 'identity' };
+    const headers = { 'User-Agent': USER_AGENT, Accept: '*/*', 'Accept-Encoding': 'identity', ...profileHeaders(profile) };
     if (req.headers.range) headers.Range = req.headers.range;
 
-    const upstream = await fetch(targetUrl, { headers, signal: controller.signal, redirect: 'manual' });
+    const fetched = await fetchBridged(targetUrl, headers, controller.signal, profile);
     clearTimeout(timer);
 
-    if (upstream.status >= 300 && upstream.status < 400) {
-      console.warn(`[hls-proxy] redirecionamento ${upstream.status} bloqueado`);
-      hlsEvent({ kind: 'erro', status: upstream.status, note: 'redirecionamento bloqueado' });
+    if (fetched.blocked) {
+      console.warn(`[hls-proxy] redirecionamento ${fetched.status} bloqueado`);
+      hlsEvent({ kind: 'erro', status: fetched.status, note: 'redirecionamento bloqueado' });
       return res.status(502).json({ error: 'Redirecionamento do provedor bloqueado.' });
     }
+    const upstream = fetched.res;
     if (!upstream.ok && upstream.status !== 206) {
       console.warn(`[hls-proxy] provedor respondeu HTTP ${upstream.status}`);
       hlsEvent({ kind: 'erro', status: upstream.status, ct: upstream.headers.get('content-type'), note: 'upstream com erro' });
@@ -658,7 +707,7 @@ app.get('/api/hls-proxy', async (req, res) => {
         chunks.push(Buffer.from(part.value));
       }
       const text = Buffer.concat(chunks).toString('utf8');
-      const body = rewritePlaylist(text, targetUrl, req);
+      const body = rewritePlaylist(text, fetched.finalUrl, req, profile);
       res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
       hlsEvent({
         kind: 'playlist',
