@@ -352,6 +352,8 @@
     autoNextTimer: null,
     autoNextStage: null,
     embedIndex: -1,
+    hlsWatch: null,
+    hlsIssue: '',
     subOffset: 0,
     subKey: null,
     subLang: null,
@@ -1005,6 +1007,8 @@
   }
 
   function stopPlayback() {
+    clearTimeout(state.hlsWatch);
+    state.hlsIssue = '';
     if (state.controller) {
       try { state.controller.abort(); } catch (err) { /* ignore */ }
       state.controller = null;
@@ -1229,6 +1233,11 @@
     var fatalCount = 0;
 
     hls.on(Hls.Events.ERROR, function (event, data) {
+      if (data) {
+        var code = data.response && data.response.code ? ' HTTP ' + data.response.code : '';
+        state.hlsIssue = data.details + code + (data.fatal ? ' (fatal)' : '');
+        console.warn('[hls]', data.type, data.details, code, data.fatal ? 'FATAL' : '');
+      }
       if (!data || !data.fatal) return;
       fatalCount += 1;
       console.warn('[hls]', data.type, data.details);
@@ -1260,6 +1269,19 @@
         setStatus('warn', 'O navegador bloqueou o autoplay — clique no ▶ do vídeo.');
       });
     });
+
+    // Se em 25 s nada tocou, mostra o que o player viu (para diagnóstico).
+    clearTimeout(state.hlsWatch);
+    state.hlsWatch = setTimeout(function () {
+      var v = $('nativePlayer');
+      if (!state.selected || (!v.paused && v.readyState >= 3 && v.currentTime > 0)) return;
+      var msg = 'O vídeo não começou em 25 s. Player: ' + (state.hlsIssue || 'sem erro registrado') +
+        ' · duração ' + (isFinite(v.duration) ? Math.round(v.duration) + 's' : '?') +
+        ' · readyState ' + v.readyState +
+        '. Abra ' + apiUrl('/api/debug/hls') + ' e copie o resultado.';
+      setStatus('warn', msg);
+      console.warn('[diagnóstico]', msg);
+    }, 25000);
 
     hls.loadSource(url);
     hls.attachMedia(video);
@@ -1556,6 +1578,7 @@
 
   video.addEventListener('playing', function () {
     hideOverlay();
+    clearTimeout(state.hlsWatch);
     state.progReady = true;
     clearAutoNext();
     state.autoNextStage = null;

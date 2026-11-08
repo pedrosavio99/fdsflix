@@ -425,6 +425,11 @@ app.get('/api/stream', requireApiKey, async (req, res) => {
       console.log(`[stream] modo HLS nativo (${streamInfo.provider})`);
       // O HLS do CinePro só é alcançável de dentro do servidor (127.0.0.1):
       // sai pela nossa ponte com token, nunca pelo /v1/proxy dele.
+      if (streamInfo.viaCinePro) {
+        probeVideo(streamInfo.url)
+          .then((probe) => hlsEvent({ kind: 'sonda', codec: probe.codec, largura: probe.width, altura: probe.height, navegadorHevc: hevcOk }))
+          .catch(() => {});
+      }
       const hlsUrl = streamInfo.viaCinePro
         ? absoluteUrl(req, `/api/hls-proxy?t=${registry.register('hls', { url: streamInfo.url })}`)
         : absoluteUrl(req, streamInfo.url);
@@ -588,6 +593,18 @@ function rewritePlaylist(text, upstreamUrl, req) {
     .join('\n');
 }
 
+// Últimos eventos da ponte HLS (sem URLs nem tokens) para diagnóstico: GET /api/debug/hls
+const hlsDebug = [];
+function hlsEvent(event) {
+  hlsDebug.push({ at: new Date().toISOString(), ...event });
+  if (hlsDebug.length > 60) hlsDebug.shift();
+}
+
+app.get('/api/debug/hls', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ cinepro: cineproRunner.getStatus(), events: hlsDebug.slice(-40) });
+});
+
 let hlsBridgeLogged = 0;
 
 app.get('/api/hls-proxy', async (req, res) => {
@@ -612,10 +629,12 @@ app.get('/api/hls-proxy', async (req, res) => {
 
     if (upstream.status >= 300 && upstream.status < 400) {
       console.warn(`[hls-proxy] redirecionamento ${upstream.status} bloqueado`);
+      hlsEvent({ kind: 'erro', status: upstream.status, note: 'redirecionamento bloqueado' });
       return res.status(502).json({ error: 'Redirecionamento do provedor bloqueado.' });
     }
     if (!upstream.ok && upstream.status !== 206) {
       console.warn(`[hls-proxy] provedor respondeu HTTP ${upstream.status}`);
+      hlsEvent({ kind: 'erro', status: upstream.status, ct: upstream.headers.get('content-type'), note: 'upstream com erro' });
       return res.status(502).json({ error: `O provedor respondeu HTTP ${upstream.status}.` });
     }
 
@@ -641,6 +660,15 @@ app.get('/api/hls-proxy', async (req, res) => {
       const text = Buffer.concat(chunks).toString('utf8');
       const body = rewritePlaylist(text, targetUrl, req);
       res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
+      hlsEvent({
+        kind: 'playlist',
+        status: upstream.status,
+        ct: upstream.headers.get('content-type'),
+        itens: text.split('\n').filter((l) => l && !l.startsWith('#')).length,
+        criptografada: /#EXT-X-KEY:(?!METHOD=NONE)/.test(text),
+        fmp4: /#EXT-X-MAP/.test(text),
+        variantes: (text.match(/#EXT-X-STREAM-INF/g) || []).length
+      });
       if (hlsBridgeLogged < 20) {
         hlsBridgeLogged += 1;
         console.log(`[hls-proxy] playlist ${text.split('\n').filter((l) => l && !l.startsWith('#')).length} itens`);
@@ -664,17 +692,34 @@ app.get('/api/hls-proxy', async (req, res) => {
       console.log(`[hls-proxy] mídia ${upstream.status} ${upstream.headers.get('content-type') || '?'} ${upstream.headers.get('content-length') || '?'}b`);
     }
 
-    res.on('close', () => { reader.cancel().catch(() => {}); });
+    const startedAt = Date.now();
+    let sent = head.length;
+    let finished = false;
+    res.on('close', () => {
+      reader.cancel().catch(() => {});
+      if (!finished) hlsEvent({ kind: 'midia-interrompida', status: upstream.status, bytes: sent, ms: Date.now() - startedAt });
+    });
     if (head.length && !res.write(head)) await new Promise((resolve) => res.once('drain', resolve));
     for (;;) {
       const part = await reader.read();
       if (part.done) break;
+      sent += part.value.length;
       if (!res.write(Buffer.from(part.value))) await new Promise((resolve) => res.once('drain', resolve));
     }
+    finished = true;
+    hlsEvent({
+      kind: 'midia',
+      status: upstream.status,
+      ct: upstream.headers.get('content-type'),
+      bytes: sent,
+      ms: Date.now() - startedAt,
+      comeca: head.subarray(0, 4).toString('hex') // 47xxxxxx = MPEG-TS; 000000xx = fMP4
+    });
     res.end();
   } catch (err) {
     clearTimeout(timer);
     console.warn('[hls-proxy] falha:', err.message);
+    hlsEvent({ kind: 'erro', note: err.message });
     if (!res.headersSent) res.status(502).json({ error: 'Falha na ponte HLS: ' + err.message });
     else res.destroy();
   }
