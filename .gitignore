@@ -8,3 +8,6 @@ node_modules/
 
 # Projeto-base do player de música (só referência, não faz parte do fdsFlix)
 modulo-playlist-main/
+
+# contador de consumo das Vercels (gerado em runtime)
+.usage.json

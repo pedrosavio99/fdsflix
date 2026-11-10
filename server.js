@@ -23,6 +23,7 @@ const {
 const { proxyVideo, USER_AGENT, TOKEN_TTL_MS } = require('./lib/proxy');
 const { srtToVtt, shiftVtt } = require('./lib/subtitles');
 const registry = require('./lib/registry');
+const usageLedger = require('./lib/usageLedger');
 const { relayFetch, getRelayConfig } = require('./lib/relayFetch');
 const { edgeEnabled, canUseEdge, edgeReachable, edgeUrl } = require('./lib/edgeMedia');
 
@@ -404,21 +405,51 @@ app.get('/api', (req, res) => {
   });
 });
 
-// Teste ativo do Vidsrc via Vercel, disparado pelo botão do painel de diagnóstico.
+// Teste ativo do Vidsrc em CADA Vercel da pool, disparado pelo botão do painel.
 app.get('/api/diag/vidsrc', async (req, res) => {
-  const base = String(process.env.VIDSRC_PROXY_URL || '').trim().replace(/\/+$/, '');
-  if (!base) return res.json({ ok: false, error: 'VIDSRC_PROXY_URL não está definida neste servidor.' });
+  const pool = usageLedger.getPool();
+  if (!pool.length) return res.json({ ok: false, error: 'Nenhuma Vercel configurada (VIDSRC_PROXY_URL / VIDSRC_PROXY_URLS).' });
   const tmdb = /^\d+$/.test(String(req.query.id || '')) ? String(req.query.id) : '603';
-  const started = Date.now();
-  try {
-    const r = await fetch(`${base}/vidsrc/probe?tmdb=${tmdb}`, { signal: AbortSignal.timeout(40000) });
-    const body = await r.json().catch(() => ({}));
-    // `master` leva o token JWT: não devolve.
-    delete body.master;
-    res.json({ ok: r.ok, base, tmdb, http: r.status, ms: Date.now() - started, probe: body });
-  } catch (err) {
-    res.json({ ok: false, base, error: err.message, ms: Date.now() - started });
+  const results = await Promise.all(pool.map(async (base) => {
+    const started = Date.now();
+    try {
+      const r = await fetch(`${base}/vidsrc/probe?tmdb=${tmdb}`, { signal: AbortSignal.timeout(40000) });
+      const body = await r.json().catch(() => ({}));
+      delete body.master; // leva o token JWT: não devolve
+      return { ok: r.ok, base, http: r.status, ms: Date.now() - started, probe: body };
+    } catch (err) {
+      return { ok: false, base, error: err.message, ms: Date.now() - started };
+    }
+  }));
+  res.json({ ok: results.every((item) => item.ok), tmdb, results });
+});
+
+/* ------------------------------------------------------------------ */
+/* Consumo das Vercels (barras do painel)                              */
+/* ------------------------------------------------------------------ */
+
+app.get('/api/usage', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.json(usageLedger.snapshot());
+});
+
+// O navegador informa quantos bytes/segundos de vídeo recebeu de cada Vercel.
+app.post('/api/usage', (req, res) => {
+  const body = req.body && typeof req.body === 'object' ? req.body : {};
+  const items = Array.isArray(body.items) ? body.items.slice(0, 8) : [];
+  let accepted = 0;
+  for (const item of items) {
+    if (item && usageLedger.record(item.base, item.bytes, item.seconds).ok) accepted += 1;
   }
+  res.json({ ok: true, accepted });
+});
+
+// Acerta o contador com o número do painel da Vercel. Exige API_KEY configurada.
+app.post('/api/usage/calibrate', (req, res) => {
+  if (!API_KEY) return res.status(403).json({ error: 'Defina API_KEY no servidor para usar a calibração.' });
+  if (String(req.get('x-api-key') || '') !== API_KEY) return res.status(401).json({ error: 'API key inválida.' });
+  const out = usageLedger.calibrate(req.body && req.body.base, req.body && req.body.usedGb);
+  res.status(out.ok ? 200 : 400).json(out.ok ? usageLedger.snapshot() : out);
 });
 
 /* ------------------------------------------------------------------ */
@@ -432,7 +463,8 @@ function buildStreamDebug(trace, startedAt) {
   };
   return {
     build: String(process.env.RENDER_GIT_COMMIT || process.env.VERCEL_GIT_COMMIT_SHA || 'local').slice(0, 7),
-    vidsrcProxy: hostOf(process.env.VIDSRC_PROXY_URL),
+    vidsrcProxy: hostOf(usageLedger.getPool()[0]),
+    vidsrcPool: usageLedger.rankedPool(),
     adshield: hostOf(process.env.ADSHIELD_BASE_URL),
     relay: Boolean(process.env.VIDEO_RELAY_URL),
     fallbackOrder: process.env.FALLBACK_ORDER || '(padrão)',

@@ -7,7 +7,9 @@
     "start": "node server.js",
     "dev": "node --watch server.js",
     "adproxy": "npm --prefix adproxy start",
-    "test:adproxy": "npm --prefix adproxy test"
+    "test:adproxy": "npm --prefix adproxy test",
+    "pool:check": "node scripts/pool-check.js",
+    "test": "node --test test/"
   },
   "engines": {
     "node": ">=18"

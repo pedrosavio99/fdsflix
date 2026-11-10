@@ -119,6 +119,18 @@
   .spinner[hidden]{display:none}
   @keyframes spin{to{transform:rotate(360deg)}}
 
+  .usage{margin-top:.8rem;border:1px solid var(--border,#2a2f3a);border-radius:10px;background:rgba(0,0,0,.28);padding:.6rem .8rem;font-size:.8rem;color:var(--muted,#aeb4bf)}
+  .usage-head{display:flex;justify-content:space-between;gap:.6rem;flex-wrap:wrap;color:var(--text,#e8eaed);margin-bottom:.4rem}
+  .usage-row{margin:.45rem 0}
+  .usage-row .name{display:flex;justify-content:space-between;gap:.5rem;font-size:.76rem}
+  .usage-bar{position:relative;height:12px;border-radius:7px;background:#1b1f29;overflow:hidden;margin:.25rem 0}
+  .usage-bar i{position:absolute;left:0;top:0;bottom:0;border-radius:7px 0 0 7px;transition:width .5s}
+  .usage-bar .used{background:#3d7be0}
+  .usage-bar .sess{background:#7ee2a8;opacity:.9}
+  .usage-bar.warn .used{background:#d9a21c}
+  .usage-bar.crit .used{background:#e0524d}
+  .usage-meta{font-size:.74rem;color:#8d95a6;line-height:1.4}
+  .usage-foot{margin-top:.45rem;font-size:.72rem;color:#7d8597}
   .diag{margin-top:.9rem;border:1px solid var(--border,#2a2f3a);border-radius:10px;background:rgba(0,0,0,.28);overflow:hidden}
   .diag>summary{cursor:pointer;padding:.55rem .8rem;font-size:.82rem;font-weight:600;color:var(--text,#e8eaed);list-style:none;display:flex;align-items:center;gap:.5rem}
   .diag>summary::-webkit-details-marker{display:none}
@@ -300,6 +312,15 @@
     <div id="playerStatus" class="status">
       <span id="statusBadge" class="badge working">PREPARANDO</span>
       <span id="statusText">Selecione um título…</span>
+    </div>
+
+    <div id="usageBox" class="usage" hidden>
+      <div class="usage-head">
+        <strong>📶 Consumo das Vercels (cota mensal)</strong>
+        <span id="usageSession">Esta sessão: 0 MB</span>
+      </div>
+      <div id="usageBars"></div>
+      <div id="usageFoot" class="usage-foot"></div>
     </div>
 
     <details id="diagPanel" class="diag" open>
@@ -1097,6 +1118,116 @@
   }
 
 
+
+  /* ---------------------------------------------------------------- */
+  /* Consumo das Vercels: o navegador mede e informa ao servidor       */
+  /* ---------------------------------------------------------------- */
+
+  var usage = { pending: {}, session: 0, sessionBy: {}, data: null, lastPaint: 0 };
+
+  function fmtBytes(n) {
+    n = Number(n) || 0;
+    if (n >= 1073741824) return (n / 1073741824).toFixed(2) + ' GB';
+    if (n >= 1048576) return (n / 1048576).toFixed(n >= 104857600 ? 0 : 1) + ' MB';
+    return Math.round(n / 1024) + ' KB';
+  }
+
+  // Só conta o que passa pelo proxy Vidsrc da Vercel (é o que gasta a cota dela).
+  function usageBaseOf(url) {
+    if (!/\/vidsrc\/hls\?/.test(String(url || ''))) return null;
+    try { return new URL(url, location.href).origin; } catch (err) { return null; }
+  }
+
+  function usageAdd(url, bytes, seconds) {
+    var base = usageBaseOf(url);
+    if (!base || !bytes) return;
+    var p = usage.pending[base] || (usage.pending[base] = { bytes: 0, seconds: 0 });
+    p.bytes += bytes;
+    p.seconds += seconds || 0;
+    usage.session += bytes;
+    usage.sessionBy[base] = (usage.sessionBy[base] || 0) + bytes;
+    if (Date.now() - usage.lastPaint > 2000) usagePaint();
+  }
+
+  function usageFlush(beacon) {
+    var items = Object.keys(usage.pending).map(function (base) {
+      return { base: base, bytes: Math.round(usage.pending[base].bytes), seconds: Math.round(usage.pending[base].seconds) };
+    });
+    if (!items.length) return;
+    usage.pending = {};
+    var body = JSON.stringify({ items: items });
+    if (beacon && navigator.sendBeacon) {
+      try { navigator.sendBeacon(apiUrl('/api/usage'), new Blob([body], { type: 'application/json' })); return; } catch (err) { /* cai no fetch */ }
+    }
+    apiFetch('/api/usage', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: body, keepalive: true })
+      .then(usageRefresh).catch(function () { /* tenta no próximo ciclo */ });
+  }
+
+  function usageRefresh() {
+    return apiFetch('/api/usage').then(function (r) { return r.ok ? r.json() : null; }).then(function (data) {
+      if (data) { usage.data = data; usagePaint(); }
+    }).catch(function () { /* servidor dormindo: tenta depois */ });
+  }
+
+  function usagePaint() {
+    usage.lastPaint = Date.now();
+    var box = $('usageBox');
+    var data = usage.data;
+    if (!box || !data || !data.pool || !data.pool.length) return;
+    box.hidden = false;
+    $('usageSession').textContent = 'Esta sessão: ' + fmtBytes(usage.session);
+
+    var rows = $('usageBars');
+    rows.innerHTML = '';
+    var list = data.pool.slice();
+    if (list.length > 1) {
+      list.push({
+        label: 'TOTAL (' + data.pool.length + ' Vercels)', base: '__total__',
+        usedBytes: data.total.usedBytes, quotaBytes: data.total.quotaBytes,
+        remainingBytes: data.total.remainingBytes, hoursLeft: data.total.hoursLeft,
+        gbPerHour: null, gbPerDay: null
+      });
+    }
+    list.forEach(function (p) {
+      var pend = p.base === '__total__'
+        ? Object.keys(usage.pending).reduce(function (a, k) { return a + usage.pending[k].bytes; }, 0)
+        : ((usage.pending[p.base] || {}).bytes || 0);
+      var used = p.usedBytes + pend;
+      var pct = Math.min(100, used / p.quotaBytes * 100);
+      var sess = p.base === '__total__' ? usage.session : (usage.sessionBy[p.base] || 0);
+      var sessPct = Math.min(pct, sess / p.quotaBytes * 100);
+      var left = Math.max(0, p.quotaBytes - used);
+
+      var row = document.createElement('div');
+      row.className = 'usage-row';
+      var name = document.createElement('div');
+      name.className = 'name';
+      var a = document.createElement('span'); a.textContent = p.label;
+      var b = document.createElement('span');
+      b.textContent = fmtBytes(used) + ' / ' + fmtBytes(p.quotaBytes) + ' (' + pct.toFixed(1) + '%)';
+      name.appendChild(a); name.appendChild(b);
+      var bar = document.createElement('div');
+      bar.className = 'usage-bar' + (pct >= 85 ? ' crit' : (pct >= 60 ? ' warn' : ''));
+      var iu = document.createElement('i'); iu.className = 'used'; iu.style.width = pct + '%';
+      var is = document.createElement('i'); is.className = 'sess'; is.style.width = sessPct + '%';
+      bar.appendChild(iu); bar.appendChild(is);
+      var meta = document.createElement('div');
+      meta.className = 'usage-meta';
+      var hours = p.gbPerHour ? (left / 1073741824 / p.gbPerHour) : p.hoursLeft;
+      meta.textContent = 'restam ' + fmtBytes(left) + ' ≈ ' + hours.toFixed(1) + ' h de vídeo' +
+        (p.gbPerHour ? ' (média ' + p.gbPerHour + ' GB/h' + (p.gbPerHourMeasured ? '' : ', estimada') + ')' : '') +
+        (p.gbPerDay ? ' · ' + p.gbPerDay + ' GB/dia neste ciclo' : '');
+      row.appendChild(name); row.appendChild(bar); row.appendChild(meta);
+      rows.appendChild(row);
+    });
+    $('usageFoot').textContent = 'Verde = o que ESTA sessão gastou · renova em ' + data.daysLeft + ' dia(s) · ' + data.note;
+  }
+
+  window.addEventListener('pagehide', function () { usageFlush(true); });
+  document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'hidden') usageFlush(true); });
+  setInterval(function () { usageFlush(false); }, 20000);
+  setTimeout(usageRefresh, 800);
+
   /* ---------------------------------------------------------------- */
   /* Painel de diagnóstico: o caminho exato do vídeo, ao vivo          */
   /* ---------------------------------------------------------------- */
@@ -1162,8 +1293,11 @@
       return;
     }
     diag('info', 'Servidor: build ' + dbg.build + ' · ordem da cascata: ' + dbg.fallbackOrder);
-    diag(dbg.vidsrcProxy ? 'ok' : 'err',
-      'VIDSRC_PROXY_URL no servidor: ' + (dbg.vidsrcProxy || 'NÃO DEFINIDA'));
+    var pool = dbg.vidsrcPool || [];
+    diag(pool.length ? 'ok' : 'err',
+      'Vercels na pool: ' + (pool.length
+        ? pool.map(function (p) { return diagHost(p.base) + ' (' + p.usedPct + '% da cota' + (p.exhausted ? ', ESGOTADA' : '') + ')'; }).join(' · ')
+        : 'NENHUMA (defina VIDSRC_PROXY_URL ou VIDSRC_PROXY_URLS)'));
     diag('info', 'ADSHIELD_BASE_URL no servidor: ' + (dbg.adshield || 'não definida') +
       ' · relay Cloudflare: ' + (dbg.relay ? 'sim' : 'não'));
     diag('info', 'Provedores na ordem: ' + (dbg.providers || []).join(' → '));
@@ -1201,13 +1335,24 @@
       var url = d.frag && d.frag.url;
       var host = diagHost(url);
       var st = d.stats || {};
-      var bytes = st.total || st.loaded || 0;
-      var ms = Math.round((st.loading && st.loading.end && st.loading.start) ? st.loading.end - st.loading.start : 0);
+      var secs = (d.frag && d.frag.duration) || 0;
+      // Bytes reais: o payload baixado; se a versão do hls.js não entregar, usa as estatísticas.
+      var bytes = (d.payload && d.payload.byteLength) || st.total || st.loaded || 0;
+      var estimated = false;
+      if (!bytes) {
+        var lv = hls.levels && hls.levels[d.frag && d.frag.level];
+        bytes = lv && lv.bitrate && secs ? Math.round(lv.bitrate * secs / 8) : 0;
+        estimated = bytes > 0;
+      }
+      var ms = (st.loading && st.loading.end && st.loading.start) ? Math.round(st.loading.end - st.loading.start)
+        : ((st.tload && st.trequest) ? Math.round(st.tload - st.trequest) : 0);
       diagHls.frags++;
       diagHls.bytes += bytes;
       diagHls.hosts[host] = (diagHls.hosts[host] || 0) + 1;
+      usageAdd(url, bytes, secs);
       if (diagHls.frags <= 3 || diagHls.frags % 10 === 0) {
-        diag('ok', 'segmento #' + d.frag.sn + ' ✓ ' + (bytes / 1e6).toFixed(2) + ' MB em ' + ms + ' ms de ' + diagWhere(url));
+        diag('ok', 'segmento #' + d.frag.sn + ' ✓ ' + fmtBytes(bytes) + (estimated ? ' (estimado)' : '') +
+          ' · ' + secs.toFixed(1) + ' s de vídeo' + (ms ? ' em ' + ms + ' ms' : '') + ' de ' + diagWhere(url));
       }
       if (diagHls.frags === 1) diag('ok', '✅ PRIMEIRO SEGMENTO CHEGOU — o caminho de rede está funcionando');
     });
@@ -1226,7 +1371,7 @@
 
   function diagSummary() {
     var hosts = Object.keys(diagHls.hosts).map(function (h) { return h + ' ×' + diagHls.hosts[h]; }).join(', ');
-    return diagHls.frags + ' segmentos · ' + (diagHls.bytes / 1e6).toFixed(1) + ' MB · ' + (hosts || 'nenhum');
+    return diagHls.frags + ' segmentos · ' + fmtBytes(diagHls.bytes) + ' · ' + (hosts || 'nenhum');
   }
 
   function setStatus(kind, text) {
@@ -2126,20 +2271,20 @@
       var id = state.selected && /^\d+$/.test(String(state.selected.id)) ? state.selected.id : 603;
       diag('step', 'Teste ativo: o servidor chama /vidsrc/probe na Vercel (TMDB ' + id + ')…');
       apiFetch('/api/diag/vidsrc?id=' + id).then(function (r) { return r.json(); }).then(function (d) {
-        if (d.error) { diag('err', d.error + (d.base ? ' (' + d.base + ')' : '')); return; }
-        diag(d.ok ? 'ok' : 'err', 'Vercel ' + d.base + ' → HTTP ' + d.http + ' em ' + d.ms + ' ms');
-        var p = d.probe || {};
-        if (p.egressIp) diag('info', 'IP de saída da Vercel nesta chamada: ' + p.egressIp);
-        if (p.resolveMs) diag('info', 'extração (vidsrc→stellar→api+WASM): ' + p.resolveMs + ' ms');
-        ['master', 'variant', 'segment'].forEach(function (k) {
-          var st = p.steps && p.steps[k];
-          if (st) diag(st.status === 200 ? 'ok' : 'err', k + ': HTTP ' + st.status + ' · ' + (st.bytes || 0) + ' bytes · ' + (st.ms || 0) + ' ms' + (st.error ? ' · ' + st.error : ''));
+        if (d.error) { diag('err', d.error); return; }
+        (d.results || []).forEach(function (item) {
+          diag(item.ok ? 'ok' : 'err', 'Vercel ' + diagHost(item.base) + ' → ' + (item.http ? 'HTTP ' + item.http : 'sem resposta') + ' em ' + item.ms + ' ms' + (item.error ? ' · ' + item.error : ''));
+          var p = item.probe || {};
+          if (p.egressIp) diag('info', '   IP de saída: ' + p.egressIp + (p.resolveMs ? ' · extração ' + p.resolveMs + ' ms' : ''));
+          ['master', 'variant', 'segment'].forEach(function (k) {
+            var st = p.steps && p.steps[k];
+            if (st) diag(st.status === 200 ? 'ok' : 'err', '   ' + k + ': HTTP ' + st.status + ' · ' + fmtBytes(st.bytes || 0) + ' · ' + (st.ms || 0) + ' ms' + (st.error ? ' · ' + st.error : ''));
+          });
+          if (p.error) diag('err', '   erro na extração: ' + p.error);
+          var seg = p.steps && p.steps.segment;
+          diag(seg && seg.status === 200 ? 'ok' : 'warn', seg && seg.status === 200
+            ? '   ✅ extrai E baixa segmentos do Vidsrc.' : '   ⚠ cadeia não fechou até o segmento; veja o passo que falhou.');
         });
-        if (p.error) diag('err', 'erro na extração: ' + p.error);
-        diag(p.steps && p.steps.segment && p.steps.segment.status === 200 ? 'ok' : 'warn',
-          p.steps && p.steps.segment && p.steps.segment.status === 200
-            ? '✅ A Vercel consegue extrair E baixar segmentos do Vidsrc.'
-            : '⚠ A cadeia não fechou até o segmento; veja o passo que falhou acima.');
       }).catch(function (err) { diag('err', 'Falha ao chamar o servidor: ' + err.message); });
     });
     diag('info', 'Painel pronto. Clique em um título para ver o caminho completo, ou em "Testar Vidsrc/Vercel".');
