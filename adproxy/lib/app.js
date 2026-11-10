@@ -6,6 +6,7 @@ const { Readable } = require('stream');
 const { removedSummary, sanitizeHtml } = require('./htmlRewrite');
 const { rewriteCss } = require('./cssRewrite');
 const { rewriteHls, isHlsContentType } = require('./hlsRewrite');
+const { resolveVidsrc, proxyVidsrcHls } = require('./vidsrc');
 const { isAdHost, isAdUrl, isPlayerHost } = require('./adRules');
 const {
   assertSafeDestination,
@@ -366,6 +367,44 @@ function createApp(config) {
     } catch (error) {
       clearTimeout(timer);
       handleProxyError(req, res, error, config);
+    }
+  });
+
+  app.get('/vidsrc/stream', async (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Cache-Control', 'no-store');
+    const id = String(req.query.tmdb || req.query.id || '').trim();
+    if (!/^\d+$/.test(id)) {
+      return res.status(400).json({ error: 'tmdb/id inválido' });
+    }
+    const type = String(req.query.type || 'movie') === 'tv' ? 'tv' : 'movie';
+    const season = Math.max(1, Number(req.query.s || req.query.season) || 1);
+    const episode = Math.max(1, Number(req.query.e || req.query.episode) || 1);
+    try {
+      const result = await resolveVidsrc({ id, type, season, episode });
+      const base = `${req.protocol}://${req.get('host')}`;
+      const url = `${base}/vidsrc/hls?u=${encodeURIComponent(result.urls[0])}`;
+      res.json({
+        ok: true,
+        provider: result.provider,
+        title: result.title,
+        type,
+        tmdb: id,
+        url,
+        qualities: result.urls.map((item, index) => ({ index, url: `${base}/vidsrc/hls?u=${encodeURIComponent(item)}` })),
+        subtitles: result.subtitles
+      });
+    } catch (error) {
+      res.status(502).json({ ok: false, error: error.message });
+    }
+  });
+
+  app.get('/vidsrc/hls', async (req, res) => {
+    try {
+      await proxyVidsrcHls(req, res, config);
+    } catch (error) {
+      if (!res.headersSent) res.status(502).type('text').send(`Falha no Vidsrc: ${error.message}`);
+      else res.destroy();
     }
   });
 
