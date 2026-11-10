@@ -21,7 +21,7 @@ const {
   shutdown
 } = require('./lib/transcoder');
 const { proxyVideo, USER_AGENT, TOKEN_TTL_MS } = require('./lib/proxy');
-const { srtToVtt, shiftVtt } = require('./lib/subtitles');
+const { srtToVtt, shiftVtt, decodeSubtitle, stripSpamCues, analyzeVtt } = require('./lib/subtitles');
 const registry = require('./lib/registry');
 const usageLedger = require('./lib/usageLedger');
 const { relayFetch, getRelayConfig } = require('./lib/relayFetch');
@@ -205,7 +205,7 @@ function pickQualityKeyAtMost(qualities, limit) {
 
 function buildCaptions(rawCaptions, autoShift = 0) {
   const captions = (Array.isArray(rawCaptions) ? rawCaptions : []).map((caption) => {
-    const token = registry.register('subtitle', { url: caption.url, autoShift }, TOKEN_TTL_MS);
+    const token = registry.register('subtitle', { url: caption.url, autoShift, lang: normalizeLang(caption.language) }, TOKEN_TTL_MS);
     return {
       label: caption.language || 'Legenda',
       srclang: normalizeLang(caption.language),
@@ -415,6 +415,127 @@ app.get('/api/popular', requireApiKey, async (req, res) => {
   }
 
   res.json({ results });
+});
+
+/* ------------------------------------------------------------------ */
+/* Home estilo Netflix: destaque + fileiras que carregam sob demanda     */
+/* ------------------------------------------------------------------ */
+
+const GENRE_NAMES = {
+  28: 'Ação', 12: 'Aventura', 16: 'Animação', 35: 'Comédia', 80: 'Crime', 99: 'Documentário', 18: 'Drama',
+  10751: 'Família', 14: 'Fantasia', 36: 'História', 27: 'Terror', 10402: 'Música', 9648: 'Mistério',
+  10749: 'Romance', 878: 'Ficção científica', 10770: 'Cinema TV', 53: 'Suspense', 10752: 'Guerra', 37: 'Faroeste',
+  10759: 'Ação e aventura', 10762: 'Infantil', 10763: 'Notícias', 10764: 'Reality', 10765: 'Sci-Fi e fantasia',
+  10766: 'Novela', 10767: 'Talk show', 10768: 'Guerra e política'
+};
+
+// id da fileira -> título + caminho no TMDB. As fileiras de gênero usam /discover.
+const ROW_DEFS = [
+  { id: 'trending', title: 'Em alta esta semana', path: '/trending/all/week' },
+  { id: 'popular-movies', title: 'Filmes populares', path: '/movie/popular', type: 'movie' },
+  { id: 'popular-tv', title: 'Séries populares', path: '/tv/popular', type: 'tv' },
+  { id: 'top-movies', title: 'Filmes mais bem avaliados', path: '/movie/top_rated', type: 'movie' },
+  { id: 'now-playing', title: 'Nos cinemas agora', path: '/movie/now_playing', type: 'movie' },
+  { id: 'top-tv', title: 'Séries mais bem avaliadas', path: '/tv/top_rated', type: 'tv' },
+  { id: 'g-action', title: 'Ação', path: '/discover/movie?with_genres=28&sort_by=popularity.desc&vote_count.gte=200', type: 'movie' },
+  { id: 'g-comedy', title: 'Comédia', path: '/discover/movie?with_genres=35&sort_by=popularity.desc&vote_count.gte=200', type: 'movie' },
+  { id: 'airing', title: 'Séries no ar', path: '/tv/on_the_air', type: 'tv' },
+  { id: 'g-horror', title: 'Terror', path: '/discover/movie?with_genres=27&sort_by=popularity.desc&vote_count.gte=200', type: 'movie' },
+  { id: 'g-scifi', title: 'Ficção científica', path: '/discover/movie?with_genres=878&sort_by=popularity.desc&vote_count.gte=200', type: 'movie' },
+  { id: 'upcoming', title: 'Em breve', path: '/movie/upcoming', type: 'movie' },
+  { id: 'g-animation', title: 'Animação', path: '/discover/movie?with_genres=16&sort_by=popularity.desc&vote_count.gte=200', type: 'movie' },
+  { id: 'tv-drama', title: 'Séries de drama', path: '/discover/tv?with_genres=18&sort_by=popularity.desc&vote_count.gte=200', type: 'tv' },
+  { id: 'g-romance', title: 'Romance', path: '/discover/movie?with_genres=10749&sort_by=popularity.desc&vote_count.gte=200', type: 'movie' },
+  { id: 'g-thriller', title: 'Suspense', path: '/discover/movie?with_genres=53&sort_by=popularity.desc&vote_count.gte=200', type: 'movie' },
+  { id: 'tv-comedy', title: 'Séries de comédia', path: '/discover/tv?with_genres=35&sort_by=popularity.desc&vote_count.gte=200', type: 'tv' },
+  { id: 'g-crime', title: 'Crime', path: '/discover/movie?with_genres=80&sort_by=popularity.desc&vote_count.gte=200', type: 'movie' },
+  { id: 'tv-anime', title: 'Animes', path: '/discover/tv?with_genres=16&with_original_language=ja&sort_by=popularity.desc', type: 'tv' },
+  { id: 'g-adventure', title: 'Aventura', path: '/discover/movie?with_genres=12&sort_by=popularity.desc&vote_count.gte=200', type: 'movie' },
+  { id: 'g-family', title: 'Para a família', path: '/discover/movie?with_genres=10751&sort_by=popularity.desc&vote_count.gte=200', type: 'movie' },
+  { id: 'g-docs', title: 'Documentários', path: '/discover/movie?with_genres=99&sort_by=popularity.desc&vote_count.gte=100', type: 'movie' },
+  // Grade infinita do fim da página (alterna filmes e séries); não aparece na lista de fileiras.
+  { id: 'explore-movie', title: 'Explorar', path: '/discover/movie?sort_by=popularity.desc&vote_count.gte=300', type: 'movie', hidden: true },
+  { id: 'explore-tv', title: 'Explorar', path: '/discover/tv?sort_by=popularity.desc&vote_count.gte=300', type: 'tv', hidden: true }
+];
+const ROW_BY_ID = new Map(ROW_DEFS.map((row) => [row.id, row]));
+
+function mapRowItem(item, fallbackType) {
+  const base = mapTmdbItem(item, fallbackType);
+  if (!base) return null;
+  return {
+    ...base,
+    backdrop: item.backdrop_path || '',
+    genres: (item.genre_ids || []).map((id) => GENRE_NAMES[id]).filter(Boolean).slice(0, 3)
+  };
+}
+
+const rowCache = new Map();
+const ROW_TTL_MS = 30 * 60 * 1000;
+
+async function fetchRow(path, fallbackType, page) {
+  const key = `${path}|${page}`;
+  const hit = rowCache.get(key);
+  if (hit && hit.expires > Date.now()) return hit.value;
+
+  const data = await tmdbFetch(`${path}${path.includes('?') ? '&' : '?'}page=${page}`);
+  if (!data) return null;
+  const seen = new Set();
+  const results = [];
+  for (const item of data.results || []) {
+    const mapped = mapRowItem(item, fallbackType);
+    if (!mapped || !mapped.poster || seen.has(`${mapped.type}:${mapped.id}`)) continue;
+    seen.add(`${mapped.type}:${mapped.id}`);
+    results.push(mapped);
+  }
+  const value = { results, page: data.page || page, totalPages: Math.min(Number(data.total_pages) || 1, 500) };
+  if (results.length) {
+    rowCache.set(key, { value, expires: Date.now() + ROW_TTL_MS });
+    if (rowCache.size > 400) rowCache.delete(rowCache.keys().next().value);   // não cresce sem limite
+  }
+  return value;
+}
+
+// Destaque (banner) + a lista de fileiras. Os itens de cada fileira vêm de /api/row, só quando a
+// pessoa rola até ela (a página abre rápido e o TMDB não é consultado à toa).
+app.get('/api/home', requireApiKey, async (req, res) => {
+  if (!TMDB_API_KEY) return res.json({ hero: [], rows: [] });
+
+  const [trending, topMovies] = await Promise.all([
+    fetchRow('/trending/all/week', undefined, 1),
+    fetchRow('/movie/popular', 'movie', 1)
+  ]);
+
+  const pool = [...((trending && trending.results) || []), ...((topMovies && topMovies.results) || [])];
+  const seen = new Set();
+  const hero = [];
+  for (const item of pool) {
+    const key = `${item.type}:${item.id}`;
+    if (seen.has(key) || !item.backdrop || !item.overview) continue;
+    seen.add(key);
+    hero.push(item);
+    if (hero.length >= 6) break;
+  }
+
+  res.json({ hero, rows: ROW_DEFS.filter((row) => !row.hidden).map((row) => ({ id: row.id, title: row.title })) });
+});
+
+// Uma fileira, paginada: /api/row?id=trending&page=2. "because:<tipo>:<id>" = recomendados de um título.
+app.get('/api/row', requireApiKey, async (req, res) => {
+  if (!TMDB_API_KEY) return res.json({ id: '', title: '', page: 1, totalPages: 1, results: [] });
+
+  const id = String(req.query.id || '');
+  const page = Math.max(1, Math.min(500, Math.floor(Number(req.query.page)) || 1));
+
+  let def = ROW_BY_ID.get(id);
+  if (!def) {
+    const m = /^because:(movie|tv):(\d{1,9})$/.exec(id);
+    if (!m) return res.status(400).json({ error: 'Fileira desconhecida' });
+    def = { id, title: '', path: `/${m[1]}/${m[2]}/recommendations`, type: m[1] };
+  }
+
+  const row = await fetchRow(def.path, def.type, page);
+  if (!row) return res.status(502).json({ error: 'Falha ao consultar o TMDB' });
+  res.json({ id: def.id, title: def.title, ...row });
 });
 
 /* ------------------------------------------------------------------ */
@@ -1016,44 +1137,71 @@ app.get('/api/hls-proxy', async (req, res) => {
   }
 });
 
+// Baixa, decodifica (UTF-8 ou página de código legada), limpa propaganda e converte para
+// WebVTT uma vez; trocar o atraso depois não refaz o download.
+async function loadSubtitleVtt(entry) {
+  if (entry.vtt) return entry;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15000);
+  try {
+    const response = await fetch(entry.url, {
+      signal: controller.signal,
+      headers: { 'User-Agent': USER_AGENT }
+    });
+    if (!response.ok) {
+      const err = new Error(`Falha ao baixar legenda (HTTP ${response.status})`);
+      err.status = 502;
+      throw err;
+    }
+    const text = decodeSubtitle(Buffer.from(await response.arrayBuffer()), entry.lang);
+    const vtt = /^\s*\uFEFF?WEBVTT/.test(text) ? text : srtToVtt(text);
+    const cleaned = stripSpamCues(vtt);
+    entry.vtt = cleaned.vtt;
+    entry.spamRemoved = cleaned.removed;
+    entry.info = { ...analyzeVtt(entry.vtt), spamRemoved: cleaned.removed };
+    return entry;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 app.get('/api/subtitle', async (req, res) => {
   const entry = registry.resolve('subtitle', String(req.query.t || ''));
   if (!entry) return res.status(404).json({ error: 'Legenda expirada. Recarregue o player.' });
 
   try {
-    // Baixa/converte uma vez e reaproveita: trocar o atraso não refaz o download.
-    if (!entry.vtt) {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 15000);
-      try {
-        const response = await fetch(entry.url, {
-          signal: controller.signal,
-          headers: { 'User-Agent': USER_AGENT }
-        });
+    await loadSubtitleVtt(entry);
 
-        if (!response.ok) {
-          return res.status(502).json({ error: `Falha ao baixar legenda (HTTP ${response.status})` });
-        }
-
-        const text = await response.text();
-        entry.vtt = /^\s*\uFEFF?WEBVTT/.test(text) ? text : srtToVtt(text);
-      } finally {
-        clearTimeout(timer);
-      }
-    }
-
-    // autoShift compensa o "Início (min)"; shift é o ajuste manual do usuário.
+    // autoShift compensa o "Início (min)"; shift é o ajuste manual do usuário;
+    // scale corrige legenda de outro fps (escorrega ao longo do filme).
     const autoShift = Number(entry.autoShift) || 0;
     const manual = Math.max(-600, Math.min(600, Number(req.query.shift) || 0));
+    const scale = Math.max(0.8, Math.min(1.25, Number(req.query.scale) || 1));
     const total = autoShift + manual;
-    const body = Math.abs(total) > 0.001 ? shiftVtt(entry.vtt, total) : entry.vtt;
+    const body = Math.abs(total) > 0.001 || Math.abs(scale - 1) > 1e-6
+      ? shiftVtt(entry.vtt, total, scale)
+      : entry.vtt;
 
     res.setHeader('Content-Type', 'text/vtt; charset=utf-8');
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Cache-Control', 'public, max-age=3600');
     res.send(body);
   } catch (err) {
-    res.status(502).json({ error: 'Falha ao baixar legenda: ' + err.message });
+    res.status(err.status || 502).json({ error: err.status ? err.message : 'Falha ao baixar legenda: ' + err.message });
+  }
+});
+
+// Resumo (nº de falas, onde termina, % de caracteres quebrados) para o player avisar
+// de legenda incompleta/corrompida em vez de o usuário achar que "não está sincronizada".
+app.get('/api/subtitle/info', async (req, res) => {
+  const entry = registry.resolve('subtitle', String(req.query.t || ''));
+  if (!entry) return res.status(404).json({ error: 'Legenda expirada. Recarregue o player.' });
+  try {
+    await loadSubtitleVtt(entry);
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.json(entry.info);
+  } catch (err) {
+    res.status(err.status || 502).json({ error: err.message });
   }
 });
 

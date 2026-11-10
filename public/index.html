@@ -72,6 +72,66 @@
   .switch input:checked + .slider::after{transform:translateX(16px)}
   .switch input:focus-visible + .slider{outline:2px solid var(--brand);outline-offset:2px}
   .sec-title{color:var(--muted);font-size:.92rem;margin:.75rem 0 .6rem}
+
+  /* ---- Home estilo Netflix ---- */
+  #home[hidden],#searchArea[hidden],.row[hidden],.hero[hidden]{display:none}
+  .sentinel{height:1px}
+  .hero{position:relative;border-radius:16px;overflow:hidden;margin:.4rem 0 1.2rem;
+    min-height:clamp(280px,44vw,500px);display:flex;align-items:flex-end;background:#12121a;isolation:isolate}
+  .hero-slides{position:absolute;inset:0;z-index:-2}
+  .hero-slide{position:absolute;inset:0;opacity:0;transition:opacity .9s ease}
+  .hero-slide.on{opacity:1}
+  .hero-slide img{width:100%;height:100%;object-fit:cover;object-position:center 22%;display:block}
+  .hero-fade{position:absolute;inset:0;z-index:-1;
+    background:linear-gradient(90deg,rgba(11,11,16,.92) 0%,rgba(11,11,16,.55) 42%,rgba(11,11,16,0) 75%),
+               linear-gradient(0deg,rgba(11,11,16,.95) 0%,rgba(11,11,16,0) 45%)}
+  .hero-body{padding:clamp(1rem,3.4vw,2.6rem);max-width:min(620px,100%);transition:opacity .35s ease}
+  .hero-body.swap{opacity:0}
+  .hero-genres{font-size:.78rem;color:#d7d7e4;letter-spacing:.04em;text-transform:uppercase;margin-bottom:.35rem;text-shadow:0 1px 6px #000}
+  .hero-title{margin:0 0 .5rem;font-size:clamp(1.6rem,4.6vw,3rem);line-height:1.05;letter-spacing:-.02em;text-shadow:0 2px 14px rgba(0,0,0,.65)}
+  .hero-overview{margin:0 0 1rem;color:#e4e4ee;font-size:clamp(.82rem,1.5vw,1rem);line-height:1.45;max-width:52ch;
+    display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;text-shadow:0 1px 8px rgba(0,0,0,.8)}
+  .hero-actions{display:flex;gap:.6rem;flex-wrap:wrap}
+  .hero-play{background:#fff;color:#111;padding:.65rem 1.4rem;font-size:1rem;border-radius:8px}
+  .hero-list{background:rgba(109,109,122,.55);color:#fff;padding:.65rem 1.1rem;font-size:.95rem;border-radius:8px;backdrop-filter:blur(4px)}
+  .hero-list.on{background:rgba(255,255,255,.22)}
+  .hero-dots{position:absolute;right:1rem;bottom:.9rem;display:flex;gap:.4rem}
+  .hero-dot{width:.55rem;height:.55rem;padding:0;border-radius:50%;background:rgba(255,255,255,.35);border:0}
+  .hero-dot.on{background:#fff;width:1.4rem;border-radius:999px}
+  @media (max-width:640px){
+    .hero{min-height:360px;border-radius:12px}
+    .hero-overview{-webkit-line-clamp:2}
+    .hero-dots{right:50%;transform:translateX(50%);bottom:.5rem}
+    .hero-body{padding-bottom:1.9rem}
+  }
+
+  .row{margin:0 0 1.3rem}
+  .row-title{margin:0 0 .5rem;font-size:1.05rem;font-weight:700;letter-spacing:-.01em}
+  .rail{position:relative}
+  .track{--cardw:clamp(112px,14.5vw,168px);display:flex;gap:.7rem;overflow-x:auto;overflow-y:hidden;
+    scroll-snap-type:x proximity;scrollbar-width:none;padding:.45rem .15rem .7rem;margin:-.45rem -.15rem -.2rem;
+    overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch}
+  .track::-webkit-scrollbar{display:none}
+  .track .card{flex:0 0 var(--cardw);scroll-snap-align:start}
+  @media (max-width:640px){.track{--cardw:clamp(104px,31vw,140px)}}
+  .rail-btn{position:absolute;top:.45rem;bottom:.7rem;width:2.6rem;z-index:3;border:0;border-radius:10px;padding:0;
+    font-size:2rem;line-height:1;color:#fff;background:rgba(11,11,16,.72);opacity:0;transition:opacity .15s}
+  .rail:hover .rail-btn,.rail-btn:focus-visible{opacity:1}
+  .rail-btn.prev{left:-.4rem}.rail-btn.next{right:-.4rem}
+  .rail-btn[hidden]{display:none}
+  @media (hover:none){.rail-btn{display:none}}
+  .card.skel{pointer-events:none}
+  .card.skel .poster-wrap{background:linear-gradient(100deg,#1b1b27 30%,#262636 50%,#1b1b27 70%);background-size:220% 100%;animation:shimmer 1.3s linear infinite}
+  .card.skel .info{height:2.4rem}
+  @keyframes shimmer{from{background-position:120% 0}to{background-position:-120% 0}}
+  .row-retry{display:flex;align-items:center;gap:.7rem;color:var(--muted);font-size:.85rem;padding:.8rem .2rem}
+  .add-btn{position:absolute;top:.35rem;right:.35rem;width:1.7rem;height:1.7rem;padding:0;border-radius:50%;
+    background:rgba(0,0,0,.72);color:#fff;font-size:1rem;line-height:1;border:1px solid rgba(255,255,255,.35);opacity:0;transition:opacity .15s,background .15s;z-index:2}
+  .card:hover .add-btn,.add-btn:focus-visible,.add-btn.on{opacity:1}
+  .add-btn.on{background:var(--brand);border-color:var(--brand)}
+  @media (hover:none){.add-btn{opacity:.9}}
+  .explore-status{text-align:center;color:var(--muted);font-size:.85rem;margin:.8rem 0 2rem;min-height:1.2rem}
+  @media (prefers-reduced-motion:reduce){.hero-slide,.hero-body{transition:none}.card.skel .poster-wrap{animation:none}}
   #continueSection{margin-bottom:1rem}
   .cont-bar{position:absolute;left:0;right:0;bottom:0;height:4px;background:rgba(255,255,255,.18)}
   .cont-bar span{display:block;height:100%;background:var(--brand)}
@@ -194,6 +254,22 @@
   }
   .step-btn:hover{border-color:var(--brand)}
   .sub-hint{font-size:.72rem;color:var(--muted)}
+  .sub-scale{font-size:.72rem;color:var(--brand);border:1px solid var(--line);border-radius:999px;padding:.1rem .5rem}
+  .sub-warn{margin:.4rem 0 0;padding:.5rem .7rem;border-radius:10px;font-size:.82rem;line-height:1.4;
+    background:rgba(245,166,35,.12);border:1px solid rgba(245,166,35,.45);color:var(--text)}
+  .sub-warn[hidden],.sync-panel[hidden],.sub-scale[hidden]{display:none}
+  .sub-warn.info{background:rgba(80,160,255,.1);border-color:rgba(80,160,255,.35)}
+  .sync-btn{border-color:var(--brand)}
+  .sync-panel{margin:.5rem 0 0;padding:.7rem;border:1px solid var(--line);border-radius:12px;background:var(--card, rgba(255,255,255,.04))}
+  .sync-head{display:flex;justify-content:space-between;align-items:center;gap:.5rem}
+  .sync-msg{margin:.4rem 0;font-size:.82rem;color:var(--muted);line-height:1.4}
+  .sync-list{max-height:210px;overflow:auto;display:flex;flex-direction:column;gap:.25rem;
+    overscroll-behavior:contain}
+  .sync-item{display:flex;gap:.6rem;align-items:baseline;text-align:left;width:100%;padding:.4rem .55rem;
+    border:1px solid var(--line);border-radius:8px;background:transparent;color:var(--text);cursor:pointer;font:inherit;font-size:.82rem}
+  .sync-item:hover,.sync-item:focus-visible{border-color:var(--brand);outline:none}
+  .sync-item.now{border-color:var(--brand);background:rgba(255,255,255,.05)}
+  .sync-item time{flex:none;font-variant-numeric:tabular-nums;color:var(--muted);font-size:.74rem;min-width:3.4rem}
 
   /* ---------- cards: nota, teclado ---------- */
   .card:focus-visible,.rec-item:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
@@ -356,13 +432,55 @@
     <button id="noticeRetry" class="link-btn" type="button" hidden>Tentar de novo</button>
   </div>
 
-  <section id="continueSection" hidden>
-    <div class="sec-title">Continuar assistindo</div>
-    <div id="continueRow" class="results"></div>
-  </section>
+  <div id="home">
+    <section id="hero" class="hero" hidden aria-roledescription="carrossel" aria-label="Destaques">
+      <div id="heroSlides" class="hero-slides"></div>
+      <div class="hero-fade"></div>
+      <div class="hero-body" id="heroBody">
+        <div id="heroGenres" class="hero-genres"></div>
+        <h2 id="heroTitle" class="hero-title"></h2>
+        <p id="heroOverview" class="hero-overview"></p>
+        <div class="hero-actions">
+          <button id="heroPlay" class="hero-play" type="button">▶ Assistir</button>
+          <button id="heroList" class="hero-list" type="button" aria-pressed="false">＋ Minha lista</button>
+        </div>
+      </div>
+      <div id="heroDots" class="hero-dots" role="tablist" aria-label="Escolher destaque"></div>
+    </section>
 
-  <div id="sectionTitle">Populares</div>
-  <div id="results" class="results"></div>
+    <section id="continueSection" class="row" hidden>
+      <h3 class="row-title">Continuar assistindo</h3>
+      <div class="rail">
+        <button class="rail-btn prev" type="button" aria-label="Anteriores" hidden>‹</button>
+        <div id="continueRow" class="track"></div>
+        <button class="rail-btn next" type="button" aria-label="Próximos" hidden>›</button>
+      </div>
+    </section>
+
+    <section id="listSection" class="row" hidden>
+      <h3 class="row-title">Minha lista</h3>
+      <div class="rail">
+        <button class="rail-btn prev" type="button" aria-label="Anteriores" hidden>‹</button>
+        <div id="listRow" class="track"></div>
+        <button class="rail-btn next" type="button" aria-label="Próximos" hidden>›</button>
+      </div>
+    </section>
+
+    <div id="rows"></div>
+    <div id="rowsSentinel" class="sentinel" aria-hidden="true"></div>
+
+    <section id="exploreSection" class="row" hidden>
+      <h3 class="row-title">Explorar mais</h3>
+      <div id="exploreGrid" class="results"></div>
+      <div id="exploreSentinel" class="sentinel" aria-hidden="true"></div>
+      <p id="exploreStatus" class="explore-status" role="status"></p>
+    </section>
+  </div>
+
+  <div id="searchArea" hidden>
+    <div id="sectionTitle">Populares</div>
+    <div id="results" class="results"></div>
+  </div>
 
   <section id="playerSection" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="playerTitle">
     <div class="modal-backdrop" id="modalBackdrop"></div>
@@ -453,11 +571,24 @@
                 <span class="sub-divider"></span>
                 <span class="sub-title">Sincronia</span>
                 <button id="subMinus" class="step-btn" type="button" title="Adiantar a legenda 0,5 s">−0,5s</button>
-                <input id="subOffsetInput" type="number" step="0.5" min="-600" max="600" value="0"
+                <button id="subMinusFine" class="step-btn" type="button" title="Adiantar a legenda 0,1 s (atalho: [ ou G)">−0,1</button>
+                <input id="subOffsetInput" type="number" step="0.1" min="-600" max="600" value="0"
                        title="Atraso em segundos (positivo = legenda mais tarde)" aria-label="Atraso da legenda em segundos">
+                <button id="subPlusFine" class="step-btn" type="button" title="Atrasar a legenda 0,1 s (atalho: ] ou H)">+0,1</button>
                 <button id="subPlus" class="step-btn" type="button" title="Atrasar a legenda 0,5 s">+0,5s</button>
-                <button id="subReset" class="step-btn" type="button" title="Zerar o ajuste">0</button>
-                <span class="sub-hint">positivo = legenda mais tarde · o “Início (min)” já é compensado</span>
+                <button id="subReset" class="step-btn" type="button" title="Zerar o ajuste (atraso e escala)">0</button>
+                <button id="subSyncBtn" class="step-btn sync-btn" type="button" title="Escolha a fala que acabou de ouvir e o fdsFlix calcula o ajuste">🎯 Sincronizar</button>
+                <span id="subScaleTag" class="sub-scale" hidden></span>
+                <span class="sub-hint">positivo = legenda mais tarde · atalhos: [ ] ou G H (0,1 s)</span>
+              </div>
+              <div id="subWarn" class="sub-warn" role="status" hidden></div>
+              <div id="syncPanel" class="sync-panel" hidden>
+                <div class="sync-head">
+                  <strong>🎯 Sincronizar a legenda</strong>
+                  <button id="syncClose" class="step-btn" type="button" aria-label="Fechar">✕</button>
+                </div>
+                <p id="syncMsg" class="sync-msg"></p>
+                <div id="syncList" class="sync-list" role="listbox" aria-label="Falas da legenda perto deste ponto"></div>
               </div>
 
               <div id="infoBox" class="info-box" aria-live="polite"></div>
@@ -604,6 +735,10 @@
     hlsWatch: null,
     hlsIssue: '',
     subOffset: 0,
+    subScale: 1,
+    subInfo: {},
+    subUserChose: false,
+    syncAnchor: null,
     subKey: null,
     subLang: null,
     langToken: 0,
@@ -847,6 +982,7 @@
 
     $('continueRow').innerHTML = html;
     section.hidden = false;
+    railUpdate($('continueRow'));
   }
 
   /* ---- Auto-próximo episódio (opcional, chave no player) ---- */
@@ -1147,6 +1283,7 @@
       .then(function (data) {
         settled = true;
         clearTimeout(slowTimer);
+        if (home.failed) homeInit(true);
         if (!data.ffmpeg) {
           setNotice('warn', 'Servidor online, mas sem ffmpeg: vídeos HEVC não serão convertidos.', false);
           return;
@@ -1198,6 +1335,7 @@
 '<span class="badge-type">' + (item.type === 'tv' ? 'Série' : 'Filme') + '</span>' +
             img +
             (item.rating ? '<span class="rating-badge">★ ' + Number(item.rating).toFixed(1) + '</span>' : '') +
+            addBtnHtml(item) +
           '</div>' +
           '<div class="info">' +
             '<div class="title">' + escapeHtml(item.title) + '</div>' +
@@ -1209,16 +1347,8 @@
   }
 
   function loadPopular() {
-    renderCards(FALLBACK_POPULAR, 'Populares');
-
-    apiFetch('/api/popular')
-      .then(function (response) { return response.ok ? response.json() : null; })
-      .then(function (data) {
-        if (data && Array.isArray(data.results) && data.results.length) {
-          renderCards(data.results, 'Populares');
-        }
-      })
-      .catch(function () { /* mantém o fallback */ });
+    setHomeMode(true);
+    homeInit(false);
   }
 
   var searchTimer = null;
@@ -1231,11 +1361,11 @@
   function runSearch() {
     var query = $('searchInput').value.trim();
     if (!query) {
-      renderCards(FALLBACK_POPULAR, 'Populares');
       loadPopular();
       return;
     }
 
+    setHomeMode(false);
     $('sectionTitle').textContent = 'Buscando “' + query + '”…';
 
     apiFetch('/api/search?q=' + encodeURIComponent(query))
@@ -1589,6 +1719,8 @@
     });
     state.pendingSeek = 0;
     $('subBar').hidden = true;
+    $('syncPanel').hidden = true;
+    $('subWarn').hidden = true;
   }
 
   /* ---------------------------------------------------------------- */
@@ -1615,10 +1747,27 @@
     } catch (err) { /* ignore */ }
   }
 
+  function loadSubScale(key) {
+    try {
+      var v = Number(localStorage.getItem(key + '.scale'));
+      return v > 0.8 && v < 1.25 ? v : 1;
+    } catch (err) {
+      return 1;
+    }
+  }
+
+  function saveSubScale(key, value) {
+    try {
+      if (value === 1) localStorage.removeItem(key + '.scale');
+      else localStorage.setItem(key + '.scale', String(value));
+    } catch (err) { /* ignore */ }
+  }
+
   function subtitleUrl(url, offset) {
     var base = apiUrl(url);
     return base + (base.indexOf('?') === -1 ? '?' : '&') +
-      'shift=' + encodeURIComponent(String(offset));
+      'shift=' + encodeURIComponent(String(offset)) +
+      (state.subScale !== 1 ? '&scale=' + encodeURIComponent(String(state.subScale)) : '');
   }
 
   function loadSubLang(key) {
@@ -1748,7 +1897,7 @@
       track.remove();
     });
 
-    addCaptions(state.captions);
+    addCaptions(state.captions, Boolean(state.cvp));
     populateSubLang(state.captions);
     if (select) select.value = active === -1 ? 'off' : String(active);
 
@@ -1768,6 +1917,226 @@
       return;
     }
     rebuildCaptions();
+  }
+
+  /* ---- escala, qualidade e sincronização assistida ---- */
+
+  function subUiRefresh() {
+    var tag = $('subScaleTag');
+    if (!tag) return;
+    if (state.subScale !== 1) {
+      tag.hidden = false;
+      tag.textContent = 'escala ×' + state.subScale.toFixed(4);
+    } else {
+      tag.hidden = true;
+    }
+  }
+
+  function subAutoShift() { return state.transcoded ? -state.baseOffset : 0; }
+
+  function fmtClock(sec) {
+    sec = Math.max(0, Math.round(sec));
+    var h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), r = sec % 60;
+    return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(r).padStart(2, '0');
+  }
+
+  function totalDuration() {
+    var d = $('nativePlayer').duration;
+    if (!isFinite(d) || d <= 0) return 0;
+    return d + (state.transcoded ? state.baseOffset : 0);
+  }
+
+  // Pergunta ao servidor se a legenda está inteira e legível. Muita "legenda dessincronizada"
+  // é, na verdade, um arquivo pela metade (só o CD 1) ou com caracteres quebrados na origem.
+  function subJudge(info, total) {
+    if (!info || !info.cues) return { bad: true, text: 'Esta legenda veio vazia da fonte. Tente outro idioma.' };
+    if (info.garbled > 0.02) {
+      return { bad: true, text: 'Esta legenda chegou com caracteres corrompidos da fonte (não dá para consertar). Tente outro idioma.' };
+    }
+    if (total > 900 && info.lastEnd < total * 0.8) {
+      return { bad: true, text: 'Esta legenda termina em ' + fmtClock(info.lastEnd) + ', mas o filme tem ' + fmtClock(total) +
+        ': o arquivo está incompleto (provavelmente só metade). Tente outro idioma.' };
+    }
+    if (total > 900 && info.lastEnd > total * 1.12) {
+      return { bad: false, warn: true, text: 'Esta legenda termina em ' + fmtClock(info.lastEnd) + ' e o vídeo tem ' + fmtClock(total) +
+        ': deve ser de outra versão do filme. Se estiver adiantada, use 🎯 Sincronizar.' };
+    }
+    return { bad: false };
+  }
+
+  function subFetchInfo(index) {
+    var caption = state.captions[index];
+    if (!caption) return Promise.resolve(null);
+    if (state.subInfo[caption.url]) return Promise.resolve(state.subInfo[caption.url]);
+    var url = apiUrl(caption.url.replace('/api/subtitle', '/api/subtitle/info'));
+    return fetch(url).then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (info) { if (info) state.subInfo[caption.url] = info; return info; })
+      .catch(function () { return null; });
+  }
+
+  function subShowWarn(text, kind) {
+    var box = $('subWarn');
+    if (!text) { box.hidden = true; return; }
+    box.className = 'sub-warn' + (kind === 'info' ? ' info' : '');
+    box.textContent = text;
+    box.hidden = false;
+  }
+
+  var subQualityTimer = null;
+  function subQualityCheckSoon() {
+    clearTimeout(subQualityTimer);
+    subQualityTimer = setTimeout(subQualityCheck, 900);
+  }
+
+  function subQualityCheck() {
+    var index = activeSubIndex();
+    var token = state.playToken;
+    if (index < 0) { subShowWarn(''); return; }
+    var video = $('nativePlayer');
+
+    subFetchInfo(index).then(function (info) {
+      if (token !== state.playToken || activeSubIndex() !== index) return;
+      var total = totalDuration();
+      if (!total && info && info.cues) {
+        // ainda sem duração: reavalia quando o vídeo informar
+        video.addEventListener('durationchange', subQualityCheckSoon, { once: true });
+      }
+      var verdict = subJudge(info, total);
+      var note = info && info.spamRemoved ? ' (removemos ' + info.spamRemoved + ' anúncio(s) do arquivo)' : '';
+
+      if (verdict.bad && !state.subUserChose) {
+        // O padrão escolhido é ruim: troca sozinho por outro idioma bom (pt > en > resto).
+        var order = state.captions.map(function (c, i) { return i; }).sort(function (a, b) {
+          var rank = function (i) { var l = state.captions[i].srclang; return l === 'pt' ? 0 : l === 'en' ? 1 : 2; };
+          return rank(a) - rank(b);
+        }).filter(function (i) { return i !== index && !(state.subBad && state.subBad[i]); });
+        state.subBad = state.subBad || {};
+        state.subBad[index] = true;
+        var tryNext = function (n) {
+          if (n >= order.length || n >= 4) { subShowWarn(verdict.text, 'warn'); return Promise.resolve(); }
+          var cand = order[n];
+          return subFetchInfo(cand).then(function (ci) {
+            var v = subJudge(ci, total);
+            if (v.bad) { state.subBad[cand] = true; return tryNext(n + 1); }
+            applySubLangByIndex(cand);
+            subShowWarn('Troquei a legenda de ' + state.captions[index].label + ' para ' + state.captions[cand].label +
+              '. Motivo: ' + verdict.text.replace(/ Tente outro idioma\.$/, '') + '.', 'info');
+          });
+        };
+        return tryNext(0);
+      }
+      subShowWarn(verdict.text ? verdict.text + note : (note ? 'Legenda limpa' + note + '.' : ''), verdict.bad || verdict.warn ? 'warn' : 'info');
+    });
+  }
+
+  function applySubScale(scale, offset) {
+    state.subScale = Math.max(0.8, Math.min(1.25, Math.round(scale * 1e6) / 1e6)) || 1;
+    if (state.subKey) saveSubScale(state.subKey, state.subScale);
+    subUiRefresh();
+    applySubOffset(offset);   // recarrega as tracks já com a nova escala (e o atraso)
+    if (state.cvp) rebuildCaptions();
+  }
+
+  function syncTrack() {
+    var video = $('nativePlayer');
+    var i = activeSubIndex();
+    return i >= 0 ? video.textTracks[i] : null;
+  }
+
+  // start da fala "sem ajuste": inverte (hora = s * escala + auto + atraso aplicado no servidor)
+  function syncOriginalStart(cue) {
+    var serverShift = state.cvp ? 0 : state.subOffset;
+    return (cue.startTime - subAutoShift() - serverShift) / state.subScale;
+  }
+
+  function syncOpen() {
+    var video = $('nativePlayer');
+    var track = syncTrack();
+    if (!track || !track.cues || !track.cues.length) {
+      subShowWarn('Ative uma legenda (e espere carregar) antes de sincronizar.', 'warn');
+      return;
+    }
+    try { video.pause(); } catch (err) { /* ignore */ }
+    $('syncPanel').hidden = false;
+    syncRender();
+  }
+
+  var syncRetryTimer = null;
+
+  function syncRender() {
+    var video = $('nativePlayer');
+    var track = syncTrack();
+    var list = $('syncList');
+    if (!track || !track.cues || !track.cues.length) {
+      // As legendas acabaram de ser recarregadas (ajuste novo): espera em vez de mostrar falas velhas.
+      list.innerHTML = '<div class="sync-msg">Carregando a legenda com o novo ajuste…</div>';
+      clearTimeout(syncRetryTimer);
+      syncRetryTimer = setTimeout(function () { if (!$('syncPanel').hidden) syncRender(); }, 500);
+      return;
+    }
+    var now = video.currentTime;
+    var near = [];
+    for (var i = 0; i < track.cues.length; i++) {
+      var cue = track.cues[i];
+      if (Math.abs(cue.startTime - now) <= 150) near.push(cue);
+    }
+    near = near.slice(0, 60);
+    $('syncMsg').textContent = state.syncAnchor
+      ? '1ª marca salva em ' + fmtClock(state.syncAnchor.video) + '. Para corrigir legenda que vai escorregando, avance ao menos 5 min, pause numa fala e escolha-a aqui. Ou feche: o atraso da 1ª marca já foi aplicado.'
+      : 'Reproduza até alguém começar a falar, PAUSE e clique na frase que acabou de ouvir. Dá certo mesmo se a legenda estiver minutos fora.';
+    list.innerHTML = '';
+    if (!near.length) {
+      list.innerHTML = '<div class="sync-msg">Nenhuma fala da legenda perto de ' + fmtClock(now) + '. Avance/volte no vídeo e clique em 🎯 de novo.</div>';
+      return;
+    }
+    near.forEach(function (cue) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'sync-item' + (cue.startTime <= now && cue.endTime >= now ? ' now' : '');
+      b.setAttribute('role', 'option');
+      var t = document.createElement('time');
+      t.textContent = fmtClock(cue.startTime);
+      var span = document.createElement('span');
+      span.textContent = String(cue.text || '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ');
+      b.appendChild(t);
+      b.appendChild(span);
+      b.addEventListener('click', function () { syncPick(cue); });
+      list.appendChild(b);
+    });
+    var target = list.querySelector('.now') || list.children[Math.floor(list.children.length / 2)];
+    if (target && target.scrollIntoView) list.scrollTop = target.offsetTop - list.clientHeight / 2;
+  }
+
+  function syncPick(cue) {
+    var video = $('nativePlayer');
+    if (cue.track !== syncTrack()) { syncRender(); return; }   // lista velha: recarregou enquanto você olhava
+    var T = video.currentTime;               // hora real do vídeo agora
+    var s = syncOriginalStart(cue);          // hora da fala no arquivo, sem ajuste
+    var auto = subAutoShift();
+    var prev = state.syncAnchor;
+
+    if (prev && Math.abs(s - prev.s) >= 300 && Math.abs(T - prev.video) >= 300) {
+      // duas marcas: resolve atraso + escala (legenda de outro fps)
+      var scale = (T - prev.video) / (s - prev.s);
+      if (scale > 0.8 && scale < 1.25) {
+        var offset2 = prev.video - auto - prev.s * scale;
+        applySubScale(scale, offset2);
+        state.syncAnchor = null;
+        $('syncPanel').hidden = true;
+        subShowWarn('Sincronizado em 2 pontos: atraso ' + offset2.toFixed(2) + ' s, escala ×' + scale.toFixed(4) + '. Se ainda houver diferença, ajuste fino com −0,1/+0,1.', 'info');
+        return;
+      }
+    }
+
+    var offset = T - auto - s * state.subScale;
+    if (Math.abs(offset) > 600) {
+      subShowWarn('A diferença calculada (' + offset.toFixed(0) + ' s) é grande demais: talvez a legenda seja de outro filme/versão.', 'warn');
+      return;
+    }
+    state.syncAnchor = { s: s, video: T };
+    applySubOffset(offset);
+    subShowWarn('Atraso ajustado para ' + (Math.round(offset * 100) / 100) + ' s. Dê play e confira; se a legenda escorregar no fim do filme, marque um 2º ponto.', 'info');
+    syncRender();
   }
 
   function attachHls(url, video, startPosition) {
@@ -1984,7 +2353,15 @@
 
     state.subKey = subtitleKey(item, season, episode);
     state.subOffset = loadSubOffset(state.subKey);
+    state.subScale = loadSubScale(state.subKey);
+    state.subInfo = {};
+    state.subBad = {};
+    state.subUserChose = Boolean(loadSubLang(state.subKey));
+    state.syncAnchor = null;
     $('subOffsetInput').value = String(state.subOffset);
+    subUiRefresh();
+    $('syncPanel').hidden = true;
+    $('subWarn').hidden = true;
     $('subBar').hidden = true;
 
     state.pendingSeek = startSeconds;
@@ -2093,6 +2470,7 @@
         populateSubLang(state.captions);
         applySavedSubLang(state.captions);
         $('subBar').hidden = state.captions.length === 0;
+        subQualityCheckSoon();
 
         var video = $('nativePlayer');
 
@@ -2495,6 +2873,7 @@
   /* ---------------------------------------------------------------- */
 
   $('results').addEventListener('click', function (event) {
+    if (event.target.closest && event.target.closest('[data-add]')) return;
     var card = event.target.closest ? event.target.closest('.card') : null;
     if (!card) return;
     selectItem(Number(card.dataset.index));
@@ -2502,6 +2881,7 @@
 
   $('results').addEventListener('keydown', function (event) {
     if (event.key !== 'Enter' && event.key !== ' ') return;
+    if (event.target.closest && event.target.closest('[data-add]')) return;
     var card = event.target.closest ? event.target.closest('.card') : null;
     if (!card || card.dataset.index === undefined) return;
     event.preventDefault();
@@ -2535,8 +2915,34 @@
 
   $('subMinus').addEventListener('click', function () { applySubOffset(state.subOffset - 0.5); });
   $('subPlus').addEventListener('click', function () { applySubOffset(state.subOffset + 0.5); });
-  $('subReset').addEventListener('click', function () { applySubOffset(0); });
+  $('subReset').addEventListener('click', function () {
+    if (state.subScale !== 1) applySubScale(1, 0); else applySubOffset(0);
+  });
   $('subOffsetInput').addEventListener('change', function () { applySubOffset(this.value); });
+  $('subMinusFine').addEventListener('click', function () { applySubOffset(state.subOffset - 0.1); });
+  $('subPlusFine').addEventListener('click', function () { applySubOffset(state.subOffset + 0.1); });
+  $('subSyncBtn').addEventListener('click', function () {
+    if ($('syncPanel').hidden) syncOpen(); else $('syncPanel').hidden = true;
+  });
+  $('syncClose').addEventListener('click', function () { $('syncPanel').hidden = true; });
+  // A lista de falas acompanha o ponto onde o vídeo está parado (necessário para a 2ª marca).
+  ['pause', 'seeked'].forEach(function (name) {
+    $('nativePlayer').addEventListener(name, function () {
+      if (!$('syncPanel').hidden) syncRender();
+    });
+  });
+  $('subLangSelect').addEventListener('change', function () { state.subUserChose = true; subQualityCheckSoon(); });
+
+  // Atalhos (como no VLC): [ ou G adianta 0,1 s; ] ou H atrasa 0,1 s.
+  document.addEventListener('keydown', function (ev) {
+    if ($('playerSection').hidden || ev.ctrlKey || ev.metaKey || ev.altKey) return;
+    var tag = (ev.target && ev.target.tagName) || '';
+    if (/^(INPUT|TEXTAREA|SELECT)$/.test(tag) || (ev.target && ev.target.isContentEditable)) return;
+    if ($('subBar').hidden) return;
+    var k = ev.key.toLowerCase();
+    if (k === '[' || k === 'g') { ev.preventDefault(); applySubOffset(state.subOffset - 0.1); }
+    else if (k === ']' || k === 'h') { ev.preventDefault(); applySubOffset(state.subOffset + 0.1); }
+  });
 
   $('qualitySelect').addEventListener('change', function () {
     var video = $('nativePlayer');
@@ -2785,6 +3191,508 @@
         scheduleNetResume('Conexão restabelecida.');
       }
     }, 2500);
+  });
+
+
+  /* ---------------------------------------------------------------- */
+  /* Home estilo Netflix: destaque, fileiras, rolagem infinita         */
+  /* ---------------------------------------------------------------- */
+
+  var LIST_KEY = 'fdsflix.list';
+  var REDUCED_MOTION = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var home = {
+    started: false, failed: false, hero: [], heroIdx: 0, heroTimer: null, heroHover: false,
+    queue: [], rows: {}, rowsIO: null, exploreIO: null,
+    explore: { page: 0, loading: false, done: false, seen: {}, items: [] },
+    warmed: {}
+  };
+
+  function imgUrl(size, path) { return 'https://image.tmdb.org/t/p/' + size + path; }
+  function itemKey(item) { return item.type + ':' + item.id; }
+
+  /* -- Minha lista (fica no navegador) -- */
+
+  function listLoad() {
+    try {
+      var raw = JSON.parse(localStorage.getItem(LIST_KEY) || '[]');
+      return Array.isArray(raw) ? raw.filter(function (it) { return it && it.id && it.type; }) : [];
+    } catch (err) { return []; }
+  }
+
+  function listSave(items) {
+    try { localStorage.setItem(LIST_KEY, JSON.stringify(items.slice(0, 200))); } catch (err) { /* ignore */ }
+  }
+
+  function listHas(item) {
+    var key = itemKey(item);
+    return listLoad().some(function (it) { return itemKey(it) === key; });
+  }
+
+  function listToggle(item) {
+    var key = itemKey(item);
+    var items = listLoad();
+    var at = -1;
+    items.forEach(function (it, i) { if (itemKey(it) === key) at = i; });
+    if (at >= 0) {
+      items.splice(at, 1);
+      toast('Removido da Minha lista.');
+    } else {
+      items.unshift({ id: item.id, type: item.type, title: item.title, year: item.year || '', poster: item.poster || '', rating: item.rating || 0 });
+      toast('Adicionado à Minha lista.');
+    }
+    listSave(items);
+    renderList();
+    syncAddButtons();
+  }
+
+  function addBtnHtml(item) {
+    var on = listHas(item);
+    return '<button class="add-btn' + (on ? ' on' : '') + '" type="button" data-add="' + itemKey(item) + '" aria-pressed="' + on +
+      '" title="' + (on ? 'Remover da Minha lista' : 'Adicionar à Minha lista') + '" aria-label="' +
+      (on ? 'Remover da Minha lista' : 'Adicionar à Minha lista') + '">' + (on ? '✓' : '＋') + '</button>';
+  }
+
+  function syncAddButtons() {
+    var keys = {};
+    listLoad().forEach(function (it) { keys[itemKey(it)] = true; });
+    Array.prototype.forEach.call(document.querySelectorAll('[data-add]'), function (btn) {
+      var on = Boolean(keys[btn.getAttribute('data-add')]);
+      btn.classList.toggle('on', on);
+      btn.setAttribute('aria-pressed', String(on));
+      btn.textContent = on ? '✓' : '＋';
+      btn.title = on ? 'Remover da Minha lista' : 'Adicionar à Minha lista';
+    });
+    var heroItem = home.hero[home.heroIdx];
+    if (heroItem) {
+      var heroOn = Boolean(keys[itemKey(heroItem)]);
+      $('heroList').classList.toggle('on', heroOn);
+      $('heroList').setAttribute('aria-pressed', String(heroOn));
+      $('heroList').textContent = heroOn ? '✓ Na minha lista' : '＋ Minha lista';
+    }
+  }
+
+  function cardHtml(item, rowId, index) {
+    var img = item.poster
+      ? '<img src="' + escapeHtml(imgUrl('w342', item.poster)) + '" alt="" loading="lazy" decoding="async" onerror="this.remove()">'
+      : '';
+    return '<div class="card" data-row="' + escapeHtml(rowId) + '" data-index="' + index + '" tabindex="0" role="button" title="' + escapeHtml(item.title) + '">' +
+      '<div class="poster-wrap">' +
+        '<div class="poster-fallback">' + escapeHtml(item.title) + '</div>' +
+        '<span class="badge-type">' + (item.type === 'tv' ? 'Série' : 'Filme') + '</span>' +
+        img +
+        (item.rating ? '<span class="rating-badge">★ ' + Number(item.rating).toFixed(1) + '</span>' : '') +
+        addBtnHtml(item) +
+      '</div>' +
+      '<div class="info">' +
+        '<div class="title">' + escapeHtml(item.title) + '</div>' +
+        '<div class="meta">' + escapeHtml(item.year || '') + (item.year ? ' · ' : '') + (item.type === 'tv' ? 'Série' : 'Filme') + '</div>' +
+      '</div>' +
+    '</div>';
+  }
+
+  function skeletonCards(n) {
+    var html = '';
+    for (var i = 0; i < n; i++) html += '<div class="card skel" aria-hidden="true"><div class="poster-wrap"></div><div class="info"></div></div>';
+    return html;
+  }
+
+  /* -- Setas e rolagem horizontal -- */
+
+  function railUpdate(track) {
+    if (!track || !track.parentNode) return;
+    var prev = track.parentNode.querySelector('.rail-btn.prev');
+    var next = track.parentNode.querySelector('.rail-btn.next');
+    if (!prev || !next) return;
+    var row = track._row;
+    var atEnd = track.scrollLeft + track.clientWidth >= track.scrollWidth - 8;
+    prev.hidden = track.scrollLeft < 8;
+    next.hidden = atEnd && (!row || row.done);
+  }
+
+  function railInit(rail) {
+    var track = rail.querySelector('.track');
+    var prev = rail.querySelector('.rail-btn.prev');
+    var next = rail.querySelector('.rail-btn.next');
+    var ticking = false;
+    prev.addEventListener('click', function () { track.scrollBy({ left: -track.clientWidth * 0.85, behavior: 'smooth' }); });
+    next.addEventListener('click', function () { track.scrollBy({ left: track.clientWidth * 0.85, behavior: 'smooth' }); });
+    track.addEventListener('scroll', function () {
+      if (ticking) return;
+      ticking = true;
+      requestAnimationFrame(function () {
+        ticking = false;
+        railUpdate(track);
+        // Rolagem horizontal infinita: perto do fim, busca a próxima página da fileira.
+        if (track._row && track.scrollWidth - track.scrollLeft - track.clientWidth < 700) loadRowPage(track._row);
+      });
+    }, { passive: true });
+    railUpdate(track);
+  }
+
+  window.addEventListener('resize', function () {
+    Array.prototype.forEach.call(document.querySelectorAll('#home .track'), railUpdate);
+  });
+
+  /* -- Fileiras (carregam quando chegam perto da tela) -- */
+
+  function createRow(def) {
+    var sec = document.createElement('section');
+    sec.className = 'row';
+    sec.setAttribute('data-row', def.id);
+    sec.innerHTML =
+      '<h3 class="row-title">' + escapeHtml(def.title) + '</h3>' +
+      '<div class="rail">' +
+        '<button class="rail-btn prev" type="button" aria-label="Anteriores" hidden>‹</button>' +
+        '<div class="track" role="list">' + skeletonCards(8) + '</div>' +
+        '<button class="rail-btn next" type="button" aria-label="Próximos" hidden>›</button>' +
+      '</div>';
+    $('rows').appendChild(sec);
+
+    var row = { def: def, el: sec, track: sec.querySelector('.track'), items: [], seen: {}, page: 0, totalPages: 1, loading: false, done: false };
+    row.track._row = row;
+    home.rows[def.id] = row;
+    railInit(sec.querySelector('.rail'));
+    loadRowPage(row);
+  }
+
+  function loadRowPage(row) {
+    if (row.loading || row.done) return;
+    row.loading = true;
+    var first = row.page === 0;
+
+    apiFetch('/api/row?id=' + encodeURIComponent(row.def.id) + '&page=' + (row.page + 1))
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(function (data) {
+        var fresh = (data.results || []).filter(function (it) {
+          var k = itemKey(it);
+          if (row.seen[k]) return false;
+          row.seen[k] = true;
+          return true;
+        });
+        row.page = data.page || row.page + 1;
+        row.totalPages = data.totalPages || 1;
+        if (row.page >= row.totalPages || !(data.results || []).length) row.done = true;
+
+        if (first) {
+          if (!fresh.length) { row.el.remove(); delete home.rows[row.def.id]; return; }
+          row.track.innerHTML = '';
+        }
+        var html = '';
+        fresh.forEach(function (it) { html += cardHtml(it, row.def.id, row.items.length); row.items.push(it); });
+        row.track.insertAdjacentHTML('beforeend', html);
+        railUpdate(row.track);
+        // tela larga com poucos cards: já pede mais
+        if (!row.done && row.track.scrollWidth - row.track.clientWidth < 700) {
+          row.loading = false;
+          loadRowPage(row);
+        }
+      })
+      .catch(function () {
+        if (!first) return;   // páginas seguintes tentam de novo na próxima rolagem
+        row.track.innerHTML = '<div class="row-retry">Não carregou. <button class="ghost" type="button" data-retry="' + escapeHtml(row.def.id) + '">Tentar de novo</button></div>';
+      })
+      .then(function () { row.loading = false; });
+  }
+
+  // Rolagem vertical infinita: cada vez que o fim da lista aparece, cria mais 3 fileiras.
+  function homeMoreRows() {
+    var n = 0;
+    while (home.queue.length && n < 3) { createRow(home.queue.shift()); n++; }
+    if (!home.queue.length) {
+      if (home.rowsIO) { home.rowsIO.disconnect(); home.rowsIO = null; }
+      startExplore();
+    } else if (home.rowsIO) {
+      home.rowsIO.unobserve($('rowsSentinel'));   // reobserva: dispara de novo se ainda estiver à vista
+      home.rowsIO.observe($('rowsSentinel'));
+    }
+  }
+
+  /* -- Explorar: grade sem fim no final da página -- */
+
+  function startExplore() {
+    $('exploreSection').hidden = false;
+    if (!('IntersectionObserver' in window)) { exploreMore(); return; }
+    home.exploreIO = new IntersectionObserver(function (entries) {
+      if (entries.some(function (e) { return e.isIntersecting; })) exploreMore();
+    }, { rootMargin: '900px 0px' });
+    home.exploreIO.observe($('exploreSentinel'));
+  }
+
+  function exploreMore() {
+    var ex = home.explore;
+    if (ex.loading || ex.done) return;
+    ex.loading = true;
+    var page = Math.floor(ex.page / 2) + 1;
+    var id = ex.page % 2 === 0 ? 'explore-movie' : 'explore-tv';
+    $('exploreStatus').textContent = 'Carregando mais…';
+
+    apiFetch('/api/row?id=' + id + '&page=' + page)
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(function (data) {
+        ex.page += 1;
+        var html = '';
+        (data.results || []).forEach(function (it) {
+          var k = itemKey(it);
+          if (ex.seen[k]) return;
+          ex.seen[k] = true;
+          html += cardHtml(it, 'explore', ex.items.length);
+          ex.items.push(it);
+        });
+        $('exploreGrid').insertAdjacentHTML('beforeend', html);
+        $('exploreStatus').textContent = '';
+        if (ex.page >= 1000) { ex.done = true; $('exploreStatus').textContent = 'Fim da lista.'; }
+      })
+      .catch(function () {
+        $('exploreStatus').innerHTML = 'Não deu para carregar. <button class="ghost" type="button" data-retry="explore">Tentar de novo</button>';
+      })
+      .then(function () {
+        ex.loading = false;
+        if (home.exploreIO) {   // reobserva: se o fim ainda está à vista, continua carregando
+          home.exploreIO.unobserve($('exploreSentinel'));
+          home.exploreIO.observe($('exploreSentinel'));
+        }
+      });
+  }
+
+  /* -- Destaque (banner) -- */
+
+  function heroShow(index, instant) {
+    var items = home.hero;
+    if (!items.length) return;
+    home.heroIdx = (index + items.length) % items.length;
+    var item = items[home.heroIdx];
+
+    Array.prototype.forEach.call($('heroSlides').children, function (el, i) { el.classList.toggle('on', i === home.heroIdx); });
+    Array.prototype.forEach.call($('heroDots').children, function (el, i) {
+      el.classList.toggle('on', i === home.heroIdx);
+      el.setAttribute('aria-selected', String(i === home.heroIdx));
+    });
+
+    var body = $('heroBody');
+    var apply = function () {
+      $('heroTitle').textContent = item.title;
+      $('heroOverview').textContent = item.overview || '';
+      $('heroGenres').textContent = (item.type === 'tv' ? 'Série' : 'Filme') + (item.genres && item.genres.length ? ' · ' + item.genres.join(' · ') : '') + (item.year ? ' · ' + item.year : '');
+      body.classList.remove('swap');
+      syncAddButtons();
+    };
+    if (instant || REDUCED_MOTION) { apply(); return; }
+    body.classList.add('swap');
+    setTimeout(apply, 220);
+  }
+
+  function heroTick() {
+    if (home.heroHover || document.hidden || $('home').hidden || !$('playerSection').hidden || home.hero.length < 2) return;
+    heroShow(home.heroIdx + 1);
+  }
+
+  function heroStart() {
+    clearInterval(home.heroTimer);
+    if (!REDUCED_MOTION && home.hero.length > 1) home.heroTimer = setInterval(heroTick, 8000);
+  }
+
+  function heroBuild(items) {
+    home.hero = items || [];
+    var hero = $('hero');
+    if (!home.hero.length) { hero.hidden = true; return; }
+    var slides = '', dots = '';
+    home.hero.forEach(function (it, i) {
+      slides += '<div class="hero-slide"><img src="' + escapeHtml(imgUrl('w1280', it.backdrop)) + '" srcset="' +
+        escapeHtml(imgUrl('w780', it.backdrop)) + ' 780w, ' + escapeHtml(imgUrl('w1280', it.backdrop)) + ' 1280w" sizes="(max-width:700px) 100vw, 1180px" alt="" ' +
+        (i === 0 ? 'fetchpriority="high"' : 'loading="lazy"') + ' decoding="async"></div>';
+      dots += '<button class="hero-dot" type="button" role="tab" data-hero="' + i + '" aria-label="Destaque ' + (i + 1) + ': ' + escapeHtml(it.title) + '"></button>';
+    });
+    $('heroSlides').innerHTML = slides;
+    $('heroDots').innerHTML = dots;
+    hero.hidden = false;
+    heroShow(0, true);
+    heroStart();
+  }
+
+  /* -- Inicialização da home -- */
+
+  function setHomeMode(on) {
+    $('home').hidden = !on;
+    $('searchArea').hidden = on;
+  }
+
+  function homeReset() {
+    if (home.rowsIO) { home.rowsIO.disconnect(); home.rowsIO = null; }
+    if (home.exploreIO) { home.exploreIO.disconnect(); home.exploreIO = null; }
+    $('rows').innerHTML = '';
+    $('exploreGrid').innerHTML = '';
+    $('exploreSection').hidden = true;
+    home.rows = {};
+    home.queue = [];
+    home.explore = { page: 0, loading: false, done: false, seen: {}, items: [] };
+  }
+
+  function becauseRows() {
+    // "Porque você assistiu X": recomendações dos últimos títulos que a pessoa começou.
+    var keys = Object.keys(progress).sort(function (a, b) { return (progress[b].u || 0) - (progress[a].u || 0); });
+    var rows = [], seen = {};
+    keys.forEach(function (key) {
+      var e = progress[key];
+      if (!e || !e.id || seen[e.type + e.id] || rows.length >= 2) return;
+      seen[e.type + e.id] = true;
+      rows.push({ id: 'because:' + e.type + ':' + e.id, title: 'Porque você assistiu ' + e.title });
+    });
+    return rows;
+  }
+
+  function homeFallback() {
+    // Servidor fora do ar / sem chave do TMDB: mostra a lista embutida numa fileira só.
+    home.failed = true;
+    homeReset();
+    var row = { def: { id: 'fallback', title: 'Populares' }, items: FALLBACK_POPULAR.slice(), done: true };
+    var sec = document.createElement('section');
+    sec.className = 'row';
+    sec.innerHTML = '<h3 class="row-title">Populares</h3><div class="rail">' +
+      '<button class="rail-btn prev" type="button" aria-label="Anteriores" hidden>‹</button><div class="track"></div>' +
+      '<button class="rail-btn next" type="button" aria-label="Próximos" hidden>›</button></div>';
+    $('rows').appendChild(sec);
+    var html = '';
+    row.items.forEach(function (it, i) { html += cardHtml(it, 'fallback', i); });
+    sec.querySelector('.track').innerHTML = html;
+    home.rows.fallback = row;
+    railInit(sec.querySelector('.rail'));
+  }
+
+  function homeInit(force) {
+    if (home.started && !force && !home.failed) return;
+    home.started = true;
+    renderList();
+
+    apiFetch('/api/home')
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(function (data) {
+        if (!data.rows || !data.rows.length) throw new Error('sem dados');
+        home.failed = false;
+        homeReset();
+        heroBuild(data.hero);
+
+        var defs = data.rows.slice();
+        // personalizadas entram logo depois da 1ª fileira
+        defs.splice.apply(defs, [1, 0].concat(becauseRows()));
+        home.queue = defs;
+        if ('IntersectionObserver' in window) {
+          home.rowsIO = new IntersectionObserver(function (entries) {
+            if (entries.some(function (e) { return e.isIntersecting; })) homeMoreRows();
+          }, { rootMargin: '700px 0px' });
+          home.rowsIO.observe($('rowsSentinel'));
+        } else {
+          while (home.queue.length) createRow(home.queue.shift());
+        }
+      })
+      .catch(function () {
+        if (!home.rows.fallback) homeFallback();
+        home.failed = true;
+      });
+  }
+
+  function renderList() {
+    var items = listLoad();
+    var section = $('listSection');
+    home.rows.list = { items: items, done: true };
+    if (!items.length) { section.hidden = true; $('listRow').innerHTML = ''; return; }
+    var html = '';
+    items.forEach(function (it, i) { html += cardHtml(it, 'list', i); });
+    $('listRow').innerHTML = html;
+    section.hidden = false;
+    railUpdate($('listRow'));
+  }
+
+  /* -- Eventos da home -- */
+
+  function homeItemFromCard(card) {
+    var row = home.rows[card.getAttribute('data-row')];
+    if (card.getAttribute('data-row') === 'explore') return home.explore.items[Number(card.getAttribute('data-index'))];
+    return row ? row.items[Number(card.getAttribute('data-index'))] : null;
+  }
+
+  $('home').addEventListener('click', function (event) {
+    var t = event.target;
+    var retry = t.closest ? t.closest('[data-retry]') : null;
+    if (retry) {
+      var id = retry.getAttribute('data-retry');
+      if (id === 'explore') { exploreMore(); return; }
+      var row = home.rows[id];
+      if (row) { row.track.innerHTML = skeletonCards(8); row.loading = false; loadRowPage(row); }
+      return;
+    }
+    var dot = t.closest ? t.closest('[data-hero]') : null;
+    if (dot) { heroShow(Number(dot.getAttribute('data-hero'))); heroStart(); return; }
+
+    var add = t.closest ? t.closest('[data-add]') : null;
+    var card = t.closest ? t.closest('.card[data-row]') : null;
+    if (add && card) {
+      event.stopPropagation();
+      var target = homeItemFromCard(card);
+      if (target) listToggle(target);
+      return;
+    }
+    if (card) {
+      var item = homeItemFromCard(card);
+      if (item) openItem(item);
+    }
+  });
+
+  $('home').addEventListener('keydown', function (event) {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    if (event.target.closest && event.target.closest('button')) return;
+    var card = event.target.closest ? event.target.closest('.card[data-row]') : null;
+    if (!card) return;
+    event.preventDefault();
+    var item = homeItemFromCard(card);
+    if (item) openItem(item);
+  });
+
+  $('heroPlay').addEventListener('click', function () { var it = home.hero[home.heroIdx]; if (it) openItem(it); });
+  $('heroList').addEventListener('click', function () { var it = home.hero[home.heroIdx]; if (it) listToggle(it); });
+
+  var heroEl = $('hero');
+  heroEl.addEventListener('mouseenter', function () { home.heroHover = true; });
+  heroEl.addEventListener('mouseleave', function () { home.heroHover = false; });
+  heroEl.addEventListener('focusin', function () { home.heroHover = true; });
+  heroEl.addEventListener('focusout', function () { home.heroHover = false; });
+  (function () {   // deslizar o dedo troca o destaque
+    var x0 = null;
+    heroEl.addEventListener('touchstart', function (e) { x0 = e.touches[0].clientX; }, { passive: true });
+    heroEl.addEventListener('touchend', function (e) {
+      if (x0 === null) return;
+      var dx = e.changedTouches[0].clientX - x0;
+      x0 = null;
+      if (Math.abs(dx) > 50) { heroShow(home.heroIdx + (dx < 0 ? 1 : -1)); heroStart(); }
+    }, { passive: true });
+  })();
+
+  // Passar o mouse num card aquece o cache dos detalhes: o modal abre na hora.
+  (function () {
+    if (window.matchMedia && matchMedia('(hover:none)').matches) return;
+    var timer = null;
+    $('home').addEventListener('mouseover', function (event) {
+      var card = event.target.closest ? event.target.closest('.card[data-row]') : null;
+      clearTimeout(timer);
+      if (!card) return;
+      timer = setTimeout(function () {
+        var item = homeItemFromCard(card);
+        if (!item || home.warmed[itemKey(item)]) return;
+        home.warmed[itemKey(item)] = true;
+        apiFetch('/api/details?id=' + item.id + '&type=' + item.type).catch(function () { /* só aquecimento */ });
+      }, 220);
+    });
+  })();
+
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) heroStart(); });
+
+  railInit(document.querySelector('#continueSection .rail'));
+  railInit(document.querySelector('#listSection .rail'));
+  $('results').addEventListener('click', function (event) {
+    var add = event.target.closest ? event.target.closest('[data-add]') : null;
+    var card = event.target.closest ? event.target.closest('.card') : null;
+    if (!add || !card) return;
+    var item = state.items[Number(card.dataset.index)];
+    if (item) listToggle(item);
   });
 
   /* ---------------------------------------------------------------- */
