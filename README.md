@@ -15,6 +15,25 @@ Player de filmes e séries: busca no **TMDB** e reprodução do stream via
 O **mesmo serviço do Render** entrega a interface e a API — a Vercel é opcional.
 Basta abrir <https://fdsflix.onrender.com> para usar o site.
 
+## Modo direto no navegador (extensão — 0 Render)
+
+Para o vídeo sair **direto do CDN do provedor para o navegador**, sem passar
+pelo `/api/proxy`/`/hls` do Render, o repositório inclui a extensão
+[`extension/`](extension/README.md). Ela instala regras
+`declarativeNetRequest` que trocam o `User-Agent`, removem o `Referer`,
+adicionam CORS e bloqueiam anúncios. Ela também bloqueia pop-ups/abas externas
+dos players sem forçar o sandbox (e fecha abas que ficarem em branco). O backend
+só devolve um JSON de ~1 KB com a URL original (`/api/stream?...&direct=1`).
+
+```bash
+# Chrome/Edge → chrome://extensions → Modo do desenvolvedor
+# → Carregar sem compactação → selecione a pasta extension/
+```
+
+Sem a extensão, nada muda: o fdsFlix continua usando o proxy/transcodificação
+do Render. Com ela, o player tenta primeiro o vídeo direto e só cai no Render se
+o CDN/provedor recusar. Detalhes e limitações: [extension/README.md](extension/README.md).
+
 ## Proxy AdShield (remover anúncios de um site alvo)
 
 O repositório também inclui o **`adproxy/`**, um serviço separado (Express +
@@ -29,16 +48,31 @@ npm install
 npm start              # http://localhost:3000
 ```
 
-No Render, o `render.yaml` da raiz cria o serviço `fdsflix-adshield` com
-`rootDir: adproxy` e health check em `/_adshield/health`. Detalhes, variáveis e
-limitações: [adproxy/README.md](adproxy/README.md).
+O AdShield **não faz parte do blueprint padrão** (o alvo real é o próprio
+fdsFlix, que não tem anúncios no HTML). Para usar em outro site, crie um serviço
+separado com `rootDir: adproxy`, `npm ci`, `npm start` e
+`healthCheckPath: /_adshield/health`. Detalhes: [adproxy/README.md](adproxy/README.md).
 
-> **Não use o AdShield para o próprio fdsFlix.** O HTML do fdsFlix não tem
-> anúncios para remover (o teste real retorna `X-AdShield-Removed: 0`) e o vídeo
-> continua saindo do Render/edge; o proxy só adicionaria outra camada. Para
-> economizar os 5 GB de vídeo, use o relay de mídia (`MEDIA_RELAY_URL`) ou o
-> Worker da Cloudflare (`VIDEO_RELAY_URL`) — veja
-> [deploy/media-relay/README.md](deploy/media-relay/README.md).
+### Proxy do player na Vercel (sem extensão)
+
+O AdShield também pode rodar como **função serverless na Vercel** (sem VM e sem
+Render) para proxiar **só o HTML do player VidLink**. Ele injeta o bloqueio de
+`window.open`/pop-ups e remove anúncios do HTML; o vídeo continua vindo direto
+do CDN. É a opção automática para os PCs que não podem instalar extensão.
+
+No Render do fdsFlix, configure:
+
+```env
+ADSHIELD_BASE_URL=https://seu-adshield.vercel.app
+```
+
+O embed VidLink passa a usar esse proxy e o sandbox é dispensado para ele (o
+runtime do AdShield bloqueia os pop-ups). Passo a passo:
+[adproxy/VERCEL.md](adproxy/VERCEL.md).
+
+> **Não aponte o AdShield para o site fdsFlix inteiro.** O HTML do fdsFlix não
+> tem anúncios no HTML e o vídeo não passa por ele; use o AdShield como proxy
+> do player, não da aplicação toda.
 
 ## Como rodar
 
@@ -139,7 +173,7 @@ O player guarda, no `localStorage` do navegador, **título, temporada/episódio 
 | :--- | :--- |
 | `GET /api/popular` | Populares (TMDB, cache de 30 min) |
 | `GET /api/search?q=` | Busca no TMDB |
-| `GET /api/stream?id=&type=&s=&e=&res=&start=&hevc=` | Escolhe stream direto ou HLS transcodificado, legendas e sessão |
+| `GET /api/stream?id=&type=&s=&e=&res=&start=&hevc=&direct=` | Escolhe stream direto ou HLS transcodificado, legendas e sessão; `direct=1` devolve a URL original para a extensão |
 | `GET /api/proxy?t=` | Proxy do arquivo de vídeo (Range/206) |
 | `GET /api/subtitle?t=&shift=` | Legenda em WebVTT (`shift` em segundos, opcional) |
 | `GET /hls/:id/index.m3u8` | Playlist HLS gerada pelo ffmpeg |
@@ -170,6 +204,7 @@ lib/proxy.js           Proxy de vídeo com Range e renovação da assinatura
 lib/transcoder.js      Sessões HLS do ffmpeg (HEVC -> H.264) com limpeza automática
 lib/subtitles.js       Conversão SRT -> WebVTT
 adproxy/                Proxy AdShield (serviço separado; ver adproxy/README.md)
+extension/              Extensão Chrome/Edge: vídeo direto no navegador + adblock
 lib/registry.js        Tokens opacos para proxy e legendas
 public/index.html      Interface (busca, catálogo e player)
 public/vendor/         hls.js local

@@ -75,6 +75,12 @@ players simples, mas pode quebrar os casos acima. Teste no site que você usa.
 - `TARGET_ORIGIN` configurado
 - `PROXY_SECRET` estável em produção
 
+## Vercel (proxy do player, sem VM/Render)
+
+O AdShield pode rodar como função serverless na Vercel e ser usado só para
+proxiar o HTML do player VidLink (bloqueando pop-ups/anúncios) sem extensão nos
+PCs dos usuários. Veja [`VERCEL.md`](VERCEL.md).
+
 ## Rodar localmente
 
 ```bash
@@ -107,9 +113,10 @@ redirecionamento e formulários.
 
 ## Deploy no Render
 
-### Opção A — Blueprint do repositório (recomendado)
+### Opção A — adicionar ao Blueprint
 
-O `render.yaml` da raiz já define o serviço `fdsflix-adshield`:
+O `render.yaml` da raiz **não** cria o AdShield por padrão (ele não é útil para o
+próprio fdsFlix). Para usar em outro site, adicione este serviço ao seu Blueprint:
 
 ```yaml
 - type: web
@@ -132,7 +139,8 @@ O `render.yaml` da raiz já define o serviço `fdsflix-adshield`:
 
 No Render: **New → Blueprint** → conecte o repositório → informe
 `TARGET_ORIGIN`. O `PROXY_SECRET` é gerado automaticamente e não muda entre
-restarts (os tokens de recursos continuam válidos).
+restarts (os tokens de recursos continuam válidos). Se preferir, crie o serviço
+manualmente pela Opção B.
 
 ### Opção B — criar o serviço manualmente
 

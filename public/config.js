@@ -9,12 +9,14 @@
  *
  *   window.__FDSFLIX_CONFIG__ = {
  *     apiBase: 'https://fdsflix-api.up.railway.app',
- *     apiKey: ''
+ *     apiKey: '',
+ *     embedProxyBase: 'https://seu-adshield.vercel.app'
  *   };
  *
- * Sem barra no final do apiBase.
+ * Sem barra no final do apiBase/embedProxyBase.
  */
 window.__FDSFLIX_CONFIG__ = {
   apiBase: '',
-  apiKey: ''
+  apiKey: '',
+  embedProxyBase: ''
 };

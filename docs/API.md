@@ -60,6 +60,7 @@ Resolve o vídeo e devolve uma **URL absoluta** pronta para tocar.
 | `res` | não | `360`, `480`, `720`, `1080` ou vazio (auto) |
 | `hevc` | não | `1` se o cliente toca HEVC nativo; `0`/vazio força H.264 |
 | `start` | não | segundo inicial (ex.: `600` = 10 min) |
+| `direct` | não | `1` devolve a URL original do CDN para a extensão **fdsFlix Direct**. Sem a extensão o navegador recebe 429/CORS e o modo não funciona. |
 
 **Resposta no modo `hls`** (quando precisa transcodificar):
 
@@ -85,6 +86,7 @@ Resolve o vídeo e devolve uma **URL absoluta** pronta para tocar.
 ```json
 {
   "mode": "direct",
+  "via": "origin",
   "url": "https://SEU-BACKEND/api/proxy?t=snCV46u735EHthgp1Gq3_Gvo",
   "quality": 1080,
   "codec": "h264",
@@ -93,10 +95,30 @@ Resolve o vídeo e devolve uma **URL absoluta** pronta para tocar.
 }
 ```
 
+Com `direct=1`, o backend devolve a URL **original do CDN**:
+
+```json
+{
+  "mode": "direct",
+  "via": "browser",
+  "url": "https://bcdn.exemplo.com/video.mp4?sign=...",
+  "sourceCodec": "hevc",
+  "transcoded": false,
+  "provider": "VidLink Pro",
+  "note": "Reprodução direta no navegador pela extensão fdsFlix Direct — 0 bytes de vídeo no Render."
+}
+```
+
+Esse modo só é usado pela extensão
+[`extension/`](../extension/README.md), que troca `User-Agent`/`Referer` e
+adiciona CORS via `declarativeNetRequest`. Sem a extensão, o CDN responde 429
+ao navegador.
+
 Reprodução:
 
 - `mode: "hls"` → use o `hls.js` (ou Safari nativo) com `url`.
-- `mode: "direct"` → `<video src="url">`.
+- `mode: "direct"` → `<video src="url">`; com `direct=1`, a extensão precisa
+  estar ativa.
 
 ## Exemplos
 

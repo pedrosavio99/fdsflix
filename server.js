@@ -63,6 +63,18 @@ app.use((req, res, next) => {
   next();
 });
 
+// Config do frontend gerada no Render quando ADSHIELD_BASE_URL está definido.
+// Sem a variável, cai no public/config.js estático.
+app.get('/config.js', (req, res, next) => {
+  const adshieldBase = String(process.env.ADSHIELD_BASE_URL || '').trim().replace(/\/+$/, '');
+  if (!adshieldBase) return next();
+  res.type('application/javascript').send(
+    'window.__FDSFLIX_CONFIG__ = ' +
+      JSON.stringify({ apiBase: '', apiKey: '', embedProxyBase: adshieldBase }) +
+      ';\n'
+  );
+});
+
 app.use(express.static(path.join(__dirname, 'public')));
 
 const TMDB_LANG = 'pt-BR';
@@ -358,7 +370,8 @@ app.get('/api', (req, res) => {
         path: '/api/stream?id=603&type=movie&res=480&hevc=0',
         description:
           'Resolve o vídeo. type=movie|tv; s/e para séries; res=360|480|720|1080; ' +
-          'hevc=1 aproveita HEVC nativo, hevc=0 força H.264; start=N começa em N segundos. ' +
+          'hevc=1 aproveita HEVC nativo, hevc=0 força H.264; start=N começa em N segundos; ' +
+          'direct=1 (extensão fdsFlix Direct) devolve a URL original do CDN para tocar no navegador. ' +
           'Retorna mode "hls" ou "direct" e uma URL absoluta pronta para tocar.'
       },
       {
@@ -407,6 +420,7 @@ app.get('/api/stream', requireApiKey, async (req, res) => {
   const season = Math.max(1, Number(req.query.s) || 1);
   const episode = Math.max(1, Number(req.query.e) || 1);
   const hevcOk = String(req.query.hevc || '') === '1';
+  const direct = String(req.query.direct || '') === '1';
   const preferred = Number(req.query.res) || 0;
   const startAt = Math.max(0, Math.min(6 * 3600, Math.floor(Number(req.query.start) || 0)));
   const title = String(req.query.title || '').trim();
@@ -521,6 +535,25 @@ app.get('/api/stream', requireApiKey, async (req, res) => {
     }));
 
     if (!transcode) {
+      // Modo direto no navegador: a extensão fdsFlix Direct troca o UA, remove
+      // Referer/Origin e adiciona CORS via declarativeNetRequest. O vídeo vai do
+      // CDN direto para o navegador; o Render só devolve este JSON (~1 KB).
+      if (direct) {
+        console.log(`[stream] modo direto no navegador ${qualityKey || 'auto'} (${streamInfo.provider})`);
+        return res.json({
+          mode: 'direct',
+          via: 'browser',
+          url: qualityUrl,
+          quality: Number(qualityKey) || streamInfo.quality || 'auto',
+          codec: codec || 'desconhecido',
+          sourceCodec: codec || 'desconhecido',
+          transcoded: false,
+          provider: streamInfo.provider,
+          captions,
+          note: 'Reprodução direta no navegador pela extensão fdsFlix Direct — 0 bytes de vídeo no Render.'
+        });
+      }
+
       // Arquivo original sem recodificar: se der, o Worker entrega e o Render só assina o token.
       const edge = await edgeDecision(qualityUrl);
       const viaEdge = edge.use;

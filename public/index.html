@@ -303,6 +303,24 @@
 (function () {
   'use strict';
 
+  // Bloqueio de novas abas/janelas em toda a interface. O sandbox do iframe
+  // cobre o player de terceiros; isto cobre scripts da página e links/forms
+  // com target="_blank".
+  try {
+    window.open = function () { return null; };
+  } catch (err) { /* ignore */ }
+  function blockNewTab(event) {
+    var target = event.target;
+    if (!target || !target.closest) return;
+    var el = target.closest('a[target="_blank"],area[target="_blank"],form[target="_blank"]');
+    if (!el) return;
+    event.preventDefault();
+    event.stopPropagation();
+  }
+  document.addEventListener('click', blockNewTab, true);
+  document.addEventListener('auxclick', blockNewTab, true);
+  document.addEventListener('submit', blockNewTab, true);
+
   var FALLBACK_POPULAR = [
     { id: 27205, title: 'A Origem', year: '2010', type: 'movie', poster: '/9gk7adHYeDvHkCSEqAvQNLV5Uge.jpg' },
     { id: 155, title: 'Batman: O Cavaleiro das Trevas', year: '2008', type: 'movie', poster: '/qJ2tW6WMUDux911r6m7haRef0WH.jpg' },
@@ -321,6 +339,7 @@
   // Permite rodar o frontend na Vercel e o backend (Node + ffmpeg) em outro host.
   var CONFIG = window.__FDSFLIX_CONFIG__ || {};
   var API_BASE = String(CONFIG.apiBase || '').replace(/\/+$/, '');
+  var EMBED_PROXY_BASE = String(CONFIG.embedProxyBase || '').replace(/\/+$/, '');
 
   function apiUrl(path) {
     if (!path) return path;
@@ -336,6 +355,13 @@
     if (CONFIG.apiKey) headers['x-api-key'] = CONFIG.apiKey;
     opts.headers = headers;
     return fetch(apiUrl(path), opts);
+  }
+
+  // A extensão fdsFlix Direct marca a página e altera UA/Referer/CORS só para o
+  // vídeo. Sem ela, o modo direto do navegador não funciona (o CDN responde 429).
+  function directExtensionEnabled() {
+    return document.documentElement.getAttribute('data-fdsflix-extension') === '1' ||
+      window.__FDSFLIX_DIRECT__ === true;
   }
 
   var state = {
@@ -747,6 +773,10 @@
       return t === 'movie' ? 'https://vidsrc.cc/v2/embed/movie/' + id
         : 'https://vidsrc.cc/v2/embed/tv/' + id + '/' + s + '/' + e; } },
     { name: 'VidLink', url: function (t, id, s, e) {
+      if (EMBED_PROXY_BASE) {
+        return t === 'movie' ? EMBED_PROXY_BASE + '/movie/' + id
+          : EMBED_PROXY_BASE + '/tv/' + id + '/' + s + '/' + e;
+      }
       return t === 'movie' ? 'https://vidlink.pro/movie/' + id
         : 'https://vidlink.pro/tv/' + id + '/' + s + '/' + e; } },
     { name: 'VidFast', url: function (t, id, s, e) {
@@ -851,7 +881,8 @@
     frame.hidden = false;
     // O sandbox só vale na próxima navegação: define antes do src.
     frame.removeAttribute('src');
-    if (embedSafeEnabled()) frame.setAttribute('sandbox', EMBED_SANDBOX);
+    var proxied = Boolean(EMBED_PROXY_BASE) && url.indexOf(EMBED_PROXY_BASE + '/') === 0;
+    if (embedSafeEnabled() && !proxied) frame.setAttribute('sandbox', EMBED_SANDBOX);
     else frame.removeAttribute('sandbox');
     frame.src = url;
     state.embedIndex = index;
@@ -861,8 +892,8 @@
       btn.classList.toggle('active', btn.getAttribute('data-embed') === String(index));
     });
     setStatus('warn', 'Player alternativo: ' + provider.name +
-      (embedSafeEnabled() ? ' · modo seguro ligado (sem pop-ups)' : ' · modo seguro DESLIGADO') +
-      ' — site de terceiros, não salva o progresso. Se der erro de sandbox, desligue o modo seguro; se não abrir, tente outro.');
+      (proxied ? ' · proxy AdShield (pop-ups bloqueados)' : (embedSafeEnabled() ? ' · modo seguro ligado (sem pop-ups)' : ' · modo seguro DESLIGADO')) +
+      ' — site de terceiros, não salva o progresso. Se não abrir, tente outro player.');
   }
 
   /* ---------------------------------------------------------------- */
@@ -1534,6 +1565,9 @@
         params.set('e', String(episode));
         // hevc=1: o servidor entrega o HEVC original (sem ffmpeg); quem decodifica é o navegador.
         params.set('hevc', useClient || (state.hevc && !state.forceTranscode) ? '1' : '0');
+        var directPlay = directExtensionEnabled() && !state.forceTranscode &&
+          (useClient || (state.hevc && !state.forceTranscode));
+        if (directPlay) params.set('direct', '1');
         params.set('start', String(startSeconds));
         if (useClient) {
           // WebAssembly dá conta de ~480p na maioria dos aparelhos (720p se você escolher); cai sozinho para 360p se ficar lento.
@@ -1605,7 +1639,9 @@
         } else if (data.mode === 'hls') {
           lines.push('✅ STREAM TOCANDO DIRETO — sem conversão.');
         }
-        if (data.via === 'edge') {
+        if (data.via === 'browser') {
+          lines.push('📡 O vídeo vai direto do provedor para o navegador (extensão) — 0 bytes no Render.');
+        } else if (data.via === 'edge') {
           lines.push('📡 O vídeo chega por um relay externo (Cloudflare ou sua VM) — não gasta a banda do Render.');
         } else if (data.via === 'direct') {
           lines.push('📡 O vídeo vai direto do provedor para o seu navegador — não gasta a banda do Render.');

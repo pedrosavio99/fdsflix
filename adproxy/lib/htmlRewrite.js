@@ -167,7 +167,7 @@ function buildRuntime(config) {
       if (typeof nativeOpen === "function") {
         window.open = function(url) {
           try {
-            if (!url) return nativeOpen.apply(window, arguments);
+            if (!url) return null;
             var parsed = new URL(String(url), location.href);
             if (parsed.origin === location.origin || hostAllowed(parsed.hostname)) {
               return nativeOpen.apply(window, arguments);
@@ -724,8 +724,9 @@ function sanitizeHtml(html, options) {
     if (config.injectHidingCss) {
       const $style = $('<style id="adshield-hide"></style>');
       $style.text(buildHidingCss());
-      if ($('body').length) $('body').append($style);
-      else $('head').append($style);
+      // No <head>, não no <body>: um nó extra no body quebra a hidratação de
+      // players React/Next.js (erros #418/#423).
+      $('head').append($style);
     }
   }
 
