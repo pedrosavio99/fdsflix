@@ -343,6 +343,7 @@
     forceTranscode: false,
     cvp: null,
     clientHevcOff: false,
+    clientFailReason: '',     // por que o player do navegador não está em uso (mostrado na linha de status)
     clientRes: 480,
     useClient: false,
     lastMode: null,
@@ -1319,14 +1320,22 @@
     return cvpModule;
   }
 
-  function cvpSupported() {
+  // Devolve '' se o navegador consegue rodar o player canvas; senão, o que falta (para mostrar ao usuário).
+  function cvpMissing() {
     try {
-      return typeof WebAssembly === 'object' && typeof Worker === 'function' && !!window.MediaSource &&
-        MediaSource.isTypeSupported('audio/mp4; codecs="mp4a.40.2"') && !!document.createElement('canvas').getContext;
+      var miss = [];
+      if (typeof WebAssembly !== 'object') miss.push('WebAssembly');
+      if (typeof Worker !== 'function') miss.push('Web Workers');
+      if (!window.MediaSource) miss.push('MediaSource');
+      else if (!MediaSource.isTypeSupported('audio/mp4; codecs="mp4a.40.2"')) miss.push('áudio AAC no MediaSource');
+      if (!document.createElement('canvas').getContext) miss.push('canvas');
+      return miss.join(', ');
     } catch (err) {
-      return false;
+      return 'verificação falhou (' + ((err && err.message) || 'erro') + ')';
     }
   }
+
+  function cvpSupported() { return cvpMissing() === ''; }
 
   function clientHevcFallback(message, lowerRes) {
     if (!state.selected) return;
@@ -1337,6 +1346,7 @@
     } else {
       state.clientHevcOff = true;
     }
+    state.clientFailReason = lowerRes ? 'o aparelho ficou lento e caiu para 360p' : message;
     toast(message);
     renderPlayer();
   }
@@ -1447,7 +1457,17 @@
 
     // Navegador sem HEVC nativo: decodifica AQUI (player canvas: só precisa de WebAssembly, Worker e MediaSource).
     var needsConversion = !state.hevc || state.forceTranscode;
-    var wantClient = needsConversion && !state.clientHevcOff && cvpSupported();
+    var missing = needsConversion ? cvpMissing() : '';
+    var wantClient = needsConversion && !state.clientHevcOff && missing === '';
+    // Quando NÃO decodifica no navegador, guarda o motivo para mostrar na linha de status.
+    var whyServer = '';
+    if (needsConversion && !wantClient) {
+      whyServer = state.clientHevcOff
+        ? (state.clientFailReason || 'o player do navegador falhou')
+        : ('este navegador não tem ' + missing);
+    } else if (state.forceTranscode) {
+      whyServer = 'o navegador não conseguiu decodificar o vídeo original';
+    }
 
     Promise.resolve(wantClient)
       .then(function (useClient) {
@@ -1521,10 +1541,20 @@
           throw new Error('Modo de reprodução desconhecido.');
         }
 
+        // Diz CLARAMENTE quem está decodificando o vídeo.
+        var who = '';
+        if (state.lastMode === 'hevc-wasm') {
+          who = '🖥️ DECODIFICANDO NO SEU NAVEGADOR (o servidor não gasta CPU)';
+        } else if (data.transcoded) {
+          who = '☁️ CONVERTENDO NO SERVIDOR (ffmpeg — gasta CPU e banda do Render)' + (whyServer ? ' — motivo: ' + whyServer : '');
+        } else if (data.mode === 'direct') {
+          who = '▶ SEU NAVEGADOR TOCA O HEVC DIRETO (sem conversão)';
+        }
+        if (who) console.info('[fdsflix] ' + who);
         var details = [];
+        if (who) details.push(who);
         details.push('Fonte: ' + (data.provider || 'desconhecida'));
         details.push(data.transcoded ? ('convertido para ' + data.quality + 'p') : ('qualidade ' + data.quality + 'p'));
-        if (state.lastMode === 'hevc-wasm') details.push('decodificado no seu navegador (não usa o servidor)');
         if (data.note) details.push(data.note);
         setStatus('ok', details.join(' · '));
       })
