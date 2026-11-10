@@ -119,6 +119,20 @@
   .spinner[hidden]{display:none}
   @keyframes spin{to{transform:rotate(360deg)}}
 
+  .diag{margin-top:.9rem;border:1px solid var(--border,#2a2f3a);border-radius:10px;background:rgba(0,0,0,.28);overflow:hidden}
+  .diag>summary{cursor:pointer;padding:.55rem .8rem;font-size:.82rem;font-weight:600;color:var(--text,#e8eaed);list-style:none;display:flex;align-items:center;gap:.5rem}
+  .diag>summary::-webkit-details-marker{display:none}
+  .diag-actions{margin-left:auto;display:flex;gap:.4rem}
+  .diag-actions button{font-size:.72rem;padding:.2rem .55rem}
+  .diag-log{max-height:340px;overflow:auto;padding:.45rem .8rem .7rem;font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;border-top:1px solid var(--border,#2a2f3a)}
+  .diag-log div{white-space:pre-wrap;word-break:break-all}
+  .diag-log .t{color:#6b7385;margin-right:.5rem}
+  .diag-log .step{color:#9fd1ff;font-weight:700;margin-top:.35rem}
+  .diag-log .ok{color:#7ee2a8}
+  .diag-log .warn{color:#ffd479}
+  .diag-log .err{color:#ff8f8f}
+  .diag-log .info{color:#c9d4e3}
+  .diag-log .dim{color:#7d8597}
   .status{display:flex;gap:.5rem;align-items:flex-start;margin-top:.7rem;font-size:.82rem;color:var(--muted);line-height:1.45}
   #statusText{white-space:pre-line}
   .badge{flex:0 0 auto;padding:.15rem .5rem;border-radius:5px;font-size:.66rem;font-weight:800;letter-spacing:.05em;margin-top:.05rem}
@@ -287,6 +301,17 @@
       <span id="statusBadge" class="badge working">PREPARANDO</span>
       <span id="statusText">Selecione um título…</span>
     </div>
+
+    <details id="diagPanel" class="diag" open>
+      <summary>🔎 Diagnóstico do caminho (ao vivo)
+        <span class="diag-actions">
+          <button id="diagProbe" class="ghost" type="button" title="Pede ao servidor para testar o Vidsrc na Vercel agora">Testar Vidsrc/Vercel</button>
+          <button id="diagCopy" class="ghost" type="button">Copiar</button>
+          <button id="diagClear" class="ghost" type="button">Limpar</button>
+        </span>
+      </summary>
+      <div id="diagLog" class="diag-log" aria-live="polite"></div>
+    </details>
   </section>
 
   <p id="deployHint" class="deploy-hint" hidden>
@@ -886,6 +911,8 @@
     else frame.removeAttribute('sandbox');
     frame.src = url;
     state.embedIndex = index;
+    diag('warn', 'IFRAME de terceiro: ' + provider.name + ' → ' + diagHost(url) +
+      (proxied ? '  (via AdShield/Vercel: HTML limpo, mas o vídeo é do player deles)' : '  (direto, sem filtro; pode ter anúncio)'));
     try { localStorage.setItem(EMBED_INDEX_KEY, String(index)); } catch (err) { /* ignore */ }
 
     Array.prototype.slice.call($('embedBtns').children).forEach(function (btn) {
@@ -1067,6 +1094,139 @@
 
   function hideOverlay() {
     $('overlay').hidden = true;
+  }
+
+
+  /* ---------------------------------------------------------------- */
+  /* Painel de diagnóstico: o caminho exato do vídeo, ao vivo          */
+  /* ---------------------------------------------------------------- */
+
+  var diagT0 = Date.now();
+  var diagText = [];
+  var diagHls = { frags: 0, bytes: 0, hosts: {}, lastErr: '', errRepeat: 0 };
+
+  function diag(kind, text) {
+    var box = $('diagLog');
+    var t = ((Date.now() - diagT0) / 1000).toFixed(2);
+    diagText.push('[' + t + 's] ' + text);
+    if (diagText.length > 600) diagText.shift();
+    if (!box) return;
+    String(text).split('\n').forEach(function (line, i) {
+      var row = document.createElement('div');
+      row.className = kind;
+      var stamp = document.createElement('span');
+      stamp.className = 't';
+      stamp.textContent = i === 0 ? t + 's' : '    ';
+      row.appendChild(stamp);
+      row.appendChild(document.createTextNode(line));
+      box.appendChild(row);
+    });
+    while (box.children.length > 700) box.removeChild(box.firstChild);
+    box.scrollTop = box.scrollHeight;
+  }
+
+  function diagStart(title) {
+    diagT0 = Date.now();
+    diagText = [];
+    diagHls = { frags: 0, bytes: 0, hosts: {}, lastErr: '', errRepeat: 0 };
+    if ($('diagLog')) $('diagLog').innerHTML = '';
+    diag('step', '▶ ' + title);
+  }
+
+  function diagHost(url) {
+    try { return new URL(url, location.href).host; } catch (err) { return String(url || '').slice(0, 50); }
+  }
+
+  // Quem entrega os bytes: o Render (esta origem), a Vercel ou um CDN direto.
+  function diagWhere(url) {
+    var host = diagHost(url);
+    var u = String(url || '');
+    if (host === location.host) return host + '  ⇒ RENDER (gasta banda do Render)';
+    if (/\/vidsrc\/hls\?/.test(u)) return host + '  ⇒ VERCEL (proxy Vidsrc, sem anúncio)';
+    if (EMBED_PROXY_BASE && host === diagHost(EMBED_PROXY_BASE)) return host + '  ⇒ VERCEL (AdShield)';
+    if (/workers\.dev$/.test(host)) return host + '  ⇒ Cloudflare Worker';
+    return host + '  ⇒ CDN/provedor direto';
+  }
+
+  function diagContext() {
+    diag('info', 'Página: ' + location.origin);
+    diag('info', 'API_BASE: ' + (API_BASE || '(vazio → mesma origem da página)'));
+    diag('info', 'AdShield (embedProxyBase): ' + (EMBED_PROXY_BASE || '(vazio → iframe VidLink vai direto)'));
+    diag('info', 'Extensão fdsFlix Direct: ' + (directExtensionEnabled() ? 'ativa' : 'não') +
+      ' · HEVC nativo: ' + (state.hevc ? 'sim' : 'não'));
+  }
+
+  function diagDebug(dbg) {
+    if (!dbg) {
+      diag('warn', 'O servidor NÃO enviou "debug" na resposta → o Render está rodando uma versão ANTIGA do código (sem o Vidsrc Proxy). Faça Deploy do commit mais recente.');
+      return;
+    }
+    diag('info', 'Servidor: build ' + dbg.build + ' · ordem da cascata: ' + dbg.fallbackOrder);
+    diag(dbg.vidsrcProxy ? 'ok' : 'err',
+      'VIDSRC_PROXY_URL no servidor: ' + (dbg.vidsrcProxy || 'NÃO DEFINIDA'));
+    diag('info', 'ADSHIELD_BASE_URL no servidor: ' + (dbg.adshield || 'não definida') +
+      ' · relay Cloudflare: ' + (dbg.relay ? 'sim' : 'não'));
+    diag('info', 'Provedores na ordem: ' + (dbg.providers || []).join(' → '));
+    diag('step', 'Cascata (' + dbg.totalMs + ' ms no total):');
+    (dbg.trace || []).forEach(function (entry) {
+      var used = entry.outcome === 'USADO';
+      diag(used ? 'ok' : (entry.outcome === 'erro' ? 'err' : 'dim'),
+        (used ? '✅ ' : '· ') + entry.provider + ' → ' + entry.outcome + ' (' + entry.ms + ' ms)');
+      (entry.notes || []).forEach(function (note) { diag(used ? 'ok' : 'warn', '     ↳ ' + note); });
+    });
+  }
+
+  function diagHlsEvents(hls) {
+    var E = Hls.Events;
+    hls.on(E.MANIFEST_LOADING, function (ev, d) { diag('info', 'hls.js pede a master: ' + diagWhere(d.url)); });
+    hls.on(E.MANIFEST_LOADED, function (ev, d) {
+      diag('ok', 'master recebida: ' + ((d.levels || []).length) + ' qualidade(s)');
+    });
+    hls.on(E.MANIFEST_PARSED, function (ev, d) {
+      diag('ok', 'qualidades: ' + (d.levels || []).map(function (l) {
+        return (l.height || '?') + 'p@' + Math.round((l.bitrate || 0) / 1000) + 'kbps';
+      }).join(' · '));
+    });
+    hls.on(E.LEVEL_LOADED, function (ev, d) {
+      if (d.details && d.details.fragments) {
+        diag('info', 'playlist da qualidade ' + d.level + ': ' + d.details.fragments.length + ' segmentos' +
+          (d.details.totalduration ? ' (' + Math.round(d.details.totalduration / 60) + ' min)' : ''));
+      }
+    });
+    hls.on(E.LEVEL_SWITCHED, function (ev, d) {
+      var lv = hls.levels && hls.levels[d.level];
+      diag('info', 'qualidade em uso → ' + (lv ? lv.height + 'p' : d.level));
+    });
+    hls.on(E.FRAG_LOADED, function (ev, d) {
+      var url = d.frag && d.frag.url;
+      var host = diagHost(url);
+      var st = d.stats || {};
+      var bytes = st.total || st.loaded || 0;
+      var ms = Math.round((st.loading && st.loading.end && st.loading.start) ? st.loading.end - st.loading.start : 0);
+      diagHls.frags++;
+      diagHls.bytes += bytes;
+      diagHls.hosts[host] = (diagHls.hosts[host] || 0) + 1;
+      if (diagHls.frags <= 3 || diagHls.frags % 10 === 0) {
+        diag('ok', 'segmento #' + d.frag.sn + ' ✓ ' + (bytes / 1e6).toFixed(2) + ' MB em ' + ms + ' ms de ' + diagWhere(url));
+      }
+      if (diagHls.frags === 1) diag('ok', '✅ PRIMEIRO SEGMENTO CHEGOU — o caminho de rede está funcionando');
+    });
+    hls.on(E.ERROR, function (ev, d) {
+      if (!d) return;
+      var code = d.response && d.response.code ? ' HTTP ' + d.response.code : '';
+      var where = d.url ? ' · ' + diagHost(d.url) : (d.frag && d.frag.url ? ' · ' + diagHost(d.frag.url) : '');
+      var line = d.details + code + where + (d.fatal ? ' · FATAL' : '');
+      if (line === diagHls.lastErr) { diagHls.errRepeat++; return; }
+      if (diagHls.errRepeat) diag('dim', '   (repetido mais ' + diagHls.errRepeat + 'x)');
+      diagHls.lastErr = line;
+      diagHls.errRepeat = 0;
+      diag(d.fatal ? 'err' : 'warn', 'hls.js erro: ' + line);
+    });
+  }
+
+  function diagSummary() {
+    var hosts = Object.keys(diagHls.hosts).map(function (h) { return h + ' ×' + diagHls.hosts[h]; }).join(', ');
+    return diagHls.frags + ' segmentos · ' + (diagHls.bytes / 1e6).toFixed(1) + ' MB · ' + (hosts || 'nenhum');
   }
 
   function setStatus(kind, text) {
@@ -1303,6 +1463,7 @@
   function attachHls(url, video, startPosition) {
     if (!window.Hls || !Hls.isSupported()) {
       if (video.canPlayType('application/vnd.apple.mpegurl')) {
+        diag('warn', 'hls.js indisponível: usando HLS nativo do navegador (sem detalhes de segmentos).');
         video.src = url;
         return;
       }
@@ -1322,6 +1483,7 @@
       fragLoadingRetryDelay: 800
     });
     state.hls = hls;
+    diagHlsEvents(hls);
 
     var fatalCount = 0;
 
@@ -1516,11 +1678,16 @@
     $('subBar').hidden = true;
 
     state.pendingSeek = startSeconds;
+    diagStart(item.title + ' (' + (item.type === 'tv' ? 'série T' + season + 'E' + episode : 'filme') + ', TMDB ' + item.id + ')');
+    diagContext();
     if (preferEmbedEnabled()) {
+      diag('err', '⚠ MODO "ECONOMIZAR BANDA" ESTÁ LIGADO: o fdsFlix NÃO chama /api/stream e NÃO usa a cascata. ' +
+        'Abre um iframe de terceiro (com anúncio). Por isso o Vidsrc sem anúncio não aparece. Desligue a opção "Economizar banda".');
       state.playToken++;               // cancela qualquer pedido de stream em andamento
       startPreferredEmbed();
       return;
     }
+    diag('info', 'Modo normal: o fdsFlix vai pedir o stream ao servidor (cascata de provedores).');
     showOverlay('Extraindo o stream…', true);
     setStatus('working', 'Pedindo o vídeo ao servidor…');
 
@@ -1549,6 +1716,7 @@
       whyServer = 'o navegador não conseguiu decodificar o vídeo original';
     }
 
+    var reqStart = Date.now();
     Promise.resolve(wantClient)
       .then(function (useClient) {
         if (playToken !== state.playToken) {
@@ -1580,9 +1748,12 @@
         }
         if (item.title) params.set('title', item.title);
 
+        reqStart = Date.now();
+        diag('step', 'Pedindo ao servidor: GET ' + apiUrl('/api/stream?' + params.toString()));
         return apiFetch('/api/stream?' + params.toString(), { signal: controller.signal });
       })
       .then(function (response) {
+        diag(response.ok ? 'ok' : 'err', 'Servidor respondeu HTTP ' + response.status + ' em ' + (Date.now() - reqStart) + ' ms');
         return response.json().catch(function () { return {}; }).then(function (data) {
           if (!response.ok || !data.url) {
             throw new Error(data.error || 'O servidor não retornou um vídeo.');
@@ -1594,6 +1765,12 @@
         clearTimeout(slowTimer);
         if (playToken !== state.playToken) return;
 
+        diagDebug(data.debug);
+        diag('step', 'Resultado final:');
+        diag('ok', 'provedor = ' + (data.provider || '?') + ' · modo = ' + data.mode + ' · via = ' + (data.via || '-') +
+          ' · transcodificado = ' + (data.transcoded ? 'SIM (ffmpeg no Render)' : 'não'));
+        diag('ok', 'o player vai buscar o vídeo em: ' + diagWhere(apiUrl(data.url)));
+        diag('info', 'legendas: ' + ((data.captions || []).length) + (data.note ? ' · nota: ' + data.note : ''));
         state.sessionId = data.sessionId || null;
         state.lastMode = data.mode;
         state.transcoded = Boolean(data.transcoded);
@@ -1659,6 +1836,7 @@
         clearTimeout(slowTimer);
         if (err && err.name === 'AbortError') return;
         if (playToken !== state.playToken) return;
+        diag('err', 'FALHA: ' + ((err && err.message) || err));
         if (!navigator.onLine || /failed to fetch|networkerror|load failed/i.test((err && err.message) || '')) {
           scheduleNetResume('Sem conexão com o servidor.');
           return;
@@ -1912,6 +2090,60 @@
     video.textTracks.onchange = syncSubLangFromTracks;
   }
 
+
+  /* painel de diagnóstico: eventos do <video> e botões */
+  (function () {
+    var v = $('nativePlayer');
+    if (v) {
+      v.addEventListener('loadedmetadata', function () {
+        diag('ok', '<video> pronto: ' + v.videoWidth + 'x' + v.videoHeight + ' · duração ' + (isFinite(v.duration) ? Math.round(v.duration / 60) + ' min' : '?'));
+      });
+      v.addEventListener('playing', function () { diag('ok', '▶ TOCANDO em ' + Math.round(v.currentTime) + 's'); });
+      v.addEventListener('waiting', function () { diag('warn', '⏳ buffering em ' + Math.round(v.currentTime) + 's'); });
+      v.addEventListener('stalled', function () { diag('warn', '⚠ stalled (rede parou de entregar) em ' + Math.round(v.currentTime) + 's'); });
+      v.addEventListener('error', function () {
+        var e = v.error;
+        if (e) diag('err', '<video> erro ' + e.code + (e.message ? ': ' + e.message : ''));
+      });
+    }
+    setInterval(function () {
+      if (diagHls.frags > 0 && v && !v.paused) diag('dim', 'resumo: ' + diagSummary() + ' · posição ' + Math.round(v.currentTime) + 's');
+    }, 20000);
+
+    $('diagClear').addEventListener('click', function (ev) {
+      ev.preventDefault(); ev.stopPropagation();
+      diagText = []; $('diagLog').innerHTML = '';
+    });
+    $('diagCopy').addEventListener('click', function (ev) {
+      ev.preventDefault(); ev.stopPropagation();
+      var text = diagText.join('\n');
+      var done = function () { toast('Log copiado.'); };
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, function () { window.prompt('Copie o log:', text); });
+      else window.prompt('Copie o log:', text);
+    });
+    $('diagProbe').addEventListener('click', function (ev) {
+      ev.preventDefault(); ev.stopPropagation();
+      var id = state.selected && /^\d+$/.test(String(state.selected.id)) ? state.selected.id : 603;
+      diag('step', 'Teste ativo: o servidor chama /vidsrc/probe na Vercel (TMDB ' + id + ')…');
+      apiFetch('/api/diag/vidsrc?id=' + id).then(function (r) { return r.json(); }).then(function (d) {
+        if (d.error) { diag('err', d.error + (d.base ? ' (' + d.base + ')' : '')); return; }
+        diag(d.ok ? 'ok' : 'err', 'Vercel ' + d.base + ' → HTTP ' + d.http + ' em ' + d.ms + ' ms');
+        var p = d.probe || {};
+        if (p.egressIp) diag('info', 'IP de saída da Vercel nesta chamada: ' + p.egressIp);
+        if (p.resolveMs) diag('info', 'extração (vidsrc→stellar→api+WASM): ' + p.resolveMs + ' ms');
+        ['master', 'variant', 'segment'].forEach(function (k) {
+          var st = p.steps && p.steps[k];
+          if (st) diag(st.status === 200 ? 'ok' : 'err', k + ': HTTP ' + st.status + ' · ' + (st.bytes || 0) + ' bytes · ' + (st.ms || 0) + ' ms' + (st.error ? ' · ' + st.error : ''));
+        });
+        if (p.error) diag('err', 'erro na extração: ' + p.error);
+        diag(p.steps && p.steps.segment && p.steps.segment.status === 200 ? 'ok' : 'warn',
+          p.steps && p.steps.segment && p.steps.segment.status === 200
+            ? '✅ A Vercel consegue extrair E baixar segmentos do Vidsrc.'
+            : '⚠ A cadeia não fechou até o segmento; veja o passo que falhou acima.');
+      }).catch(function (err) { diag('err', 'Falha ao chamar o servidor: ' + err.message); });
+    });
+    diag('info', 'Painel pronto. Clique em um título para ver o caminho completo, ou em "Testar Vidsrc/Vercel".');
+  })();
   $('preferEmbedToggle').checked = preferEmbedEnabled();
   $('preferEmbedToggle').addEventListener('change', function () {
     try { localStorage.setItem(PREFER_EMBED_KEY, this.checked ? '1' : '0'); } catch (err) { /* ignore */ }

@@ -404,9 +404,43 @@ app.get('/api', (req, res) => {
   });
 });
 
+// Teste ativo do Vidsrc via Vercel, disparado pelo botão do painel de diagnóstico.
+app.get('/api/diag/vidsrc', async (req, res) => {
+  const base = String(process.env.VIDSRC_PROXY_URL || '').trim().replace(/\/+$/, '');
+  if (!base) return res.json({ ok: false, error: 'VIDSRC_PROXY_URL não está definida neste servidor.' });
+  const tmdb = /^\d+$/.test(String(req.query.id || '')) ? String(req.query.id) : '603';
+  const started = Date.now();
+  try {
+    const r = await fetch(`${base}/vidsrc/probe?tmdb=${tmdb}`, { signal: AbortSignal.timeout(40000) });
+    const body = await r.json().catch(() => ({}));
+    // `master` leva o token JWT: não devolve.
+    delete body.master;
+    res.json({ ok: r.ok, base, tmdb, http: r.status, ms: Date.now() - started, probe: body });
+  } catch (err) {
+    res.json({ ok: false, base, error: err.message, ms: Date.now() - started });
+  }
+});
+
 /* ------------------------------------------------------------------ */
 /* Stream                                                              */
 /* ------------------------------------------------------------------ */
+
+/** Estado do servidor para o painel de diagnóstico (sem segredos: só hosts e flags). */
+function buildStreamDebug(trace, startedAt) {
+  const hostOf = (value) => {
+    try { return value ? new URL(value).origin : null; } catch (err) { return String(value || '') || null; }
+  };
+  return {
+    build: String(process.env.RENDER_GIT_COMMIT || process.env.VERCEL_GIT_COMMIT_SHA || 'local').slice(0, 7),
+    vidsrcProxy: hostOf(process.env.VIDSRC_PROXY_URL),
+    adshield: hostOf(process.env.ADSHIELD_BASE_URL),
+    relay: Boolean(process.env.VIDEO_RELAY_URL),
+    fallbackOrder: process.env.FALLBACK_ORDER || '(padrão)',
+    providers: getProviderList().map((p) => p.name),
+    totalMs: Date.now() - startedAt,
+    trace
+  };
+}
 
 app.get('/api/stream', requireApiKey, async (req, res) => {
   const id = String(req.query.id || '');
@@ -429,8 +463,16 @@ app.get('/api/stream', requireApiKey, async (req, res) => {
     `[stream] id=${id} type=${type} s=${season} e=${episode} res=${preferred || 'auto'} hevc=${hevcOk ? 'sim' : 'não'} start=${startAt}s${title ? ` title="${title}"` : ''}`
   );
 
+  // Diagnóstico mostrado no painel abaixo do player: caminho exato da cascata.
+  const trace = [];
+  const startedAt = Date.now();
+  const jsonWithDebug = res.json.bind(res);
+  res.json = (body) => jsonWithDebug(body && typeof body === 'object' && !Array.isArray(body)
+    ? { ...body, debug: buildStreamDebug(trace, startedAt) }
+    : body);
+
   try {
-    const streamInfo = await getFallbackStream({ id, type, season, episode, title });
+    const streamInfo = await getFallbackStream({ id, type, season, episode, title, trace });
 
     if (!streamInfo || !streamInfo.url) {
       console.log('[stream] nenhuma fonte encontrou esse título');
