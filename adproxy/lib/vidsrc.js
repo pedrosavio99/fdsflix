@@ -1,16 +1,44 @@
 'use strict';
 
+const crypto = require('crypto');
 const { Readable } = require('stream');
 
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
   '(KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36';
 
-const ALLOWED_HOSTS = ['oakhollowoutpost.space', 'data.vidsrc.sh', 'vidsrc.sh'];
+// Segmentos e playlists ficam em domínios que mudam por título (ex.: master em
+// oakhollowoutpost.space, segmentos em sageandsolstice.space), então não há lista
+// fixa de hosts. Em vez disso, toda URL que o proxy emite é ASSINADA (HMAC) e o
+// proxy só busca URLs assinadas por ele: não vira proxy aberto nem alvo de SSRF.
+let signingSecret = null;
 
-function allowedHost(hostname) {
-  const host = String(hostname || '').toLowerCase();
-  return ALLOWED_HOSTS.some((item) => host === item || host.endsWith('.' + item));
+function configureSigning(config) {
+  if (signingSecret) return;
+  if (config && config.secretStable) {
+    signingSecret = config.secret;
+    return;
+  }
+  const seed =
+    process.env.VERCEL_DEPLOYMENT_ID || process.env.VERCEL_PROJECT_ID || process.env.VERCEL_URL || '';
+  signingSecret = seed
+    ? crypto.createHash('sha256').update(`fdsflix-vidsrc|${seed}`).digest('hex')
+    : (config && config.secret) || crypto.randomBytes(32).toString('hex');
+}
+
+function sign(url) {
+  return crypto.createHmac('sha256', signingSecret).update(url).digest('base64url').slice(0, 22);
+}
+
+function verify(url, signature) {
+  if (!signingSecret || !signature) return false;
+  const expected = Buffer.from(sign(url));
+  const given = Buffer.from(String(signature));
+  return expected.length === given.length && crypto.timingSafeEqual(expected, given);
+}
+
+function proxiedPath(url) {
+  return `/vidsrc/hls?u=${encodeURIComponent(url)}&s=${sign(url)}`;
 }
 
 function withTimeout(controller, ms) {
@@ -162,12 +190,86 @@ async function resolveVidsrc(options) {
   return {
     provider: 'Vidsrc',
     host,
+    apiToken: config.apiToken,
     pageUrl: embed,
     playerUrl,
+    token,
+    rawUrls: streams,
     urls: streams.map((url) => `${url}${url.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}`),
     subtitles: Array.isArray(apiJson.default_subs) ? apiJson.default_subs : [],
     title: metaJson.data.title || null
   };
+}
+
+// ---------------------------------------------------------------------------
+// Token por instância
+//
+// O CDN do Vidsrc amarra o JWT (`token`) ao CIDR do IP que o gerou (/24 no IPv4,
+// /64 no IPv6). O caminho `/pl/...` NÃO é amarrado, e o token vale para qualquer
+// título por ~4h. Como cada instância serverless pode sair por um IP diferente,
+// cada uma guarda o PRÓPRIO token e o aplica em qualquer caminho. Se o CDN
+// responder "not in range" (IP mudou), o token é refeito e a requisição repete.
+// ---------------------------------------------------------------------------
+const TOKEN_TTL_MS = 3 * 60 * 60 * 1000;
+const CANARY_TMDB = '603';
+const tokenState = { token: null, expires: 0, pending: null };
+const resolveCache = new Map();
+const RESOLVE_TTL_MS = 10 * 60 * 1000;
+
+function rememberToken(host, token) {
+  if (token) {
+    tokenState.token = token;
+    tokenState.expires = Date.now() + TOKEN_TTL_MS;
+  }
+}
+
+async function getEdgeToken(staleToken) {
+  // `staleToken`: token que acabou de falhar. Se outra requisição já o trocou,
+  // reaproveita o novo em vez de refazer a cadeia inteira (evita rajada de mints).
+  const fresh = tokenState.token && Date.now() < tokenState.expires && tokenState.token !== staleToken;
+  if (fresh) return tokenState.token;
+  if (!tokenState.pending) {
+    tokenState.pending = resolveVidsrc({ id: CANARY_TMDB, type: 'movie' })
+      .then((result) => {
+        rememberToken(result.host, result.token);
+        return result.token;
+      })
+      .finally(() => {
+        tokenState.pending = null;
+      });
+  }
+  return tokenState.pending;
+}
+
+function stripToken(raw) {
+  const url = new URL(raw);
+  url.searchParams.delete('token');
+  return url.toString();
+}
+
+function withToken(raw, token) {
+  const url = new URL(raw);
+  url.searchParams.set('token', token);
+  return url.toString();
+}
+
+/** Igual a resolveVidsrc, mas com cache e URLs SEM token (o proxy aplica o dele). */
+async function resolveVidsrcCached(options, config) {
+  configureSigning(config);
+  const key = [options.type || 'movie', options.id, options.season || 1, options.episode || 1].join(':');
+  const hit = resolveCache.get(key);
+  if (hit && Date.now() - hit.at < RESOLVE_TTL_MS) return hit.value;
+  const result = await resolveVidsrc(options);
+  rememberToken(result.host, result.token);
+  const value = {
+    provider: result.provider,
+    title: result.title,
+    subtitles: result.subtitles,
+    urls: result.rawUrls.map(stripToken)
+  };
+  resolveCache.set(key, { at: Date.now(), value });
+  if (resolveCache.size > 200) resolveCache.delete(resolveCache.keys().next().value);
+  return value;
 }
 
 function rewriteHls(text, upstreamUrl) {
@@ -177,11 +279,12 @@ function rewriteHls(text, upstreamUrl) {
     if (!value || value.startsWith('#')) return raw;
     let url;
     try {
-      url = new URL(value, upstreamUrl).toString();
+      url = new URL(value, upstreamUrl);
+      url.searchParams.delete('token');
     } catch (error) {
       return raw;
     }
-    return `/vidsrc/hls?u=${encodeURIComponent(url)}`;
+    return proxiedPath(url.toString());
   };
 
   return lines
@@ -195,7 +298,38 @@ function rewriteHls(text, upstreamUrl) {
     .join('\n');
 }
 
+function setCors(res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Headers', 'Range, Content-Type');
+  res.setHeader('Access-Control-Expose-Headers', 'Content-Length, Content-Range, Accept-Ranges');
+}
+
+async function fetchCdn(upstream, token, rangeHeader) {
+  const headers = {
+    'User-Agent': UA,
+    Accept: '*/*',
+    'Accept-Encoding': 'identity',
+    Referer: 'https://stellarconductornexus.com/'
+  };
+  if (rangeHeader) headers.Range = rangeHeader;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 25000);
+  try {
+    const response = await fetch(withToken(upstream.toString(), token), {
+      headers,
+      redirect: 'follow',
+      signal: controller.signal
+    });
+    return { response, timer };
+  } catch (error) {
+    clearTimeout(timer);
+    throw error;
+  }
+}
+
 async function proxyVidsrcHls(req, res, config) {
+  configureSigning(config);
+  setCors(res);
   const raw = String(req.query.u || '');
   let upstream;
   try {
@@ -203,20 +337,36 @@ async function proxyVidsrcHls(req, res, config) {
   } catch (error) {
     return res.status(400).json({ error: 'URL inválida' });
   }
-  if (upstream.protocol !== 'https:' || !allowedHost(upstream.hostname)) {
-    return res.status(403).json({ error: 'Host não permitido' });
+
+  if (upstream.protocol !== 'https:' || !verify(upstream.toString(), String(req.query.s || ''))) {
+    return res.status(403).json({ error: 'URL não assinada pelo proxy' });
   }
 
-  const headers = {
-    'User-Agent': UA,
-    Accept: '*/*',
-    'Accept-Encoding': 'identity',
-    Referer: 'https://stellarconductornexus.com/'
-  };
-  if (req.headers.range) headers.Range = req.headers.range;
+  let token = await getEdgeToken();
 
-  const response = await fetch(upstream, { headers, redirect: 'follow' });
+  let attempt = await fetchCdn(upstream, token, req.headers.range);
+  if (attempt.response.status === 403) {
+    // IP de saída mudou desde que o token foi gerado: refaz e tenta de novo.
+    clearTimeout(attempt.timer);
+    await attempt.response.arrayBuffer().catch(() => null);
+    token = await getEdgeToken(token);
+    attempt = await fetchCdn(upstream, token, req.headers.range);
+  }
+  for (let retry = 0; retry < 3 && attempt.response.status === 429; retry += 1) {
+    // Rate limit do CDN: espera um pouco (respeitando Retry-After) e repete.
+    clearTimeout(attempt.timer);
+    const wait = Math.min(2000, (Number(attempt.response.headers.get('retry-after')) || 0) * 1000 || 250 * (retry + 1) ** 2);
+    await attempt.response.arrayBuffer().catch(() => null);
+    await new Promise((resolve) => setTimeout(resolve, wait));
+    attempt = await fetchCdn(upstream, token, req.headers.range);
+  }
+
+  const { response, timer } = attempt;
+  res.on('close', () => clearTimeout(timer));
+  res.setHeader('Cache-Control', 'no-store');
+
   if (!response.ok && response.status !== 206) {
+    clearTimeout(timer);
     return res.status(response.status).type('text').send(await response.text());
   }
 
@@ -226,22 +376,105 @@ async function proxyVidsrcHls(req, res, config) {
 
   if (isPlaylist) {
     const text = await response.text();
-    const body = rewriteHls(text, upstream.toString());
+    clearTimeout(timer);
     res.status(response.status);
     res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Cache-Control', 'no-store');
-    return res.send(body);
+    return res.send(rewriteHls(text, upstream.toString()));
   }
 
   res.status(response.status);
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  for (const name of ['content-type', 'content-range', 'accept-ranges', 'content-length']) {
+  // O CDN serve os segmentos MPEG-TS como text/html; normaliza para o player.
+  res.setHeader('Content-Type', /html|text/i.test(contentType) || !contentType ? 'video/mp2t' : contentType);
+  for (const name of ['content-range', 'accept-ranges', 'content-length']) {
     const value = response.headers.get(name);
     if (value) res.setHeader(name, value);
   }
-  if (!response.body) return res.end();
-  Readable.fromWeb(response.body).pipe(res);
+  if (!response.body) {
+    clearTimeout(timer);
+    return res.end();
+  }
+  const stream = Readable.fromWeb(response.body);
+  res.on('close', () => stream.destroy());
+  stream.on('error', () => res.destroy());
+  stream.pipe(res);
 }
 
-module.exports = { resolveVidsrc, proxyVidsrcHls, rewriteHls };
+async function egressIp() {
+  try {
+    const { text } = await fetchText('https://api.ipify.org', {}, 8000);
+    return text.trim();
+  } catch (error) {
+    return null;
+  }
+}
+
+async function probeStep(url, headers, wantBytes) {
+  const started = Date.now();
+  try {
+    const response = await fetch(url, {
+      headers: { 'User-Agent': UA, Accept: '*/*', 'Accept-Encoding': 'identity', ...headers },
+      redirect: 'follow'
+    });
+    const buffer = Buffer.from(await response.arrayBuffer());
+    return {
+      status: response.status,
+      ms: Date.now() - started,
+      bytes: buffer.length,
+      contentType: response.headers.get('content-type'),
+      head: wantBytes ? undefined : buffer.toString('utf8', 0, 160),
+      text: wantBytes ? undefined : buffer.toString('utf8'),
+      first: wantBytes ? buffer.subarray(0, 4).toString('hex') : undefined
+    };
+  } catch (error) {
+    return { status: 0, error: error.message, ms: Date.now() - started };
+  }
+}
+
+/**
+ * Teste do IP binding: baixa master -> variante -> 1 segmento a partir do IP
+ * DESTA função. Se `url` vier, usa essa master (resolvida em outra invocação).
+ */
+async function probeVidsrc(options) {
+  const out = { egressIp: await egressIp(), steps: {} };
+  const referer = { Referer: 'https://stellarconductornexus.com/' };
+  let master = options.url;
+  if (!master) {
+    const started = Date.now();
+    const resolved = await resolveVidsrc(options);
+    out.resolveMs = Date.now() - started;
+    out.resolvedFromIp = out.egressIp;
+    master = resolved.urls[resolved.urls.length - 1];
+    out.master = master;
+  }
+  const m = await probeStep(master, referer, false);
+  out.steps.master = { status: m.status, ms: m.ms, bytes: m.bytes, head: m.head, error: m.error };
+  if (m.status !== 200) return out;
+
+  const lines = String(m.text).split(/\r?\n/).map((l) => l.trim());
+  const variant = lines.find((l) => l && !l.startsWith('#'));
+  if (!variant) return out;
+  const variantUrl = new URL(variant, master).toString();
+  const v = await probeStep(variantUrl, referer, false);
+  out.steps.variant = { status: v.status, ms: v.ms, bytes: v.bytes, head: v.head, error: v.error };
+  if (v.status !== 200) return out;
+
+  const seg = String(v.text).split(/\r?\n/).map((l) => l.trim()).find((l) => l && !l.startsWith('#'));
+  if (!seg) return out;
+  const segUrl = new URL(seg, variantUrl).toString();
+  const s = await probeStep(segUrl, { ...referer, Range: 'bytes=0-262143' }, true);
+  out.steps.segment = { status: s.status, ms: s.ms, bytes: s.bytes, contentType: s.contentType, first: s.first, error: s.error };
+  return out;
+}
+
+module.exports = {
+  resolveVidsrc,
+  resolveVidsrcCached,
+  proxyVidsrcHls,
+  rewriteHls,
+  probeVidsrc,
+  getEdgeToken,
+  setCors,
+  proxiedPath,
+  configureSigning,
+  rememberToken
+};

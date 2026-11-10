@@ -55,3 +55,77 @@ Sem `ADSHIELD_BASE_URL`, nada muda: o embed VidLink continua indo direto para
   embed direto.
 - O proxy não remove anúncios em vídeo (VAST/pre-roll); remove scripts,
   iframes, overlays e pop-ups do HTML.
+
+---
+
+# Vidsrc direto, sem iframe e sem anúncio (`/vidsrc/*`)
+
+O mesmo projeto Vercel também **extrai o Vidsrc e entrega o vídeo** para o player
+do fdsFlix. Não há iframe, então não há anúncio; o fdsFlix toca o HLS no próprio
+`<video>` (hls.js).
+
+## Como funciona
+
+```text
+fdsFlix /api/stream  ->  GET  <vercel>/vidsrc/stream?tmdb=603      (JSON: master.m3u8 assinada)
+navegador (hls.js)   ->  GET  <vercel>/vidsrc/hls?u=...&s=...      (playlists e segmentos .ts)
+<vercel>             ->  vidsrc.sh -> stellar -> api.php + WASM -> /pl/.../master.m3u8
+```
+
+### Por que precisa passar pela Vercel (IP binding)
+
+O CDN do Vidsrc responde `ip X not in range` se o token (JWT) for usado por outro
+IP. O token carrega `ip_cidr` (IPv4 `/24`, IPv6 `/64`) e o `api_token` que o gera
+também é amarrado ao IP. As chamadas de extração não têm CORS e exigem `Referer`
+do Vidsrc, então o navegador do usuário não consegue gerar o próprio token.
+
+Medido nos testes:
+
+- só o **token** é amarrado ao IP; o caminho `/pl/...` **não é**;
+- o token vale para **qualquer título/episódio** e dura **4 h**;
+- a Vercel sai por **vários IPs** (7 diferentes em 30 requisições paralelas).
+
+Por isso o proxy guarda **um token por instância** e o aplica em qualquer caminho
+(`getEdgeToken`). Se o CDN responder 403 porque o IP mudou, ele refaz o token e
+repete a requisição sozinho. Em 429 (rate limit do CDN) ele espera e repete.
+
+### Segurança
+
+Playlists e segmentos ficam em domínios que mudam por título (ex.: master em
+`oakhollowoutpost.space`, segmentos em `sageandsolstice.space`), então não existe
+lista fixa de hosts. Toda URL que o proxy emite é **assinada com HMAC**
+(`PROXY_SECRET`); URL sem assinatura válida recebe 403. Não é proxy aberto nem
+dá SSRF (`http://169.254.169.254/...` também cai em 403). Sem `PROXY_SECRET`, a
+chave é derivada de `VERCEL_DEPLOYMENT_ID` (funciona, mas defina `PROXY_SECRET`).
+
+## Ligar / desligar (voltar ao que era)
+
+No **Render** (fdsFlix):
+
+```env
+VIDSRC_PROXY_URL=https://SEU-PROJETO.vercel.app     # liga: Vidsrc vira a 1ª fonte
+```
+
+- **Desligar:** apague `VIDSRC_PROXY_URL` e faça redeploy. A cascata volta exatamente
+  ao que era (VidLink primeiro). Nenhum outro arquivo precisa mudar.
+- **Falha automática:** se a Vercel estiver fora ou o título não existir no Vidsrc,
+  o provedor devolve `null` e a cascata segue para o VidLink sozinha.
+- **Só reordenar:** `FALLBACK_ORDER=VidLink Pro,Vidsrc Proxy` deixa o VidLink na frente.
+
+## Endpoints
+
+| Rota | Uso |
+| --- | --- |
+| `GET /vidsrc/stream?tmdb=603` | filme; série: `&type=tv&s=1&e=1`. Devolve `url` (master) e `sources` (3 espelhos, cada um com 640p/1280p/1920p) |
+| `GET /vidsrc/hls?u=&s=` | playlists e segmentos assinados |
+| `GET /vidsrc/probe?tmdb=603` | diagnóstico: IP de saída e status de master/variante/segmento a partir da Vercel |
+
+## Limites reais
+
+- O vídeo **passa pela Vercel**: 1080p ≈ 2,2 GB/hora. O plano Hobby tem ~100 GB/mês
+  de transferência (≈ 45 h de 1080p) e é de uso não comercial; confira os termos atuais.
+- Medido (função na Vercel, região padrão `iad1`): 6–15× tempo real por usuário e
+  3 usuários simultâneos sem erro. Rajada de 12+ segmentos paralelos no mesmo IP
+  leva 429 do CDN, o que um player normal (1–2 por vez) não faz.
+- Se o Vidsrc mudar a cadeia (`vs_src.php`, `CFG`, `CONFIG.apiToken`, WASM), a
+  extração quebra. Use `/vidsrc/probe` para ver em qual etapa falhou.

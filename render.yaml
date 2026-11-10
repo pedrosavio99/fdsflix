@@ -27,6 +27,11 @@ services:
       # VidLink continua indo direto. Não é VM e não é usado para o vídeo.
       - key: ADSHIELD_BASE_URL
         sync: false
+      # Vidsrc direto, sem iframe e sem anúncio, extraído e entregue pelo adproxy na
+      # Vercel (o Render só devolve ~1 KB de JSON). Para VOLTAR ao fluxo anterior:
+      # apague esta variável e faça redeploy. Ver adproxy/VERCEL.md.
+      - key: VIDSRC_PROXY_URL
+        sync: false
       # Worker repassador da Cloudflare (deploy/cloudflare-worker). Opcional: sem as duas, vai direto.
       - key: VIDEO_RELAY_URL
         sync: false

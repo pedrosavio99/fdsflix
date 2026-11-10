@@ -70,6 +70,14 @@ O embed VidLink passa a usar esse proxy e o sandbox é dispensado para ele (o
 runtime do AdShield bloqueia os pop-ups). Passo a passo:
 [adproxy/VERCEL.md](adproxy/VERCEL.md).
 
+### Vidsrc sem anúncio (opcional, mesma Vercel)
+
+Com `VIDSRC_PROXY_URL=https://seu-adshield.vercel.app` no Render, o Vidsrc vira a
+primeira fonte da cascata: o `adproxy` extrai o HLS e entrega playlist e segmentos
+(o CDN amarra o token ao IP, então o navegador não toca direto). Sem iframe, sem
+anúncio, e o Render só devolve JSON. **Para voltar ao fluxo anterior, apague a
+variável.** Detalhes e limites: [adproxy/VERCEL.md](adproxy/VERCEL.md).
+
 > **Não aponte o AdShield para o site fdsFlix inteiro.** O HTML do fdsFlix não
 > tem anúncios no HTML e o vídeo não passa por ele; use o AdShield como proxy
 > do player, não da aplicação toda.

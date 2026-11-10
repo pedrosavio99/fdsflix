@@ -9,5 +9,10 @@
       "destination": "/api/index.js"
     }
   ],
-  "outputDirectory": "public"
+  "outputDirectory": "public",
+  "functions": {
+    "api/index.js": {
+      "maxDuration": 60
+    }
+  }
 }
