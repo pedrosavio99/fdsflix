@@ -238,9 +238,9 @@ function makeRefresher({ id, type, season, episode, qualityKey, provider, title 
   };
 }
 
-async function tmdbFetch(pathname) {
+async function tmdbFetch(pathname, lang = TMDB_LANG) {
   if (!TMDB_API_KEY) return null;
-  const url = `${TMDB_BASE}${pathname}${pathname.includes('?') ? '&' : '?'}api_key=${TMDB_API_KEY}&language=${TMDB_LANG}`;
+  const url = `${TMDB_BASE}${pathname}${pathname.includes('?') ? '&' : '?'}api_key=${TMDB_API_KEY}&language=${lang}`;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 15000);
   try {
@@ -255,9 +255,11 @@ async function tmdbFetch(pathname) {
   }
 }
 
-function mapTmdbItem(item) {
+function mapTmdbItem(item, fallbackType) {
   if (!item) return null;
-  const type = item.media_type === 'tv' ? 'tv' : item.media_type === 'movie' ? 'movie' : null;
+  // /movie/popular e /tv/popular não trazem media_type: quem chama informa o tipo.
+  const kind = item.media_type || fallbackType;
+  const type = kind === 'tv' ? 'tv' : kind === 'movie' ? 'movie' : null;
   if (!type) return null;
   return {
     id: item.id,
@@ -265,7 +267,8 @@ function mapTmdbItem(item) {
     year: String(item.release_date || item.first_air_date || '').slice(0, 4),
     type,
     poster: item.poster_path || '',
-    overview: item.overview || ''
+    overview: String(item.overview || '').slice(0, 220),
+    rating: item.vote_average ? Math.round(item.vote_average * 10) / 10 : 0
   };
 }
 
@@ -285,6 +288,99 @@ app.get('/api/search', requireApiKey, async (req, res) => {
   res.json({ results });
 });
 
+
+// Detalhes de um título para o modal: sinopse, elenco, temporadas e RECOMENDADOS.
+const detailsCache = new Map();
+const DETAILS_TTL_MS = 30 * 60 * 1000;
+
+function pickCertification(data, type) {
+  try {
+    if (type === 'movie') {
+      const list = (data.release_dates && data.release_dates.results) || [];
+      const region = list.find((r) => r.iso_3166_1 === 'BR') || list.find((r) => r.iso_3166_1 === 'US');
+      const hit = region && region.release_dates.find((r) => r.certification);
+      return hit ? hit.certification : '';
+    }
+    const list = (data.content_ratings && data.content_ratings.results) || [];
+    const region = list.find((r) => r.iso_3166_1 === 'BR') || list.find((r) => r.iso_3166_1 === 'US');
+    return region ? region.rating : '';
+  } catch (err) {
+    return '';
+  }
+}
+
+app.get('/api/details', requireApiKey, async (req, res) => {
+  const id = String(req.query.id || '');
+  const type = String(req.query.type || '');
+  if (!/^\d+$/.test(id) || (type !== 'movie' && type !== 'tv')) {
+    return res.status(400).json({ error: 'id/type inválidos' });
+  }
+  if (!TMDB_API_KEY) return res.status(503).json({ error: 'TMDB_API_KEY não configurada' });
+
+  const key = `${type}:${id}`;
+  const cached = detailsCache.get(key);
+  if (cached && cached.expires > Date.now()) return res.json(cached.value);
+
+  const extras = type === 'movie' ? 'credits,recommendations,similar,release_dates'
+    : 'credits,recommendations,similar,content_ratings';
+  const data = await tmdbFetch(`/${type}/${id}?append_to_response=${extras}`);
+  if (!data) return res.status(502).json({ error: 'Falha ao consultar o TMDB' });
+
+  // Sem sinopse em português? Usa a em inglês em vez de deixar vazio.
+  let overview = data.overview || '';
+  if (!overview) {
+    const en = await tmdbFetch(`/${type}/${id}`, 'en-US');
+    overview = (en && en.overview) || '';
+  }
+
+  const seen = new Set([key]);
+  const recommendations = [];
+  for (const list of [data.recommendations, data.similar]) {
+    for (const raw of (list && list.results) || []) {
+      const mapped = mapTmdbItem(raw, type);
+      if (!mapped || !mapped.poster) continue;
+      const k = `${mapped.type}:${mapped.id}`;
+      if (seen.has(k)) continue;
+      seen.add(k);
+      recommendations.push(mapped);
+      if (recommendations.length >= 24) break;
+    }
+    if (recommendations.length >= 24) break;
+  }
+
+  const crew = (data.credits && data.credits.crew) || [];
+  const value = {
+    id: data.id,
+    type,
+    title: data.title || data.name || '',
+    originalTitle: data.original_title || data.original_name || '',
+    tagline: data.tagline || '',
+    overview,
+    year: String(data.release_date || data.first_air_date || '').slice(0, 4),
+    runtime: type === 'movie' ? (data.runtime || 0) : ((data.episode_run_time && data.episode_run_time[0]) || 0),
+    genres: (data.genres || []).map((g) => g.name),
+    rating: data.vote_average ? Math.round(data.vote_average * 10) / 10 : 0,
+    votes: data.vote_count || 0,
+    backdrop: data.backdrop_path || '',
+    poster: data.poster_path || '',
+    certification: pickCertification(data, type),
+    status: data.status || '',
+    seasons: type === 'tv'
+      ? (data.seasons || []).filter((s) => s.season_number > 0).map((s) => ({ n: s.season_number, name: s.name, episodes: s.episode_count }))
+      : [],
+    directors: type === 'movie'
+      ? crew.filter((c) => c.job === 'Director').map((c) => c.name).slice(0, 3)
+      : (data.created_by || []).map((c) => c.name).slice(0, 3),
+    cast: ((data.credits && data.credits.cast) || []).slice(0, 12)
+      .map((c) => ({ name: c.name, character: c.character || '', photo: c.profile_path || '' })),
+    recommendations
+  };
+
+  detailsCache.set(key, { value, expires: Date.now() + DETAILS_TTL_MS });
+  if (detailsCache.size > 300) detailsCache.delete(detailsCache.keys().next().value);
+  res.json(value);
+});
+
 let popularCache = { expires: 0, results: [] };
 
 app.get('/api/popular', requireApiKey, async (req, res) => {
@@ -302,15 +398,16 @@ app.get('/api/popular', requireApiKey, async (req, res) => {
   const seen = new Set();
   const results = [];
 
-  for (const dataset of [trending, popularMovies, popularTv]) {
+  const datasets = [[trending, undefined], [popularMovies, 'movie'], [popularTv, 'tv']];
+  for (const [dataset, fallbackType] of datasets) {
     for (const item of (dataset && dataset.results) || []) {
-      const mapped = mapTmdbItem(item);
+      const mapped = mapTmdbItem(item, fallbackType);
       if (!mapped || seen.has(`${mapped.type}:${mapped.id}`)) continue;
       seen.add(`${mapped.type}:${mapped.id}`);
       results.push(mapped);
-      if (results.length >= 24) break;
+      if (results.length >= 36) break;
     }
-    if (results.length >= 24) break;
+    if (results.length >= 36) break;
   }
 
   if (results.length) {

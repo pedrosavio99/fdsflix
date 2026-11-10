@@ -19,6 +19,7 @@
     --warn:#ffb020;
     --err:#ff5c5c;
     --radius:12px;
+    color-scheme:dark;
   }
   *{box-sizing:border-box}
   html,body{margin:0;padding:0}
@@ -79,13 +80,6 @@
   @media (hover:none){.cont-x{opacity:.85}}
   .badge-type{position:absolute;top:.4rem;left:.4rem;background:rgba(0,0,0,.72);color:#fff;font-size:.62rem;font-weight:700;padding:.15rem .4rem;border-radius:4px;text-transform:uppercase;letter-spacing:.04em}
 
-  .player-section{
-    margin-top:1.5rem;background:var(--panel);border:1px solid var(--line);
-    border-radius:var(--radius);padding:1rem;
-  }
-  .player-header{display:flex;justify-content:space-between;gap:.75rem;flex-wrap:wrap;align-items:flex-start;margin-bottom:.8rem}
-  #playerTitle{font-size:1.1rem;font-weight:700}
-  #playerMeta{color:var(--muted);font-size:.82rem;margin-top:.15rem}
   .controls{display:flex;gap:.45rem;align-items:center;flex-wrap:wrap;font-size:.82rem;color:var(--muted)}
   .controls label{display:flex;align-items:center;gap:.35rem}
   .controls input[type="number"]{width:72px;padding:.4rem .5rem}
@@ -200,6 +194,144 @@
   }
   .step-btn:hover{border-color:var(--brand)}
   .sub-hint{font-size:.72rem;color:var(--muted)}
+
+  /* ---------- cards: nota, teclado ---------- */
+  .card:focus-visible,.rec-item:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+  .rating-badge{position:absolute;left:.4rem;bottom:.4rem;background:rgba(0,0,0,.78);color:#ffcc4d;font-size:.68rem;font-weight:800;padding:.12rem .38rem;border-radius:5px;letter-spacing:.02em}
+
+  /* ---------- modal do filme ---------- */
+  html.modal-open,html.modal-open body{overflow:hidden}
+  .modal{position:fixed;inset:0;z-index:40;display:flex;align-items:center;justify-content:center;
+    padding:clamp(0px,2.2vh,26px) clamp(0px,2vw,30px)}
+  .modal[hidden]{display:none}
+  .modal-backdrop{position:absolute;inset:0;background:rgba(4,4,8,.8);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);animation:mFade .18s ease-out}
+  .modal-dialog{position:relative;display:flex;width:min(1340px,100%);height:min(100%,980px);
+    background:var(--panel);border:1px solid var(--line);border-radius:18px;overflow:hidden;outline:0;
+    box-shadow:0 30px 90px rgba(0,0,0,.65);animation:mPop .24s cubic-bezier(.2,.8,.2,1)}
+  .modal-bg{position:absolute;left:0;right:0;top:0;height:440px;background-size:cover;background-position:center 20%;
+    opacity:0;transition:opacity .7s;pointer-events:none;
+    -webkit-mask-image:linear-gradient(#000 0%,transparent 100%);mask-image:linear-gradient(#000 0%,transparent 100%)}
+  .modal-bg.on{opacity:.32}
+  .modal-x{position:absolute;z-index:30;top:calc(.7rem + env(safe-area-inset-top,0px));right:.75rem;
+    width:2.5rem;height:2.5rem;padding:0;border-radius:50%;display:grid;place-items:center;font-size:1.05rem;line-height:1;
+    background:rgba(0,0,0,.62);border:1px solid rgba(255,255,255,.2);color:#fff;-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px)}
+  .modal-x:hover{background:var(--brand);border-color:var(--brand)}
+  .modal-scroll{position:relative;flex:1;min-width:0;min-height:0}
+  .modal-grid{display:grid;grid-template-columns:minmax(0,1fr) 350px;height:100%}
+  .modal-main,.modal-side{min-width:0;min-height:0;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;scrollbar-width:thin;scrollbar-color:#3a3a4c transparent}
+  .modal-main{padding:1.1rem 0 1.4rem 1.1rem}
+  .main-pad{padding:1rem 1.1rem 0 0}
+  .modal-main .video-wrap{border-radius:12px;margin-right:1.1rem}
+  .modal-side{padding:1.1rem 1.1rem 1.4rem 0.2rem}
+
+  .player-header{display:flex;flex-direction:column;gap:.7rem}
+  .ph-title h2{margin:0;font-size:1.45rem;line-height:1.2;letter-spacing:-.01em;padding-right:2.6rem}
+  #playerMeta{color:var(--muted);font-size:.84rem;margin-top:.2rem}
+  .controls{align-items:center}
+  .season-hint{font-size:.74rem;color:var(--muted)}
+  .opts{position:relative}
+  .opts>summary{cursor:pointer;list-style:none;padding:.5rem .75rem;border:1px solid var(--line);border-radius:8px;font-size:.84rem;font-weight:600;color:var(--text);user-select:none}
+  .opts>summary::-webkit-details-marker{display:none}
+  .opts[open]>summary,.opts>summary:hover{background:var(--panel-2)}
+  .opts-body{display:flex;flex-wrap:wrap;gap:.7rem 1rem;align-items:center;margin-top:.5rem;padding:.65rem .75rem;border:1px solid var(--line);border-radius:10px;background:var(--panel-2)}
+
+  /* sobre o título */
+  .info-box{margin-top:1.1rem;min-height:3rem}
+  .chips{display:flex;flex-wrap:wrap;gap:.4rem;align-items:center}
+  .chip{padding:.2rem .62rem;border-radius:999px;border:1px solid var(--line);font-size:.75rem;color:var(--text);background:rgba(255,255,255,.04);white-space:nowrap}
+  .chip.rate{color:#ffcc4d;border-color:rgba(255,204,77,.4);font-weight:700}
+  .chip.cert{font-weight:800;border-color:#5a5a70}
+  .tagline{margin:.85rem 0 0;font-style:italic;color:var(--muted);font-size:.9rem}
+  .overview{margin:.6rem 0 0;line-height:1.6;color:#d6d6e2;font-size:.93rem;max-width:78ch}
+  .overview.clamp{display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
+  .more-btn{margin-top:.3rem}
+  .credit-line{margin:.7rem 0 0;font-size:.84rem;color:var(--muted)}
+  .credit-line b{color:var(--text);font-weight:600}
+  .cast-row{display:flex;gap:.8rem;overflow-x:auto;padding:.75rem 0 .35rem;scrollbar-width:thin}
+  .cast-item{flex:0 0 auto;width:76px;text-align:center;font-size:.7rem;color:var(--muted)}
+  .cast-photo{width:62px;height:62px;border-radius:50%;object-fit:cover;background:#23232f;display:block;margin:0 auto .3rem}
+  .cast-photo.ph{display:grid;place-items:center;font-size:1.2rem;color:#5f5f78}
+  .cast-item b{display:block;color:var(--text);font-weight:600;line-height:1.2}
+  .skel{border-radius:8px;background:linear-gradient(90deg,#1b1b27 25%,#26263a 37%,#1b1b27 63%);background-size:400% 100%;animation:shimmer 1.3s ease infinite}
+  @keyframes shimmer{0%{background-position:100% 50%}100%{background-position:0 50%}}
+
+  /* recomendados */
+  .side-head{display:flex;align-items:baseline;justify-content:space-between;gap:.5rem;padding-right:2.9rem;margin-bottom:.7rem}
+  .side-head h3{margin:0;font-size:1rem}
+  #recCount{font-size:.74rem;color:var(--muted);white-space:nowrap}
+  .rec-list{display:flex;flex-direction:column;gap:.55rem}
+  .rec-item{display:grid;grid-template-columns:74px minmax(0,1fr);gap:.7rem;padding:.5rem;border-radius:12px;cursor:pointer;
+    background:rgba(255,255,255,.03);border:1px solid transparent;transition:background .14s,border-color .14s,transform .14s}
+  .rec-item:hover{background:var(--panel-2);border-color:var(--brand);transform:translateX(-2px)}
+  .rec-poster{position:relative;aspect-ratio:2/3;border-radius:8px;overflow:hidden;background:linear-gradient(160deg,#23232f,#15151d)}
+  .rec-poster img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+  .rec-body{min-width:0}
+  .rec-title{font-weight:700;font-size:.9rem;line-height:1.25}
+  .rec-meta{margin-top:.2rem;font-size:.74rem;color:var(--muted)}
+  .rec-star{color:#ffcc4d;font-weight:700}
+  .rec-ov{margin-top:.3rem;font-size:.74rem;line-height:1.4;color:#8d95a6;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+  .rec-empty{color:var(--muted);font-size:.84rem;padding:.4rem 0}
+  .rec-skel{height:111px}
+
+  @keyframes mFade{from{opacity:0}to{opacity:1}}
+  @keyframes mPop{from{opacity:0;transform:translateY(14px) scale(.985)}to{opacity:1;transform:none}}
+
+  /* ---------- telas médias e celulares: tela cheia, uma coluna ---------- */
+  @media (max-width:699px), (max-width:979px) and (min-height:561px){
+    .modal{padding:0;height:100vh;height:100dvh;bottom:auto}
+    .modal-dialog{width:100%;height:100%;border-radius:0;border:0}
+    .modal-scroll{overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;padding-bottom:env(safe-area-inset-bottom,0px)}
+    .modal-grid{display:block;height:auto}
+    .modal-main,.modal-side{overflow:visible;padding:0}
+    .modal-main .video-wrap{border-radius:0;margin-right:0}
+    .main-pad{padding:1rem 1rem 0}
+    .modal-side{padding:1.2rem 0 1.6rem 1rem}
+    .side-head{padding-right:1rem}
+    .rec-list{flex-direction:row;overflow-x:auto;scroll-snap-type:x proximity;gap:.7rem;padding:.1rem 1rem .6rem 0;scrollbar-width:thin}
+    .rec-item{grid-template-columns:1fr;flex:0 0 132px;scroll-snap-align:start;gap:.4rem;padding:.4rem}
+    .rec-item:hover{transform:none}
+    .rec-ov{display:none}
+    .rec-title{font-size:.8rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .modal-bg{height:300px}
+    .ph-title h2{font-size:1.25rem}
+  }
+  /* celular deitado (pouca altura): tela cheia com duas colunas, vídeo + detalhes lado a lado */
+  @media (max-height:560px){
+    .modal{padding:0;height:100vh;height:100dvh;bottom:auto}
+    .modal-dialog{width:100%;height:100%;border-radius:0;border:0}
+    .modal-grid{grid-template-columns:minmax(0,1fr) 250px}
+    .modal-main{padding:.6rem 0 .8rem .6rem}
+    .modal-main .video-wrap{margin-right:.6rem;border-radius:8px}
+    .main-pad{padding:.7rem .6rem 0 0}
+    .modal-side{padding:.6rem .6rem .8rem .2rem}
+    .side-head{padding-right:2.9rem}
+    .rec-item{grid-template-columns:52px minmax(0,1fr);padding:.4rem}
+    .rec-ov{display:none}
+    .rec-title{font-size:.8rem}
+    .ph-title h2{font-size:1.1rem}
+    .modal-bg{height:220px}
+    video,#embedFrame{max-height:calc(100dvh - 1.3rem)}
+  }
+  /* o vídeo fica fixo no topo enquanto se lê os detalhes (só em telas altas o bastante) */
+  @media (max-width:699px) and (min-height:561px), (min-width:700px) and (max-width:979px) and (min-height:561px){
+    .modal-main .video-wrap{position:sticky;top:0;z-index:12;box-shadow:0 8px 24px rgba(0,0,0,.55)}
+  }
+  video,#embedFrame{max-height:calc(100vh - 1.5rem);max-height:calc(100dvh - 1.5rem)}
+  @media (max-width:640px){
+    .diag>summary{flex-wrap:wrap}
+    .diag-actions{margin-left:0;width:100%}
+    .opts-body{flex-direction:column;align-items:flex-start}
+    .controls{gap:.5rem .6rem}
+    .controls>label:not(.switch){flex:1 1 130px}
+    .controls select{width:100%}
+    .ph-title h2{padding-right:3rem}
+    .info-box{margin-top:.9rem}
+    .overview{font-size:.9rem}
+    .usage-head{font-size:.8rem}
+  }
+  @media (prefers-reduced-motion:reduce){
+    .modal-backdrop,.modal-dialog,.skel,.rec-item{animation:none!important;transition:none!important}
+  }
   @media (max-width:640px){
     .results{grid-template-columns:repeat(auto-fill,minmax(110px,1fr))}
     .controls{gap:.35rem}
@@ -232,107 +364,137 @@
   <div id="sectionTitle">Populares</div>
   <div id="results" class="results"></div>
 
-  <section id="playerSection" class="player-section" hidden>
-    <div class="player-header">
-      <div>
-        <div id="playerTitle"></div>
-        <div id="playerMeta"></div>
+  <section id="playerSection" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="playerTitle">
+    <div class="modal-backdrop" id="modalBackdrop"></div>
+    <div class="modal-dialog" id="modalDialog" tabindex="-1">
+      <div class="modal-bg" id="modalBg" aria-hidden="true"></div>
+      <button id="closeBtn" class="modal-x" type="button" aria-label="Fechar (Esc)" title="Fechar (Esc)">✕</button>
+
+      <div class="modal-scroll" id="modalScroll">
+        <div class="modal-grid">
+          <div class="modal-main" id="modalMain">
+            <div class="video-wrap">
+              <video id="nativePlayer" controls playsinline preload="metadata" crossorigin="anonymous"></video>
+              <iframe id="embedFrame" hidden title="Player alternativo" allowfullscreen
+                allow="autoplay; fullscreen; encrypted-media; picture-in-picture" referrerpolicy="origin"></iframe>
+              <div id="overlay" class="overlay">
+                <div id="spinner" class="spinner"></div>
+                <div id="overlayText" class="msg">Carregando…</div>
+                <button id="overlayRetry" class="ghost" type="button" hidden>Tentar de novo</button>
+                <button id="overlayCancel" class="ghost" type="button" hidden>Cancelar</button>
+              </div>
+            </div>
+
+            <div class="main-pad">
+              <div class="player-header">
+                <div class="ph-title">
+                  <h2 id="playerTitle"></h2>
+                  <div id="playerMeta"></div>
+                </div>
+                <div class="controls">
+                  <span id="tvControls" class="tv-controls" hidden>
+                    <label>T <input id="seasonInput" type="number" min="1" value="1"></label>
+                    <label>E <input id="episodeInput" type="number" min="1" value="1"></label>
+                    <span id="seasonHint" class="season-hint"></span>
+                    <label class="switch" title="Ao terminar o episódio, abre o próximo sozinho (com contagem de 5 s para cancelar)">
+                      <input id="autoNextToggle" type="checkbox">
+                      <span class="slider"></span>
+                      <span>Auto-próximo</span>
+                    </label>
+                  </span>
+                  <label>Qualidade
+                    <select id="qualitySelect">
+                      <option value="">Auto</option>
+                      <option value="1080">1080p</option>
+                      <option value="720">720p</option>
+                      <option value="480">480p</option>
+                      <option value="360">360p</option>
+                    </select>
+                  </label>
+                  <button id="reloadBtn" class="ghost" type="button">↻ Recarregar</button>
+                  <details class="opts">
+                    <summary>⚙ Mais opções</summary>
+                    <div class="opts-body">
+                      <label>Início (min)
+                        <input id="startInput" type="number" min="0" step="0.5" value="0">
+                      </label>
+                      <label class="switch" title="Toca direto no player do provedor (iframe): o vídeo vai do site deles para o seu navegador e NÃO passa pelo servidor do fdsFlix — gasta 0 da banda do Render. Em troca: sem as legendas/controles do fdsFlix, pode ter anúncios e não salva o progresso.">
+                        <input id="preferEmbedToggle" type="checkbox">
+                        <span class="slider"></span>
+                        <span>Economizar banda</span>
+                      </label>
+                    </div>
+                  </details>
+                </div>
+              </div>
+
+              <div id="playerStatus" class="status">
+                <span id="statusBadge" class="badge working">PREPARANDO</span>
+                <span id="statusText">Selecione um título…</span>
+              </div>
+
+              <div id="embedBar" class="embed-bar" hidden>
+                <div id="embedNote" class="embed-note">
+                  Nenhuma fonte direta tem este título. Dá para tentar um <strong>player alternativo (embed)</strong>.
+                  Eles rodam no site de terceiros: podem ter anúncios e <em>não</em> salvam o progresso.
+                </div>
+                <div id="embedBtns" class="embed-btns"></div>
+                <label class="switch embed-safe" title="Impede o player de terceiros de abrir pop-ups, novas abas e de redirecionar esta página. Alguns players se recusam a tocar em modo seguro: se der erro, desligue.">
+                  <input id="embedSafeToggle" type="checkbox">
+                  <span class="slider"></span>
+                  <span>Modo seguro (bloquear pop-ups e novas abas)</span>
+                </label>
+              </div>
+
+              <div id="subBar" class="sub-bar" hidden>
+                <label class="sub-lang">Legenda
+                  <select id="subLangSelect" aria-label="Idioma da legenda"></select>
+                </label>
+                <span class="sub-divider"></span>
+                <span class="sub-title">Sincronia</span>
+                <button id="subMinus" class="step-btn" type="button" title="Adiantar a legenda 0,5 s">−0,5s</button>
+                <input id="subOffsetInput" type="number" step="0.5" min="-600" max="600" value="0"
+                       title="Atraso em segundos (positivo = legenda mais tarde)" aria-label="Atraso da legenda em segundos">
+                <button id="subPlus" class="step-btn" type="button" title="Atrasar a legenda 0,5 s">+0,5s</button>
+                <button id="subReset" class="step-btn" type="button" title="Zerar o ajuste">0</button>
+                <span class="sub-hint">positivo = legenda mais tarde · o “Início (min)” já é compensado</span>
+              </div>
+
+              <div id="infoBox" class="info-box" aria-live="polite"></div>
+
+              <div id="usageBox" class="usage" hidden>
+                <div class="usage-head">
+                  <strong>📶 Consumo das Vercels (cota mensal)</strong>
+                  <span id="usageSession">Esta sessão: 0 MB</span>
+                </div>
+                <div id="usageBars"></div>
+                <div id="usageFoot" class="usage-foot"></div>
+              </div>
+
+              <details id="diagPanel" class="diag" open>
+                <summary>🔎 Diagnóstico do caminho (ao vivo)
+                  <span class="diag-actions">
+                    <button id="diagProbe" class="ghost" type="button" title="Pede ao servidor para testar o Vidsrc na Vercel agora">Testar Vidsrc/Vercel</button>
+                    <button id="diagCopy" class="ghost" type="button">Copiar</button>
+                    <button id="diagClear" class="ghost" type="button">Limpar</button>
+                  </span>
+                </summary>
+                <div id="diagLog" class="diag-log" aria-live="polite"></div>
+              </details>
+
+            </div>
+          </div>
+
+          <aside class="modal-side" aria-label="Recomendados">
+            <div class="side-head">
+              <h3>Recomendados</h3>
+              <span id="recCount"></span>
+            </div>
+            <div id="recList" class="rec-list"></div>
+          </aside>
+        </div>
       </div>
-      <div class="controls">
-        <span id="tvControls" class="tv-controls" hidden>
-          <label>T <input id="seasonInput" type="number" min="1" value="1"></label>
-          <label>E <input id="episodeInput" type="number" min="1" value="1"></label>
-          <label class="switch" title="Ao terminar o episódio, abre o próximo sozinho (com contagem de 5 s para cancelar)">
-            <input id="autoNextToggle" type="checkbox">
-            <span class="slider"></span>
-            <span>Auto-próximo</span>
-          </label>
-        </span>
-        <label>Qualidade
-          <select id="qualitySelect">
-            <option value="">Auto</option>
-            <option value="1080">1080p</option>
-            <option value="720">720p</option>
-            <option value="480">480p</option>
-            <option value="360">360p</option>
-          </select>
-        </label>
-        <label>Início (min)
-          <input id="startInput" type="number" min="0" step="0.5" value="0">
-        </label>
-        <label class="switch" title="Toca direto no player do provedor (iframe): o vídeo vai do site deles para o seu navegador e NÃO passa pelo servidor do fdsFlix — gasta 0 da banda do Render. Em troca: sem as legendas/controles do fdsFlix, pode ter anúncios e não salva o progresso.">
-          <input id="preferEmbedToggle" type="checkbox">
-          <span class="slider"></span>
-          <span>Economizar banda</span>
-        </label>
-        <button id="reloadBtn" class="ghost" type="button">Recarregar</button>
-        <button id="closeBtn" class="ghost" type="button">Fechar</button>
-      </div>
     </div>
-
-    <div class="video-wrap">
-      <video id="nativePlayer" controls playsinline preload="metadata" crossorigin="anonymous"></video>
-      <iframe id="embedFrame" hidden title="Player alternativo" allowfullscreen
-        allow="autoplay; fullscreen; encrypted-media; picture-in-picture" referrerpolicy="origin"></iframe>
-      <div id="overlay" class="overlay">
-        <div id="spinner" class="spinner"></div>
-        <div id="overlayText" class="msg">Carregando…</div>
-        <button id="overlayRetry" class="ghost" type="button" hidden>Tentar de novo</button>
-        <button id="overlayCancel" class="ghost" type="button" hidden>Cancelar</button>
-      </div>
-    </div>
-
-    <div id="embedBar" class="embed-bar" hidden>
-      <div id="embedNote" class="embed-note">
-        Nenhuma fonte direta tem este título. Dá para tentar um <strong>player alternativo (embed)</strong>.
-        Eles rodam no site de terceiros: podem ter anúncios e <em>não</em> salvam o progresso.
-      </div>
-      <div id="embedBtns" class="embed-btns"></div>
-      <label class="switch embed-safe" title="Impede o player de terceiros de abrir pop-ups, novas abas e de redirecionar esta página. Alguns players se recusam a tocar em modo seguro: se der erro, desligue.">
-        <input id="embedSafeToggle" type="checkbox">
-        <span class="slider"></span>
-        <span>Modo seguro (bloquear pop-ups e novas abas)</span>
-      </label>
-    </div>
-
-    <div id="subBar" class="sub-bar" hidden>
-      <label class="sub-lang">Legenda
-        <select id="subLangSelect" aria-label="Idioma da legenda"></select>
-      </label>
-      <span class="sub-divider"></span>
-      <span class="sub-title">Sincronia</span>
-      <button id="subMinus" class="step-btn" type="button" title="Adiantar a legenda 0,5 s">−0,5s</button>
-      <input id="subOffsetInput" type="number" step="0.5" min="-600" max="600" value="0"
-             title="Atraso em segundos (positivo = legenda mais tarde)" aria-label="Atraso da legenda em segundos">
-      <button id="subPlus" class="step-btn" type="button" title="Atrasar a legenda 0,5 s">+0,5s</button>
-      <button id="subReset" class="step-btn" type="button" title="Zerar o ajuste">0</button>
-      <span class="sub-hint">positivo = legenda mais tarde · o “Início (min)” já é compensado</span>
-    </div>
-
-    <div id="playerStatus" class="status">
-      <span id="statusBadge" class="badge working">PREPARANDO</span>
-      <span id="statusText">Selecione um título…</span>
-    </div>
-
-    <div id="usageBox" class="usage" hidden>
-      <div class="usage-head">
-        <strong>📶 Consumo das Vercels (cota mensal)</strong>
-        <span id="usageSession">Esta sessão: 0 MB</span>
-      </div>
-      <div id="usageBars"></div>
-      <div id="usageFoot" class="usage-foot"></div>
-    </div>
-
-    <details id="diagPanel" class="diag" open>
-      <summary>🔎 Diagnóstico do caminho (ao vivo)
-        <span class="diag-actions">
-          <button id="diagProbe" class="ghost" type="button" title="Pede ao servidor para testar o Vidsrc na Vercel agora">Testar Vidsrc/Vercel</button>
-          <button id="diagCopy" class="ghost" type="button">Copiar</button>
-          <button id="diagClear" class="ghost" type="button">Limpar</button>
-        </span>
-      </summary>
-      <div id="diagLog" class="diag-log" aria-live="polite"></div>
-    </details>
   </section>
 
   <p id="deployHint" class="deploy-hint" hidden>
@@ -712,6 +874,7 @@
     $('seasonInput').value = season;
     $('episodeInput').value = episode;
     $('startInput').value = 0;
+    updateSeasonHint();
     renderPlayer();
   }
 
@@ -1029,11 +1192,12 @@
       var active = state.selected && state.selected.id === item.id && state.selected.type === item.type;
 
       html +=
-        '<div class="card' + (active ? ' active' : '') + '" data-index="' + i + '" title="' + escapeHtml(item.title) + '">' +
+        '<div class="card' + (active ? ' active' : '') + '" data-index="' + i + '" tabindex="0" role="button" title="' + escapeHtml(item.title) + '">' +
           '<div class="poster-wrap">' +
             '<div class="poster-fallback">' + escapeHtml(item.title) + '</div>' +
-            '<span class="badge-type">' + (item.type === 'tv' ? 'Série' : 'Filme') + '</span>' +
+'<span class="badge-type">' + (item.type === 'tv' ? 'Série' : 'Filme') + '</span>' +
             img +
+            (item.rating ? '<span class="rating-badge">★ ' + Number(item.rating).toFixed(1) + '</span>' : '') +
           '</div>' +
           '<div class="info">' +
             '<div class="title">' + escapeHtml(item.title) + '</div>' +
@@ -1088,7 +1252,8 @@
             title: item.title,
             year: item.year,
             type: item.type,
-            poster: item.poster || ''
+            poster: item.poster || '',
+            rating: item.rating || 0
           };
         });
         renderCards(items, 'Resultados (' + items.length + ')');
@@ -1992,6 +2157,266 @@
       });
   }
 
+  /* ---------------------------------------------------------------- */
+  /* Modal do título: player + detalhes + recomendados                 */
+  /* ---------------------------------------------------------------- */
+
+  var modal = { open: false, scrollY: 0, opener: null, title0: document.title, token: 0, cache: {}, recs: [], current: null, diagInit: false };
+  var TMDB_IMG = 'https://image.tmdb.org/t/p/';
+
+  function openModal() {
+    if (!modal.open) {
+      modal.open = true;
+      modal.scrollY = window.pageYOffset || 0;
+      modal.opener = document.activeElement;
+      $('playerSection').hidden = false;
+      document.documentElement.classList.add('modal-open');
+      // O botão Voltar fecha o modal em vez de sair da página.
+      try { history.pushState({ fdsModal: true }, ''); } catch (err) { /* ignore */ }
+      // Em telas pequenas o diagnóstico começa recolhido (continua a um toque).
+      if (!modal.diagInit) {
+        modal.diagInit = true;
+        if (window.matchMedia && window.matchMedia('(max-width:979px)').matches) $('diagPanel').open = false;
+      }
+      setTimeout(function () { try { $('modalDialog').focus({ preventScroll: true }); } catch (err) { /* ignore */ } }, 30);
+    }
+    // Título novo (ou recomendado): volta ao topo de cada coluna.
+    ['modalScroll', 'modalMain'].forEach(function (id) { $(id).scrollTop = 0; });
+    var side = document.querySelector('.modal-side');
+    if (side) side.scrollTop = 0;
+    $('recList').scrollLeft = 0;
+  }
+
+  function closeModalUi() {
+    if (!modal.open) return;
+    modal.open = false;
+    modal.token++;
+    $('playerSection').hidden = true;
+    document.documentElement.classList.remove('modal-open');
+    document.title = modal.title0;
+    window.scrollTo(0, modal.scrollY);          // a página volta exatamente de onde estava
+    var opener = modal.opener;
+    modal.opener = null;
+    if (opener && opener.focus && document.contains(opener)) {
+      try { opener.focus({ preventScroll: true }); } catch (err) { /* ignore */ }
+    }
+    $('modalBg').classList.remove('on');
+  }
+
+  // Fechar pelo X/Esc/fundo passa pelo histórico para o Voltar do navegador ficar coerente.
+  function requestClose() {
+    if (!modal.open) return;
+    if (history.state && history.state.fdsModal) {
+      try { history.back(); return; } catch (err) { /* cai no fechamento direto */ }
+    }
+    closePlayer();
+  }
+
+  window.addEventListener('popstate', function () {
+    if (modal.open && !(history.state && history.state.fdsModal)) closePlayer();
+  });
+  if (history.state && history.state.fdsModal) { try { history.replaceState(null, ''); } catch (err) { /* ignore */ } }
+
+  $('modalBackdrop').addEventListener('click', requestClose);
+
+  document.addEventListener('keydown', function (event) {
+    if (!modal.open) return;
+    if (event.key === 'Escape' && !document.fullscreenElement) {
+      event.preventDefault();
+      requestClose();
+      return;
+    }
+    if (event.key !== 'Tab') return;
+    // Mantém o foco do teclado dentro do modal.
+    var nodes = Array.prototype.slice.call($('modalDialog').querySelectorAll(
+      'button:not([disabled]),input:not([disabled]),select:not([disabled]),summary,[tabindex]:not([tabindex="-1"])'
+    )).filter(function (el) { return el.offsetParent !== null; });
+    if (!nodes.length) return;
+    var first = nodes[0];
+    var last = nodes[nodes.length - 1];
+    if (event.shiftKey && (document.activeElement === first || document.activeElement === $('modalDialog'))) {
+      event.preventDefault(); last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault(); first.focus();
+    }
+  });
+
+  function fmtRuntime(min) {
+    min = Number(min) || 0;
+    if (!min) return '';
+    var h = Math.floor(min / 60);
+    var m = min % 60;
+    return h ? h + 'h' + (m ? ' ' + m + 'min' : '') : m + 'min';
+  }
+
+  function renderInfoSkeleton() {
+    $('infoBox').innerHTML =
+      '<div class="skel" style="height:26px;width:62%"></div>' +
+      '<div class="skel" style="height:14px;width:96%;margin-top:.9rem"></div>' +
+      '<div class="skel" style="height:14px;width:90%;margin-top:.45rem"></div>' +
+      '<div class="skel" style="height:14px;width:70%;margin-top:.45rem"></div>';
+    $('recCount').textContent = '';
+    var sk = '';
+    for (var i = 0; i < 5; i++) sk += '<div class="rec-item"><div class="rec-poster skel"></div><div class="rec-body"><div class="skel" style="height:14px;width:80%"></div><div class="skel" style="height:11px;width:45%;margin-top:.5rem"></div></div></div>';
+    $('recList').innerHTML = sk;
+  }
+
+  function renderRecs(list, emptyNote) {
+    modal.recs = list || [];
+    var box = $('recList');
+    if (!modal.recs.length) {
+      box.innerHTML = '<div class="rec-empty">' + escapeHtml(emptyNote || 'Sem recomendações para este título.') + '</div>';
+      $('recCount').textContent = '';
+      return;
+    }
+    var html = '';
+    modal.recs.forEach(function (rec, index) {
+      var img = rec.poster ? '<img src="' + escapeHtml(TMDB_IMG + 'w185' + rec.poster) + '" alt="" loading="lazy" onerror="this.remove()">' : '';
+      html +=
+        '<div class="rec-item" data-rec="' + index + '" role="button" tabindex="0" title="' + escapeHtml(rec.title) + '">' +
+          '<div class="rec-poster">' + img + '</div>' +
+          '<div class="rec-body">' +
+            '<div class="rec-title">' + escapeHtml(rec.title) + '</div>' +
+            '<div class="rec-meta">' + escapeHtml(rec.year || '') + (rec.year ? ' · ' : '') + (rec.type === 'tv' ? 'Série' : 'Filme') +
+              (rec.rating ? ' · <span class="rec-star">★ ' + Number(rec.rating).toFixed(1) + '</span>' : '') + '</div>' +
+            (rec.overview ? '<div class="rec-ov">' + escapeHtml(rec.overview) + '</div>' : '') +
+          '</div>' +
+        '</div>';
+    });
+    box.innerHTML = html;
+    $('recCount').textContent = modal.recs.length + ' títulos';
+  }
+
+  function openRec(index) {
+    var rec = modal.recs[index];
+    if (rec) openItem({ id: rec.id, title: rec.title, year: rec.year, type: rec.type, poster: rec.poster, rating: rec.rating });
+  }
+
+  $('recList').addEventListener('click', function (event) {
+    var el = event.target.closest ? event.target.closest('[data-rec]') : null;
+    if (el) openRec(Number(el.getAttribute('data-rec')));
+  });
+  $('recList').addEventListener('keydown', function (event) {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    var el = event.target.closest ? event.target.closest('[data-rec]') : null;
+    if (!el) return;
+    event.preventDefault();
+    openRec(Number(el.getAttribute('data-rec')));
+  });
+
+  function updateSeasonHint() {
+    var hint = $('seasonHint');
+    var d = modal.current;
+    if (!d || d.type !== 'tv' || !d.seasons || !d.seasons.length) {
+      hint.textContent = '';
+      return;
+    }
+    var number = Math.max(1, Number($('seasonInput').value) || 1);
+    var season = d.seasons.filter(function (x) { return x.n === number; })[0];
+    $('seasonInput').max = String(d.seasons.length);
+    if (season) {
+      $('episodeInput').max = String(season.episodes);
+      hint.textContent = '(' + season.episodes + ' ep. · ' + d.seasons.length + ' temp.)';
+    } else {
+      $('episodeInput').removeAttribute('max');
+      hint.textContent = '';
+    }
+  }
+  ['input', 'change'].forEach(function (name) { $('seasonInput').addEventListener(name, updateSeasonHint); });
+
+  function renderDetails(d, item) {
+    modal.current = d;
+    var chips = [];
+    if (d.rating) chips.push('<span class="chip rate">★ ' + Number(d.rating).toFixed(1) + '</span>');
+    if (d.certification) chips.push('<span class="chip cert">' + escapeHtml(d.certification) + '</span>');
+    if (d.year) chips.push('<span class="chip">' + escapeHtml(d.year) + '</span>');
+    var rt = fmtRuntime(d.runtime);
+    if (rt) chips.push('<span class="chip">' + escapeHtml(rt) + (d.type === 'tv' ? ' / ep.' : '') + '</span>');
+    if (d.type === 'tv' && d.seasons && d.seasons.length) chips.push('<span class="chip">' + d.seasons.length + (d.seasons.length === 1 ? ' temporada' : ' temporadas') + '</span>');
+    (d.genres || []).slice(0, 4).forEach(function (g) { chips.push('<span class="chip">' + escapeHtml(g) + '</span>'); });
+
+    var html = '<div class="chips">' + chips.join('') + '</div>';
+    if (d.tagline) html += '<p class="tagline">“' + escapeHtml(d.tagline) + '”</p>';
+    if (d.overview) {
+      var long = d.overview.length > 260;
+      html += '<p class="overview' + (long ? ' clamp' : '') + '" id="overviewText">' + escapeHtml(d.overview) + '</p>';
+      if (long) html += '<button class="link-btn more-btn" id="overviewMore" type="button">Ler mais</button>';
+    } else {
+      html += '<p class="overview" style="color:var(--muted)">Sem sinopse disponível.</p>';
+    }
+    if (d.directors && d.directors.length) {
+      html += '<p class="credit-line"><b>' + (d.type === 'tv' ? 'Criação' : 'Direção') + ':</b> ' + escapeHtml(d.directors.join(', ')) + '</p>';
+    }
+    if (d.cast && d.cast.length) {
+      html += '<div class="cast-row" aria-label="Elenco">' + d.cast.map(function (c) {
+        var photo = c.photo
+          ? '<img class="cast-photo" src="' + escapeHtml(TMDB_IMG + 'w185' + c.photo) + '" alt="" loading="lazy" onerror="this.outerHTML=\'<span class=&quot;cast-photo ph&quot;>👤</span>\'">'
+          : '<span class="cast-photo ph">👤</span>';
+        return '<div class="cast-item" title="' + escapeHtml(c.character ? c.name + ' — ' + c.character : c.name) + '">' + photo +
+          '<b>' + escapeHtml(c.name) + '</b>' + escapeHtml(c.character || '') + '</div>';
+      }).join('') + '</div>';
+    }
+    $('infoBox').innerHTML = html;
+
+    if (d.backdrop) {
+      var img = new Image();
+      img.onload = function () {
+        if (modal.current !== d) return;
+        $('modalBg').style.backgroundImage = 'url("' + TMDB_IMG + 'w780' + d.backdrop + '")';
+        $('modalBg').classList.add('on');
+      };
+      img.src = TMDB_IMG + 'w780' + d.backdrop;
+    } else {
+      $('modalBg').classList.remove('on');
+    }
+
+    updateSeasonHint();
+    renderRecs(d.recommendations, 'Sem recomendações para este título.');
+  }
+
+  // Sem detalhes (TMDB fora do ar, servidor dormindo): ainda oferece outros títulos da página.
+  function renderDetailsFallback(item) {
+    modal.current = null;
+    $('infoBox').innerHTML = '<p class="overview" style="color:var(--muted)">Não foi possível carregar sinopse e elenco agora. O vídeo continua normal.</p>';
+    $('modalBg').classList.remove('on');
+    var others = (state.items || []).filter(function (x) { return !(String(x.id) === String(item.id) && x.type === item.type); }).slice(0, 18);
+    renderRecs(others, 'Sem sugestões no momento.');
+    $('recCount').textContent = others.length ? 'em alta' : '';
+    updateSeasonHint();
+  }
+
+  function loadDetails(item) {
+    var token = ++modal.token;
+    modal.current = null;
+    $('seasonHint').textContent = '';
+    $('seasonInput').removeAttribute('max');
+    $('episodeInput').removeAttribute('max');
+    $('modalBg').classList.remove('on');
+
+    var key = item.type + ':' + item.id;
+    if (modal.cache[key]) { renderDetails(modal.cache[key], item); return; }
+    if (!/^\d+$/.test(String(item.id))) { renderDetailsFallback(item); return; }
+
+    renderInfoSkeleton();
+    apiFetch('/api/details?id=' + encodeURIComponent(item.id) + '&type=' + encodeURIComponent(item.type))
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(function (d) {
+        modal.cache[key] = d;
+        if (token === modal.token && modal.open) renderDetails(d, item);
+      })
+      .catch(function () {
+        if (token === modal.token && modal.open) renderDetailsFallback(item);
+      });
+  }
+
+  $('infoBox').addEventListener('click', function (event) {
+    if (event.target && event.target.id === 'overviewMore') {
+      var text = $('overviewText');
+      var clamped = text.classList.toggle('clamp');
+      event.target.textContent = clamped ? 'Ler mais' : 'Ler menos';
+    }
+  });
+
   function selectItem(index) {
     var item = state.items[index];
     if (item) openItem(item);
@@ -2036,14 +2461,15 @@
         toast('Continuando em T' + saved.s + ' E' + saved.e);
       }
     }
-    $('playerSection').hidden = false;
+    openModal();
+    document.title = item.title + ' — fdsFlix';
+    loadDetails(item);
 
     Array.prototype.slice.call(document.querySelectorAll('.card')).forEach(function (card) {
       var cardItem = card.dataset.index !== undefined ? state.items[Number(card.dataset.index)] : null;
       card.classList.toggle('active', Boolean(cardItem) && String(cardItem.id) === String(item.id) && cardItem.type === item.type);
     });
 
-    $('playerSection').scrollIntoView({ behavior: 'smooth', block: 'start' });
     renderPlayer();
   }
 
@@ -2058,11 +2484,10 @@
     resetVideo();
     state.selected = null;
     renderContinue();
-    $('playerSection').hidden = true;
+    closeModalUi();
     Array.prototype.slice.call(document.querySelectorAll('.card')).forEach(function (card) {
       card.classList.remove('active');
     });
-    window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
   /* ---------------------------------------------------------------- */
@@ -2072,6 +2497,14 @@
   $('results').addEventListener('click', function (event) {
     var card = event.target.closest ? event.target.closest('.card') : null;
     if (!card) return;
+    selectItem(Number(card.dataset.index));
+  });
+
+  $('results').addEventListener('keydown', function (event) {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    var card = event.target.closest ? event.target.closest('.card') : null;
+    if (!card || card.dataset.index === undefined) return;
+    event.preventDefault();
     selectItem(Number(card.dataset.index));
   });
 
@@ -2094,7 +2527,7 @@
     }
     renderPlayer();
   });
-  $('closeBtn').addEventListener('click', closePlayer);
+  $('closeBtn').addEventListener('click', requestClose);
 
   $('subLangSelect').addEventListener('change', function () {
     applySubLangByIndex(this.value === 'off' ? -1 : Number(this.value));
