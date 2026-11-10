@@ -151,6 +151,13 @@ function normalizeLang(label) {
   return 'und';
 }
 
+/** A borda (Worker) pode entregar esse vídeo? Liga + URL pública + sonda de 1 byte passou. */
+async function edgeDecision(url, extra = {}) {
+  if (!edgeEnabled() || !canUseEdge(url)) return { use: false, reason: null };
+  const probe = await edgeReachable({ url, ...extra });
+  return probe.ok ? { use: true, reason: null } : { use: false, reason: probe.reason };
+}
+
 function pickQualityKey(qualities, preferred) {
   const available = Object.keys(qualities || {})
     .map((key) => ({ key, height: Number(key) }))
@@ -515,16 +522,10 @@ app.get('/api/stream', requireApiKey, async (req, res) => {
 
     if (!transcode) {
       // Arquivo original sem recodificar: se der, o Worker entrega e o Render só assina o token.
-      let viaEdge = edgeEnabled() && canUseEdge(qualityUrl);
-      let edgeNote = null;
-      if (viaEdge) {
-        const probe = await edgeReachable({ url: qualityUrl });
-        if (!probe.ok) {
-          viaEdge = false;
-          edgeNote = probe.reason;
-          console.warn(`[stream] Worker não alcança o provedor (${probe.reason}); vídeo sai pelo Render`);
-        }
-      }
+      const edge = await edgeDecision(qualityUrl);
+      const viaEdge = edge.use;
+      const edgeNote = edge.reason;
+      if (edgeNote) console.warn(`[stream] Worker não alcança o provedor (${edgeNote}); vídeo sai pelo Render`);
       console.log(
         `[stream] modo direto ${qualityKey || 'auto'} (${streamInfo.provider}, codec ${codec || '?'}) ` +
         (viaEdge ? 'via borda (Worker)' : 'via Render')

@@ -233,6 +233,11 @@
         <label>Início (min)
           <input id="startInput" type="number" min="0" step="0.5" value="0">
         </label>
+        <label class="switch" title="Toca direto no player do provedor (iframe): o vídeo vai do site deles para o seu navegador e NÃO passa pelo servidor do fdsFlix — gasta 0 da banda do Render. Em troca: sem as legendas/controles do fdsFlix, pode ter anúncios e não salva o progresso.">
+          <input id="preferEmbedToggle" type="checkbox">
+          <span class="slider"></span>
+          <span>Economizar banda</span>
+        </label>
         <button id="reloadBtn" class="ghost" type="button">Recarregar</button>
         <button id="closeBtn" class="ghost" type="button">Fechar</button>
       </div>
@@ -251,7 +256,7 @@
     </div>
 
     <div id="embedBar" class="embed-bar" hidden>
-      <div class="embed-note">
+      <div id="embedNote" class="embed-note">
         Nenhuma fonte direta tem este título. Dá para tentar um <strong>player alternativo (embed)</strong>.
         Eles rodam no site de terceiros: podem ter anúncios e <em>não</em> salvam o progresso.
       </div>
@@ -766,6 +771,40 @@
     try { return localStorage.getItem(EMBED_SAFE_KEY) !== '0'; } catch (err) { return true; }
   }
 
+  var PREFER_EMBED_KEY = 'fdsflix.preferEmbed';
+  var EMBED_INDEX_KEY = 'fdsflix.embedIndex';
+  var EMBED_NOTE_DEFAULT = null;
+
+  function preferEmbedEnabled() {
+    try { return localStorage.getItem(PREFER_EMBED_KEY) === '1'; } catch (err) { return false; }
+  }
+
+  function savedEmbedIndex() {
+    var saved = -1;
+    try {
+      var raw = localStorage.getItem(EMBED_INDEX_KEY);
+      saved = raw === null || raw === '' ? -1 : Number(raw);
+    } catch (err) { saved = -1; }
+    if (saved >= 0 && saved < EMBED_PROVIDERS.length && saved === Math.floor(saved)) return saved;
+    for (var i = 0; i < EMBED_PROVIDERS.length; i++) if (EMBED_PROVIDERS[i].name === 'VidLink') return i;
+    return 0;
+  }
+
+  // Modo "Economizar banda": nada é pedido ao /api/stream; o iframe do provedor entrega o vídeo.
+  function startPreferredEmbed() {
+    showEmbedOptions();
+    var note = $('embedNote');
+    if (EMBED_NOTE_DEFAULT === null) EMBED_NOTE_DEFAULT = note.innerHTML;
+    note.innerHTML = '<strong>Modo economizar banda:</strong> o vídeo vem direto do site do player para o seu navegador. ' +
+      'Se um player não abrir, troque por outro aqui embaixo.';
+    playEmbed(savedEmbedIndex());
+    setStatus('ok',
+      '🧩 PLAYER DO PROVEDOR (iframe) — o vídeo vai do site deles direto ao seu navegador.\n' +
+      '📡 Não passa pelo Render: gasta 0 da banda dele.\n' +
+      'ℹ️ Em troca: sem as legendas e controles do fdsFlix, pode ter anúncios, não salva o progresso. ' +
+      'Desligue "Economizar banda" para voltar ao player do fdsFlix.');
+  }
+
   function hideEmbed() {
     state.embedIndex = -1;
     var frame = $('embedFrame');
@@ -792,6 +831,8 @@
       btn.setAttribute('data-embed', String(index));
       box.appendChild(btn);
     });
+    var noteEl = $('embedNote');
+    if (EMBED_NOTE_DEFAULT !== null && !preferEmbedEnabled()) noteEl.innerHTML = EMBED_NOTE_DEFAULT;
     $('embedBar').hidden = false;
   }
 
@@ -813,6 +854,7 @@
     else frame.removeAttribute('sandbox');
     frame.src = url;
     state.embedIndex = index;
+    try { localStorage.setItem(EMBED_INDEX_KEY, String(index)); } catch (err) { /* ignore */ }
 
     Array.prototype.slice.call($('embedBtns').children).forEach(function (btn) {
       btn.classList.toggle('active', btn.getAttribute('data-embed') === String(index));
@@ -1442,6 +1484,11 @@
     $('subBar').hidden = true;
 
     state.pendingSeek = startSeconds;
+    if (preferEmbedEnabled()) {
+      state.playToken++;               // cancela qualquer pedido de stream em andamento
+      startPreferredEmbed();
+      return;
+    }
     showOverlay('Extraindo o stream…', true);
     setStatus('working', 'Pedindo o vídeo ao servidor…');
 
@@ -1558,7 +1605,7 @@
           lines.push('✅ STREAM TOCANDO DIRETO — sem conversão.');
         }
         if (data.via === 'edge') {
-          lines.push('📡 O vídeo chega pela Cloudflare — não gasta a banda do Render.');
+          lines.push('📡 O vídeo chega por um relay externo (Cloudflare ou sua VM) — não gasta a banda do Render.');
         } else if (data.via === 'direct') {
           lines.push('📡 O vídeo vai direto do provedor para o seu navegador — não gasta a banda do Render.');
         } else if (data.via === 'origin' || data.transcoded) {
@@ -1566,8 +1613,7 @@
             (data.edgeSkipped ? '. A Cloudflare não consegue buscar nesse provedor (' + data.edgeSkipped + ')' : '') + '.');
         }
         var fonte = '🎞️ Fonte: ' + (data.provider || 'desconhecida') + ' · ' + (data.transcoded ? ('convertido para ' + data.quality + 'p') : ('qualidade ' + data.quality + 'p'));
-        if (!data.transcoded && Number(data.quality) >= 1080 && data.via === 'origin') fonte += ' (1080p gasta bem mais banda que 480p)';
-        lines.push(fonte);
+                lines.push(fonte);
         if (data.note) lines.push('ℹ️ ' + data.note);
         console.info('[fdsflix] ' + lines.join(' | '));
         setStatus('ok', lines.join('\n'));
@@ -1829,6 +1875,11 @@
     video.textTracks.onchange = syncSubLangFromTracks;
   }
 
+  $('preferEmbedToggle').checked = preferEmbedEnabled();
+  $('preferEmbedToggle').addEventListener('change', function () {
+    try { localStorage.setItem(PREFER_EMBED_KEY, this.checked ? '1' : '0'); } catch (err) { /* ignore */ }
+    if (state.selected && !$('playerSection').hidden) renderPlayer();
+  });
   $('embedSafeToggle').checked = embedSafeEnabled();
   $('embedSafeToggle').addEventListener('change', function () {
     try { localStorage.setItem(EMBED_SAFE_KEY, this.checked ? '1' : '0'); } catch (err) { /* ignore */ }
