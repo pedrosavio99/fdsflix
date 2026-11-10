@@ -24,7 +24,7 @@ const { proxyVideo, USER_AGENT, TOKEN_TTL_MS } = require('./lib/proxy');
 const { srtToVtt, shiftVtt } = require('./lib/subtitles');
 const registry = require('./lib/registry');
 const { relayFetch, getRelayConfig } = require('./lib/relayFetch');
-const { edgeEnabled, canUseEdge, edgeUrl } = require('./lib/edgeMedia');
+const { edgeEnabled, canUseEdge, edgeReachable, edgeUrl } = require('./lib/edgeMedia');
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
@@ -436,12 +436,19 @@ app.get('/api/stream', requireApiKey, async (req, res) => {
       }
       // Fonte de domínio público (ex.: AnimeFire): os bytes saem pelo Worker, não pelo Render.
       // CinePro fica no Render porque só existe em 127.0.0.1 (o Worker não alcança).
-      const viaEdge =
+      let viaEdge =
         Boolean(bridgeProfile) &&
         bridgeProfile.kind === 'domain' &&
         !bridgeProfile.allowLocal &&
         edgeEnabled() &&
         canUseEdge(streamInfo.url);
+      if (viaEdge) {
+        const probe = await edgeReachable({ url: streamInfo.url, headers: bridgeProfile.headers, root: bridgeProfile.root });
+        if (!probe.ok) {
+          viaEdge = false;
+          console.warn(`[stream] Worker não alcança o provedor (${probe.reason}); HLS sai pelo Render`);
+        }
+      }
       const hlsUrl = viaEdge
         ? edgeUrl({ url: streamInfo.url, headers: bridgeProfile.headers, root: bridgeProfile.root })
         : bridgeProfile
@@ -507,7 +514,16 @@ app.get('/api/stream', requireApiKey, async (req, res) => {
 
     if (!transcode) {
       // Arquivo original sem recodificar: se der, o Worker entrega e o Render só assina o token.
-      const viaEdge = edgeEnabled() && canUseEdge(qualityUrl);
+      let viaEdge = edgeEnabled() && canUseEdge(qualityUrl);
+      let edgeNote = null;
+      if (viaEdge) {
+        const probe = await edgeReachable({ url: qualityUrl });
+        if (!probe.ok) {
+          viaEdge = false;
+          edgeNote = probe.reason;
+          console.warn(`[stream] Worker não alcança o provedor (${probe.reason}); vídeo sai pelo Render`);
+        }
+      }
       console.log(
         `[stream] modo direto ${qualityKey || 'auto'} (${streamInfo.provider}, codec ${codec || '?'}) ` +
         (viaEdge ? 'via borda (Worker)' : 'via Render')
@@ -521,6 +537,7 @@ app.get('/api/stream', requireApiKey, async (req, res) => {
         sourceCodec: codec || 'desconhecido',
         transcoded: false,
         provider: streamInfo.provider,
+        edgeSkipped: edgeNote,
         captions,
         note: null
       });

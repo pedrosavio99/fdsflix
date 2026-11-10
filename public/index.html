@@ -1545,6 +1545,9 @@
         var who = '';
         if (state.lastMode === 'hevc-wasm') {
           who = '🖥️ DECODIFICANDO NO SEU NAVEGADOR (o servidor não gasta CPU)';
+          who += data.via === 'edge'
+            ? ' · vídeo entregue pela Cloudflare (não gasta banda do Render)'
+            : ' · o vídeo passa pelo Render (gasta banda, não gasta CPU)' + (data.edgeSkipped ? ' — a Cloudflare não alcança esse provedor (' + data.edgeSkipped + ')' : '');
         } else if (data.transcoded) {
           who = '☁️ CONVERTENDO NO SERVIDOR (ffmpeg — gasta CPU e banda do Render)' + (whyServer ? ' — motivo: ' + whyServer : '');
         } else if (data.mode === 'direct') {
