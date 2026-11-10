@@ -93,6 +93,7 @@
   .tv-controls{display:flex;gap:.4rem;align-items:center}
   .video-wrap{position:relative;border-radius:10px;overflow:hidden;background:#000}
   video{display:block;width:100%;aspect-ratio:16/9;background:#000}
+  video[hidden]{display:none}   /* sem isso o display:block acima vence o [hidden] e o <video> fica empilhado sobre o iframe */
   #embedFrame{display:block;width:100%;aspect-ratio:16/9;border:0;background:#000}
   #embedFrame[hidden]{display:none}
   .embed-bar{margin-top:.6rem;padding:.6rem .75rem;border:1px solid var(--border,#2a2a36);border-radius:10px;background:rgba(255,255,255,.03);font-size:.82rem}
