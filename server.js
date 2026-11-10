@@ -462,6 +462,7 @@ app.get('/api/stream', requireApiKey, async (req, res) => {
 
       return res.json({
         mode: 'hls',
+        via: viaEdge ? 'edge' : (bridgeProfile ? 'origin' : 'direct'),
         url: hlsUrl,
         quality: streamInfo.quality || 'auto',
         codec: streamInfo.codec || 'h264',

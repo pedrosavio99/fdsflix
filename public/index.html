@@ -119,6 +119,7 @@
   @keyframes spin{to{transform:rotate(360deg)}}
 
   .status{display:flex;gap:.5rem;align-items:flex-start;margin-top:.7rem;font-size:.82rem;color:var(--muted);line-height:1.45}
+  #statusText{white-space:pre-line}
   .badge{flex:0 0 auto;padding:.15rem .5rem;border-radius:5px;font-size:.66rem;font-weight:800;letter-spacing:.05em;margin-top:.05rem}
   .badge.working{background:var(--warn);color:#241a00}
   .badge.ok{background:var(--ok);color:#04220f}
@@ -1541,25 +1542,35 @@
           throw new Error('Modo de reprodução desconhecido.');
         }
 
-        // Diz CLARAMENTE quem está decodificando o vídeo.
-        var who = '';
+        // Diz CLARAMENTE, em linguagem simples: (1) quem decodifica, (2) por onde o vídeo chega, (3) qual é o vídeo.
+        var lines = [];
+        var codecName = String(data.sourceCodec || data.codec || '').toUpperCase();
         if (state.lastMode === 'hevc-wasm') {
-          who = '🖥️ DECODIFICANDO NO SEU NAVEGADOR (o servidor não gasta CPU)';
-          who += data.via === 'edge'
-            ? ' · vídeo entregue pela Cloudflare (não gasta banda do Render)'
-            : ' · o vídeo passa pelo Render (gasta banda, não gasta CPU)' + (data.edgeSkipped ? ' — a Cloudflare não alcança esse provedor (' + data.edgeSkipped + ')' : '');
+          lines.push('✅ DECODIFICANDO NO SEU NAVEGADOR — o servidor não gasta CPU.');
+          lines.push('Seu navegador não toca ' + (codecName || 'esse formato') + ' sozinho; o fdsFlix decodifica por software aqui no seu aparelho (pode esquentar/gastar bateria em vídeos grandes).');
         } else if (data.transcoded) {
-          who = '☁️ CONVERTENDO NO SERVIDOR (ffmpeg — gasta CPU e banda do Render)' + (whyServer ? ' — motivo: ' + whyServer : '');
+          lines.push('☁️ O SERVIDOR ESTÁ CONVERTENDO O VÍDEO (ffmpeg) — gasta CPU e banda do Render.');
+          lines.push('Motivo: ' + (whyServer || 'o formato original não toca neste navegador') + '.');
         } else if (data.mode === 'direct') {
-          who = '▶ SEU NAVEGADOR TOCA O HEVC DIRETO (sem conversão)';
+          lines.push('✅ SEU NAVEGADOR TOCA O VÍDEO ORIGINAL SOZINHO — ninguém converte nada.');
+          lines.push('O vídeo veio em ' + (codecName || 'HEVC') + ' e o seu navegador/placa de vídeo entende esse formato. É o melhor caso: sem ffmpeg e sem decodificação extra por software.');
+        } else if (data.mode === 'hls') {
+          lines.push('✅ STREAM TOCANDO DIRETO — sem conversão.');
         }
-        if (who) console.info('[fdsflix] ' + who);
-        var details = [];
-        if (who) details.push(who);
-        details.push('Fonte: ' + (data.provider || 'desconhecida'));
-        details.push(data.transcoded ? ('convertido para ' + data.quality + 'p') : ('qualidade ' + data.quality + 'p'));
-        if (data.note) details.push(data.note);
-        setStatus('ok', details.join(' · '));
+        if (data.via === 'edge') {
+          lines.push('📡 O vídeo chega pela Cloudflare — não gasta a banda do Render.');
+        } else if (data.via === 'direct') {
+          lines.push('📡 O vídeo vai direto do provedor para o seu navegador — não gasta a banda do Render.');
+        } else if (data.via === 'origin' || data.transcoded) {
+          lines.push('📡 O vídeo chega pelo Render — gasta a banda de saída dele (5 GB/mês no plano grátis)' +
+            (data.edgeSkipped ? '. A Cloudflare não consegue buscar nesse provedor (' + data.edgeSkipped + ')' : '') + '.');
+        }
+        var fonte = '🎞️ Fonte: ' + (data.provider || 'desconhecida') + ' · ' + (data.transcoded ? ('convertido para ' + data.quality + 'p') : ('qualidade ' + data.quality + 'p'));
+        if (!data.transcoded && Number(data.quality) >= 1080 && data.via === 'origin') fonte += ' (1080p gasta bem mais banda que 480p)';
+        lines.push(fonte);
+        if (data.note) lines.push('ℹ️ ' + data.note);
+        console.info('[fdsflix] ' + lines.join(' | '));
+        setStatus('ok', lines.join('\n'));
       })
       .catch(function (err) {
         clearTimeout(slowTimer);
