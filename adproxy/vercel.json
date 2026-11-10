@@ -8,5 +8,6 @@
       "source": "/(.*)",
       "destination": "/api/index.js"
     }
-  ]
+  ],
+  "outputDirectory": "public"
 }
