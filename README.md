@@ -76,7 +76,8 @@ Com `VIDSRC_PROXY_URL=https://seu-adshield.vercel.app` no Render, o Vidsrc vira 
 primeira fonte da cascata: o `adproxy` extrai o HLS e entrega playlist e segmentos
 (o CDN amarra o token ao IP, então o navegador não toca direto). Sem iframe, sem
 anúncio, e o Render só devolve JSON. **Para voltar ao fluxo anterior, apague a
-variável.** Detalhes e limites: [adproxy/VERCEL.md](adproxy/VERCEL.md).
+variável.** Detalhes e limites: [adproxy/VERCEL.md](adproxy/VERCEL.md). Para somar a banda de
+várias Vercels e acompanhar o consumo numa barra: [docs/VERCEL-POOL.md](docs/VERCEL-POOL.md).
 
 > **Não aponte o AdShield para o site fdsFlix inteiro.** O HTML do fdsFlix não
 > tem anúncios no HTML e o vídeo não passa por ele; use o AdShield como proxy

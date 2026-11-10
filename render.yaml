@@ -32,6 +32,15 @@ services:
       # apague esta variável e faça redeploy. Ver adproxy/VERCEL.md.
       - key: VIDSRC_PROXY_URL
         sync: false
+      # Várias Vercels (uma por conta) somam a cota de banda. Separadas por vírgula.
+      # Tem prioridade junto com a acima; ver docs/VERCEL-POOL.md.
+      - key: VIDSRC_PROXY_URLS
+        sync: false
+      - key: VERCEL_QUOTA_GB
+        value: "100"
+      # Dia do mês em que a cota da Vercel renova (veja em Usage no painel dela).
+      - key: USAGE_RESET_DAY
+        value: "1"
       # Worker repassador da Cloudflare (deploy/cloudflare-worker). Opcional: sem as duas, vai direto.
       - key: VIDEO_RELAY_URL
         sync: false
