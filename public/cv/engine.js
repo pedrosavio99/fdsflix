@@ -554,8 +554,8 @@ async function build(video, canvas, url, opts, ref) {
     if (e && !destroyed) fatal(`erro de mídia ${e.code}${e.message ? ': ' + e.message : ''}`);
   }
   function onUpdateEnd() { pump(); checkEnd(); feed(); }
-  const onPlay = () => emit();
-  const onPause = () => emit();
+  function onPlay() { emit(); }
+  function onPause() { emit(); }
 
   video.addEventListener('seeking', onSeeking);
   video.addEventListener('timeupdate', onTimeUpdate);
@@ -616,25 +616,26 @@ async function build(video, canvas, url, opts, ref) {
   function destroy() {
     if (destroyed) return;
     destroyed = true;
+    const safe = (fn) => { try { fn(); } catch (e) { /* a limpeza nunca pode mascarar o erro original */ } };
     gen += 1;
-    ctrl.abort();
-    clearInterval(tick);
-    clearInterval(noFrameTimer);
-    cancelAnimationFrame(raf);
-    video.removeEventListener('seeking', onSeeking);
-    video.removeEventListener('timeupdate', onTimeUpdate);
-    video.removeEventListener('ended', onEnded);
-    video.removeEventListener('error', onVideoError);
-    video.removeEventListener('play', onPlay);
-    video.removeEventListener('pause', onPause);
-    if (sbA) sbA.removeEventListener('updateend', onUpdateEnd);
-    if (!hadOwnPlay) { delete video.play; delete video.pause; }
-    try { mp4.stop(); } catch (e) { /* ignore */ }
-    try { worker.postMessage({ t: 'destroy' }); } catch (e) { /* ignore */ }
-    setTimeout(() => { try { worker.terminate(); } catch (e) { /* ignore */ } }, 200);
-    try { nativePause.call(video); video.removeAttribute('src'); video.load(); } catch (e) { /* ignore */ }
-    if (objectUrl) URL.revokeObjectURL(objectUrl);
-    try { renderer.dispose(); } catch (e) { /* ignore */ }
+    safe(() => ctrl.abort());
+    safe(() => clearInterval(tick));
+    safe(() => clearInterval(noFrameTimer));
+    safe(() => cancelAnimationFrame(raf));
+    safe(() => video.removeEventListener('seeking', onSeeking));
+    safe(() => video.removeEventListener('timeupdate', onTimeUpdate));
+    safe(() => video.removeEventListener('ended', onEnded));
+    safe(() => video.removeEventListener('error', onVideoError));
+    safe(() => video.removeEventListener('play', onPlay));
+    safe(() => video.removeEventListener('pause', onPause));
+    safe(() => { if (sbA) sbA.removeEventListener('updateend', onUpdateEnd); });
+    safe(() => { if (!hadOwnPlay) { delete video.play; delete video.pause; } });
+    safe(() => mp4.stop());
+    safe(() => worker.postMessage({ t: 'destroy' }));
+    setTimeout(() => safe(() => worker.terminate()), 200);
+    safe(() => { nativePause.call(video); video.removeAttribute('src'); video.load(); });
+    safe(() => { if (objectUrl) URL.revokeObjectURL(objectUrl); });
+    safe(() => renderer.dispose());
     frames.length = 0;
     shown = null;
   }
