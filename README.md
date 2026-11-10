@@ -15,6 +15,31 @@ Player de filmes e séries: busca no **TMDB** e reprodução do stream via
 O **mesmo serviço do Render** entrega a interface e a API — a Vercel é opcional.
 Basta abrir <https://fdsflix.onrender.com> para usar o site.
 
+## Proxy AdShield (remover anúncios de um site alvo)
+
+O repositório também inclui o **`adproxy/`**, um serviço separado (Express +
+Cheerio) que proxia um site configurável em `TARGET_ORIGIN`, remove scripts,
+iframes e contêineres de anúncio, reescreve CSS/JS/imagens/iframes/HLS e
+mantém o player funcionando. Ele **não** interfere no player do fdsFlix.
+
+```bash
+cd adproxy
+cp .env.example .env   # defina TARGET_ORIGIN e PROXY_SECRET
+npm install
+npm start              # http://localhost:3000
+```
+
+No Render, o `render.yaml` da raiz cria o serviço `fdsflix-adshield` com
+`rootDir: adproxy` e health check em `/_adshield/health`. Detalhes, variáveis e
+limitações: [adproxy/README.md](adproxy/README.md).
+
+> **Não use o AdShield para o próprio fdsFlix.** O HTML do fdsFlix não tem
+> anúncios para remover (o teste real retorna `X-AdShield-Removed: 0`) e o vídeo
+> continua saindo do Render/edge; o proxy só adicionaria outra camada. Para
+> economizar os 5 GB de vídeo, use o relay de mídia (`MEDIA_RELAY_URL`) ou o
+> Worker da Cloudflare (`VIDEO_RELAY_URL`) — veja
+> [deploy/media-relay/README.md](deploy/media-relay/README.md).
+
 ## Como rodar
 
 ```bash
@@ -144,6 +169,7 @@ lib/streamExtractor.js Token cifrado + extração de qualidades e legendas
 lib/proxy.js           Proxy de vídeo com Range e renovação da assinatura
 lib/transcoder.js      Sessões HLS do ffmpeg (HEVC -> H.264) com limpeza automática
 lib/subtitles.js       Conversão SRT -> WebVTT
+adproxy/                Proxy AdShield (serviço separado; ver adproxy/README.md)
 lib/registry.js        Tokens opacos para proxy e legendas
 public/index.html      Interface (busca, catálogo e player)
 public/vendor/         hls.js local
@@ -152,7 +178,7 @@ scripts/write-config.js Gera o config.js a partir de API_BASE_URL
 vercel.json            Build estático da Vercel (frontend)
 Dockerfile             Backend com ffmpeg para Railway/Render/Fly.io/VPS
 compose.yaml           App + healthcheck para rodar com docker compose
-render.yaml            Blueprint do Render (Docker + envs + plano free)
+render.yaml            Blueprint do Render (fdsFlix Docker + AdShield Node)
 deploy/oracle-setup.sh Setup da VM Oracle (Docker, firewall, Caddy)
 docs/API.md            Documentação da API pública (usar em outros projetos)
 docs/DEPLOY-ORACLE.md  Guia do Always Free (VM ARM + HTTPS grátis)

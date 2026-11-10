@@ -5,7 +5,9 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node --watch server.js"
+    "dev": "node --watch server.js",
+    "adproxy": "npm --prefix adproxy start",
+    "test:adproxy": "npm --prefix adproxy test"
   },
   "engines": {
     "node": ">=18"

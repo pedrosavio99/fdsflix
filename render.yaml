@@ -1,4 +1,4 @@
-# Blueprint do Render para o backend do fdsFlix.
+# Blueprint do Render: backend do fdsFlix + serviço AdShield (proxy de site alvo).
 # No Render: New → Blueprint → conecte o repositório. Ele lê este arquivo.
 #
 # As chaves com sync: false são pedidas no momento do deploy.
@@ -28,9 +28,48 @@ services:
         sync: false
       - key: VIDEO_RELAY_KEY
         sync: false
+      # Relay de mídia em VM (deploy/media-relay + docs/DEPLOY-ORACLE.md).
+      # Serve para CDNs que recusam a rede da Cloudflare (ex.: provedor HTTP 427).
+      # Sem ele, o vídeo que não puder sair pela borda cai no Render e consome os 5 GB.
+      # Deixe em branco se não tiver um relay; o app continua funcionando.
+      - key: MEDIA_RELAY_URL
+        sync: false
+      - key: MEDIA_RELAY_KEY
+        sync: false
+      - key: EDGE_MEDIA
+        value: "1"
       # Render Free tem só 0.1 CPU: 360p + 1 sessão é o que dá para tentar.
       # Se subir para Starter/Standard, aumente para 480/720.
       - key: MAX_TRANSCODE_HEIGHT
         value: "360"
       - key: MAX_SESSIONS
         value: "1"
+
+  # ---------------------------------------------------------------------------
+  # AdShield: proxy reverso que remove anúncios de um site alvo.
+  # Serviço separado, sem ffmpeg e sem relação com o player do fdsFlix.
+  # Defina TARGET_ORIGIN no momento do deploy (ex.: https://site-alvo.com).
+  # PROXY_SECRET é gerado pelo Render e mantém os tokens válidos entre restarts.
+  # ---------------------------------------------------------------------------
+  - type: web
+    name: fdsflix-adshield
+    runtime: node
+    plan: free
+    region: oregon
+    rootDir: adproxy
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /_adshield/health
+    autoDeploy: true
+    buildFilter:
+      paths:
+        - adproxy/**
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: NODE_ENV
+        value: production
+      - key: TARGET_ORIGIN
+        sync: false
+      - key: PROXY_SECRET
+        generateValue: true
