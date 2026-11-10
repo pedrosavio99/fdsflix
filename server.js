@@ -24,6 +24,7 @@ const { proxyVideo, USER_AGENT, TOKEN_TTL_MS } = require('./lib/proxy');
 const { srtToVtt, shiftVtt } = require('./lib/subtitles');
 const registry = require('./lib/registry');
 const { relayFetch, getRelayConfig } = require('./lib/relayFetch');
+const { edgeEnabled, canUseEdge, edgeUrl } = require('./lib/edgeMedia');
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
@@ -433,9 +434,20 @@ app.get('/api/stream', requireApiKey, async (req, res) => {
           .then((probe) => hlsEvent({ kind: 'sonda', codec: probe.codec, largura: probe.width, altura: probe.height, navegadorHevc: hevcOk }))
           .catch(() => {});
       }
-      const hlsUrl = bridgeProfile
-        ? absoluteUrl(req, `/api/hls-proxy?t=${registry.register('hls', { url: streamInfo.url, profile: bridgeProfile })}`)
-        : absoluteUrl(req, streamInfo.url);
+      // Fonte de domínio público (ex.: AnimeFire): os bytes saem pelo Worker, não pelo Render.
+      // CinePro fica no Render porque só existe em 127.0.0.1 (o Worker não alcança).
+      const viaEdge =
+        Boolean(bridgeProfile) &&
+        bridgeProfile.kind === 'domain' &&
+        !bridgeProfile.allowLocal &&
+        edgeEnabled() &&
+        canUseEdge(streamInfo.url);
+      const hlsUrl = viaEdge
+        ? edgeUrl({ url: streamInfo.url, headers: bridgeProfile.headers, root: bridgeProfile.root })
+        : bridgeProfile
+          ? absoluteUrl(req, `/api/hls-proxy?t=${registry.register('hls', { url: streamInfo.url, profile: bridgeProfile })}`)
+          : absoluteUrl(req, streamInfo.url);
+      if (viaEdge) console.log('[stream] HLS entregue pela borda (Worker)');
       const captions = buildCaptions(streamInfo.captions, 0).map((caption) => ({
         ...caption,
         url: absoluteUrl(req, caption.url)
@@ -494,10 +506,16 @@ app.get('/api/stream', requireApiKey, async (req, res) => {
     }));
 
     if (!transcode) {
-      console.log(`[stream] modo direto ${qualityKey || 'auto'} (${streamInfo.provider}, codec ${codec || '?'})`);
+      // Arquivo original sem recodificar: se der, o Worker entrega e o Render só assina o token.
+      const viaEdge = edgeEnabled() && canUseEdge(qualityUrl);
+      console.log(
+        `[stream] modo direto ${qualityKey || 'auto'} (${streamInfo.provider}, codec ${codec || '?'}) ` +
+        (viaEdge ? 'via borda (Worker)' : 'via Render')
+      );
       return res.json({
         mode: 'direct',
-        url: absoluteUrl(req, `/api/proxy?t=${token}`),
+        via: viaEdge ? 'edge' : 'origin',
+        url: viaEdge ? edgeUrl({ url: qualityUrl }) : absoluteUrl(req, `/api/proxy?t=${token}`),
         quality: Number(qualityKey) || streamInfo.quality || 'auto',
         codec: codec || 'desconhecido',
         sourceCodec: codec || 'desconhecido',
@@ -860,6 +878,7 @@ const server = app.listen(PORT, () => {
   console.log('   Fallbacks: ' + getProviderList().map((p) => p.name).join(' → '));
   const relayCfg = getRelayConfig();
   console.log('   Relay CF : ' + (relayCfg.enabled ? 'ativo (' + relayCfg.url + ')' : 'desativado (requisições diretas)'));
+  console.log('   Borda    : ' + (edgeEnabled() ? 'vídeo entregue pelo Worker (não gasta banda do Render)' : 'desligada (vídeo passa pelo Render)'));
   console.log('   Serviços auxiliares (opcionais para catálogo expandido/novelas):');
   console.log('     - CinePro:    ' + (process.env.CINEPRO_API_BASE || 'http://localhost:3001'));
   console.log('     - CineWinx:   ' + (process.env.CINEWINX_API_BASE || 'http://localhost:3002'));

@@ -73,3 +73,38 @@ curl -i -H "x-senha: SUA_SENHA" "https://fdsflix-relay.SEU-USUARIO.workers.dev/?
 ```
 
 Ao iniciar, o fdsFlix mostra `Relay CF : ativo (...)` no console.
+
+---
+
+## Entrega assinada de vídeo (`/m/<token>`): fora dos 5 GB do Render
+
+O Render Free mede a banda de **saída**. Com o relay antigo (`/?u=`) o vídeo ainda
+saía pelo Render. A rota `/m/<token>` resolve isso:
+
+```
+navegador ──(1 KB: pede o stream)──▶ Render  (assina um token HMAC)
+navegador ◀────────── URL <worker>/m/<token> ─┘
+navegador ──(Range, HLS…)──▶ Worker ──(User-Agent neutro, sem Referer)──▶ CDN
+navegador ◀───────────── bytes do vídeo ───────┘   (o Render não participa)
+```
+
+- O token é `base64url(JSON{u,h,r,e}).base64url(HMAC-SHA256(RELAY_KEY, "m1."+parte1))`:
+  vale para **uma URL**, com **cabeçalhos definidos pelo servidor**, por 6 horas (a URL do CDN vale mais que isso).
+  O navegador nunca vê a `RELAY_KEY`.
+- O Worker troca o `User-Agent`/`Referer` — o CDN do provedor responde 428/429 ao
+  navegador, e é por isso que o vídeo não podia ir direto.
+- Playlists HLS são reescritas **no Worker**: os filhos (variantes, chaves, segmentos)
+  ganham tokens novos, só para hosts dentro do domínio-raiz do token (`r`).
+- Sem alteração de configuração: use as mesmas `VIDEO_RELAY_URL` e `VIDEO_RELAY_KEY`.
+  Para desligar: `EDGE_MEDIA=0`.
+
+Teste depois do deploy (substitua pelo seu Worker; o `/api/stream` devolve a URL):
+
+```bash
+curl -s "https://SEU-BACKEND/api/stream?id=603&type=movie&res=480&hevc=1" | grep -o '"via":"[a-z]*"'   # "edge"
+curl -i -H "Range: bytes=0-99" "<url devolvida>"   # 206 + content-range
+```
+
+Limites: 100.000 requisições/dia no plano gratuito (um MP4 com Range usa poucas;
+HLS usa uma por segmento). Verifique os Termos de Serviço da Cloudflare para
+tráfego de vídeo.

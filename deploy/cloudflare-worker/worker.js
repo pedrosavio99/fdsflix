@@ -53,6 +53,214 @@ function safeEqual(a, b) {
   return diff === 0;
 }
 
+/* ------------------------------------------------------------------ */
+/* Plano de dados assinado:  GET /m/<token>                            */
+/*                                                                     */
+/* O Render (backend) só assina um token HMAC; o vídeo passa AQUI e    */
+/* vai direto ao player, sem gastar a banda de saída do Render.        */
+/* Formato do token: base64url(JSON{u,h,r,e}) . base64url(HMAC)        */
+/* ------------------------------------------------------------------ */
+
+const MEDIA_UA = 'fdsFlix/2.0 (+local player)';
+const MEDIA_MAX_HOPS = 4;
+const MEDIA_PLAYLIST_MAX = 2 * 1024 * 1024;
+// Só estes cabeçalhos do token chegam ao CDN (nunca nada vindo do navegador).
+const MEDIA_HEADER_ALLOW = new Set(['user-agent', 'referer', 'origin', 'accept']);
+const MEDIA_PASS_HEADERS = ['content-type', 'content-length', 'content-range', 'accept-ranges', 'etag', 'last-modified'];
+
+const textEncoder = new TextEncoder();
+
+function b64uToBytes(s) {
+  const pad = '='.repeat((4 - (s.length % 4)) % 4);
+  const bin = atob(s.replace(/-/g, '+').replace(/_/g, '/') + pad);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+function bytesToB64u(bytes) {
+  let bin = '';
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+async function hmacKey(secret, usage) {
+  return crypto.subtle.importKey('raw', textEncoder.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, [usage]);
+}
+
+async function signBody(secret, body) {
+  const sig = await crypto.subtle.sign('HMAC', await hmacKey(secret, 'sign'), textEncoder.encode('m1.' + body));
+  return bytesToB64u(new Uint8Array(sig));
+}
+
+/** @returns {Promise<{u:string,h:object,r:string,e:number}|{error:string,status:number}>} */
+async function readToken(token, secret) {
+  const dot = token.indexOf('.');
+  if (dot < 1) return { error: 'token malformado', status: 400 };
+  const body = token.slice(0, dot);
+  let sig;
+  try {
+    sig = b64uToBytes(token.slice(dot + 1));
+  } catch (err) {
+    return { error: 'token malformado', status: 400 };
+  }
+  // crypto.subtle.verify compara em tempo constante.
+  const ok = await crypto.subtle.verify('HMAC', await hmacKey(secret, 'verify'), sig, textEncoder.encode('m1.' + body));
+  if (!ok) return { error: 'assinatura inválida', status: 401 };
+
+  let payload;
+  try {
+    payload = JSON.parse(new TextDecoder().decode(b64uToBytes(body)));
+  } catch (err) {
+    return { error: 'token ilegível', status: 400 };
+  }
+  if (!payload || typeof payload.u !== 'string' || !(payload.e > 0)) return { error: 'token incompleto', status: 400 };
+  if (Date.now() / 1000 > payload.e) return { error: 'token expirado — recarregue o player', status: 410 };
+  return payload;
+}
+
+/** https público, sem IP literal nem localhost; se houver raiz, o host precisa pertencer a ela. */
+function mediaTargetAllowed(rawUrl, root) {
+  let u;
+  try {
+    u = new URL(rawUrl);
+  } catch (err) {
+    return null;
+  }
+  const host = u.hostname.toLowerCase();
+  if (u.protocol !== 'https:') return null;
+  if (host === 'localhost' || host.endsWith('.local') || host.endsWith('.internal')) return null;
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host) || host.includes(':') || !host.includes('.')) return null;
+  if (root && !(host === root || host.endsWith('.' + root))) return null;
+  return u;
+}
+
+function mediaJson(status, error, extra = {}) {
+  return new Response(JSON.stringify({ ok: false, error }), {
+    status,
+    headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...CORS_HEADERS, ...extra }
+  });
+}
+
+async function rewriteHlsPlaylist(text, upstreamUrl, payload, secret, origin) {
+  const wanted = new Map(); // URL absoluta -> token
+  const consider = (raw) => {
+    let abs;
+    try {
+      abs = new URL(raw, upstreamUrl).toString();
+    } catch (err) {
+      return;
+    }
+    if (payload.r && mediaTargetAllowed(abs, payload.r) && !wanted.has(abs)) wanted.set(abs, null);
+  };
+
+  const lines = text.split(/\r?\n/);
+  for (const line of lines) {
+    if (!line.trim()) continue;
+    if (line.startsWith('#')) {
+      for (const m of line.matchAll(/URI="([^"]+)"/g)) consider(m[1]);
+    } else {
+      consider(line.trim());
+    }
+  }
+
+  await Promise.all(
+    Array.from(wanted.keys()).map(async (abs) => {
+      const body = bytesToB64u(
+        textEncoder.encode(JSON.stringify({ u: abs, h: payload.h || {}, r: payload.r, e: payload.e }))
+      );
+      wanted.set(abs, `${origin}/m/${body}.${await signBody(secret, body)}`);
+    })
+  );
+
+  const swap = (raw) => {
+    try {
+      const abs = new URL(raw, upstreamUrl).toString();
+      return wanted.get(abs) || abs; // fora da raiz permitida: o player resolve por conta própria
+    } catch (err) {
+      return raw;
+    }
+  };
+
+  return lines
+    .map((line) => {
+      if (!line.trim()) return line;
+      if (line.startsWith('#')) return line.replace(/URI="([^"]+)"/g, (m, uri) => `URI="${swap(uri)}"`);
+      return swap(line.trim());
+    })
+    .join('\n');
+}
+
+async function handleMedia(request, requestUrl, env) {
+  if (request.method !== 'GET' && request.method !== 'HEAD') return mediaJson(405, 'método não permitido');
+
+  const secret = String(env.RELAY_KEY || env.SM_RELAY_SENHA || '').trim();
+  if (!secret) return mediaJson(503, 'Worker sem RELAY_KEY configurada.');
+
+  const payload = await readToken(decodeURIComponent(requestUrl.pathname.slice(3)), secret);
+  if (payload.error) return mediaJson(payload.status, payload.error);
+
+  // Cabeçalhos do CDN: só os do token (User-Agent neutro por padrão, sem Referer/Origin do navegador).
+  const upstreamHeaders = new Headers({ 'User-Agent': MEDIA_UA, Accept: '*/*', 'Accept-Encoding': 'identity' });
+  for (const [k, v] of Object.entries(payload.h || {})) {
+    if (MEDIA_HEADER_ALLOW.has(k.toLowerCase()) && typeof v === 'string') upstreamHeaders.set(k, v);
+  }
+  const range = request.headers.get('range');
+  if (range) upstreamHeaders.set('Range', range);
+
+  // Redirecionamento manual: cada salto passa pelo mesmo filtro de host.
+  let target = mediaTargetAllowed(payload.u, '');
+  if (!target) return mediaJson(403, 'origem não permitida');
+  let upstream;
+  try {
+    for (let hop = 0; hop <= MEDIA_MAX_HOPS; hop++) {
+      upstream = await fetch(target.toString(), { method: request.method, headers: upstreamHeaders, redirect: 'manual' });
+      if (upstream.status >= 300 && upstream.status < 400 && upstream.headers.get('location')) {
+        const next = mediaTargetAllowed(new URL(upstream.headers.get('location'), target).toString(), payload.r);
+        if (upstream.body) upstream.body.cancel().catch(() => {});
+        if (!next || hop === MEDIA_MAX_HOPS) return mediaJson(502, 'redirecionamento bloqueado');
+        target = next;
+        continue;
+      }
+      break;
+    }
+  } catch (err) {
+    return mediaJson(502, `falha ao conectar no provedor: ${err.message}`);
+  }
+
+  if (upstream.status >= 400) {
+    if (upstream.body) upstream.body.cancel().catch(() => {});
+    return mediaJson(502, `o provedor respondeu HTTP ${upstream.status}`, { 'x-upstream-status': String(upstream.status) });
+  }
+
+  const outHeaders = new Headers(CORS_HEADERS);
+  for (const name of MEDIA_PASS_HEADERS) {
+    const value = upstream.headers.get(name);
+    if (value) outHeaders.set(name, value);
+  }
+
+  // Playlist HLS: reescreve e assina os filhos aqui mesmo (o Render não participa).
+  const looksPlaylist =
+    /mpegurl/i.test(upstream.headers.get('content-type') || '') || /\.m3u8$/i.test(target.pathname);
+  if (looksPlaylist && request.method === 'GET' && payload.r) {
+    const raw = await upstream.text();
+    if (raw.length <= MEDIA_PLAYLIST_MAX && /^﻿?\s*#EXTM3U/.test(raw.slice(0, 64))) {
+      const rewritten = await rewriteHlsPlaylist(raw, target.toString(), payload, secret, requestUrl.origin);
+      outHeaders.set('Content-Type', 'application/vnd.apple.mpegurl');
+      outHeaders.set('Cache-Control', 'no-store');
+      outHeaders.delete('content-length');
+      outHeaders.delete('content-range');
+      return new Response(rewritten, { status: 200, headers: outHeaders });
+    }
+    return new Response(raw, { status: upstream.status, headers: outHeaders });
+  }
+
+  if (!outHeaders.has('content-type')) outHeaders.set('Content-Type', 'application/octet-stream');
+  outHeaders.set('Cache-Control', 'public, max-age=3600');
+  // Corpo repassado como stream: nada fica em memória no Worker.
+  return new Response(request.method === 'HEAD' ? null : upstream.body, { status: upstream.status, headers: outHeaders });
+}
+
 export default {
   async fetch(request, env = {}, ctx) {
     const requestUrl = new URL(request.url);
@@ -63,6 +271,11 @@ export default {
         status: 204,
         headers: CORS_HEADERS
       });
+    }
+
+    // 1b. Plano de dados assinado (vídeo direto ao player, sem senha no navegador)
+    if (requestUrl.pathname.startsWith('/m/')) {
+      return handleMedia(request, requestUrl, env);
     }
 
     // 2. Extração da URL de destino

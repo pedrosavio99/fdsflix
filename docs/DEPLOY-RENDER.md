@@ -9,6 +9,14 @@ Node + ffmpeg. O repositório já tem tudo pronto (`Dockerfile`, `render.yaml`,
 > conversão HEVC → H.264 em tempo real **provavelmente não acompanha**. O
 > `render.yaml` já configura `MAX_TRANSCODE_HEIGHT=360` e `MAX_SESSIONS=1` para
 > tentar. Se engasgar, as saídas são:
+> - **o navegador de quem assiste decodifica o HEVC sozinho** (player canvas,
+>   `public/cv/`, em WebAssembly): funciona em qualquer navegador moderno, sem
+>   ffmpeg e sem o vídeo passar pelo Render — o servidor só entrega o endereço.
+>   Para os bytes também não passarem pelo Render, configure o Worker da Cloudflare
+>   (`deploy/cloudflare-worker/README.md`, variáveis `VIDEO_RELAY_URL`/`VIDEO_RELAY_KEY`).
+>   O ffmpeg do servidor só entra se o aparelho for lento demais (cai para 360p e,
+>   se ainda assim não acompanhar, usa o servidor). `?hevc=wasm` na URL força o
+>   player canvas, mesmo em navegadores que tocam HEVC (útil para testar);
 > - usar um navegador que toca HEVC (Safari ou Chrome no Windows com o codec) —
 >   aí o backend só faz proxy, sem converter;
 > - subir para **Starter (0.5 CPU)** ou **Standard (1 CPU / 2 GB)**;

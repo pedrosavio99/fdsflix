@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>fdsFlix — Filmes e Séries</title>
+<!-- O player canvas (HEVC decodificado no navegador; carregado só quando preciso) importa "mp4box" por nome. -->
+<script type="importmap">{"imports":{"mp4box":"./vendor/mp4box/mp4box.all.mjs"}}</script>
 <style>
   :root{
     --bg:#0b0b10;
@@ -336,8 +338,13 @@
     sessionId: null,
     controller: null,
     playToken: 0,
-    hevc: detectHevc(),
+    // ?hevc=wasm força o player canvas (HEVC decodificado no navegador), mesmo que o HEVC seja nativo (para testar).
+    hevc: detectHevc() && !/[?&]hevc=wasm\b/.test(location.search),
     forceTranscode: false,
+    cvp: null,
+    clientHevcOff: false,
+    clientRes: 480,
+    useClient: false,
     lastMode: null,
     pendingSeek: 0,
     baseOffset: 0,
@@ -1017,6 +1024,10 @@
       try { state.hls.destroy(); } catch (err) { /* ignore */ }
       state.hls = null;
     }
+    if (state.cvp) {
+      try { state.cvp.destroy(); } catch (err) { /* ignore */ }
+      state.cvp = null;
+    }
     beaconStop(state.sessionId);
     state.sessionId = null;
   }
@@ -1078,7 +1089,9 @@
     } catch (err) { /* ignore */ }
   }
 
-  function addCaptions(captions) {
+  // clientSide: no player canvas a sincronia é aplicada no desenho (instantânea), então a
+  // legenda vem do servidor sem deslocamento e nunca precisa ser recarregada ao ajustar.
+  function addCaptions(captions, clientSide) {
     var video = $('nativePlayer');
 
     (captions || []).forEach(function (caption) {
@@ -1087,7 +1100,7 @@
       track.kind = 'subtitles';
       track.label = caption.label || 'Legenda';
       track.srclang = caption.srclang || 'und';
-      track.src = subtitleUrl(caption.url, state.subOffset);
+      track.src = subtitleUrl(caption.url, clientSide ? 0 : state.subOffset);
       video.appendChild(track);
     });
   }
@@ -1204,6 +1217,10 @@
     state.subOffset = offset;
     $('subOffsetInput').value = String(offset);
     if (state.subKey) saveSubOffset(state.subKey, offset);
+    if (state.cvp) {
+      state.cvp.setSubOffset(offset);   // player canvas: aplica na hora, sem recarregar a legenda
+      return;
+    }
     rebuildCaptions();
   }
 
@@ -1287,6 +1304,103 @@
     hls.attachMedia(video);
   }
 
+  /* ---------------------------------------------------------------- */
+  /* Player canvas: HEVC decodificado NO navegador (qualquer navegador) */
+  /* ---------------------------------------------------------------- */
+
+  // Quando o navegador não toca HEVC, em vez de o servidor converter com ffmpeg (CPU do Render +
+  // ~1,5 GB por filme saindo pela banda dele), o próprio navegador decodifica: cv/engine.js corta o
+  // MP4 por Range, decodifica o HEVC em WebAssembly (Worker) e desenha num <canvas>; o áudio toca
+  // por MediaSource e é o relógio. Controles e legendas são nossos (cv/ui.js, cv/subs.js).
+  // Se algo falhar, voltamos para o servidor.
+  var cvpModule = null;
+  function cvpLoad() {
+    if (!cvpModule) cvpModule = import('./cv/player.js');
+    return cvpModule;
+  }
+
+  function cvpSupported() {
+    try {
+      return typeof WebAssembly === 'object' && typeof Worker === 'function' && !!window.MediaSource &&
+        MediaSource.isTypeSupported('audio/mp4; codecs="mp4a.40.2"') && !!document.createElement('canvas').getContext;
+    } catch (err) {
+      return false;
+    }
+  }
+
+  function clientHevcFallback(message, lowerRes) {
+    if (!state.selected) return;
+    progRemember(true);
+    if (state.lastAbs >= PROG_MIN_SECONDS) $('startInput').value = secondsToStartMinutes(state.lastAbs);
+    if (lowerRes) {
+      state.clientRes = 360;
+    } else {
+      state.clientHevcOff = true;
+    }
+    toast(message);
+    renderPlayer();
+  }
+
+  // Menu de legendas do player canvas: usa as mesmas funções da barra "Legenda / Sincronia" de baixo.
+  function cvpSubsApi() {
+    return {
+      items: function () { return state.captions.map(function (c, i) { return c.label || ('Legenda ' + (i + 1)); }); },
+      active: function () { return activeSubIndex(); },
+      select: function (i) { applySubLangByIndex(i); },
+      offset: function () { return state.subOffset; },
+      setOffset: function (v) { applySubOffset(v); }
+    };
+  }
+
+  function startClientHevc(url, startSeconds, video, playToken, label) {
+    state.lastMode = 'hevc-wasm';
+    state.pendingSeek = 0;
+    showOverlay('Preparando o player no seu navegador…', true);
+
+    cvpLoad()
+      .then(function (mod) {
+        if (playToken !== state.playToken) return null;
+        return mod.startCanvasPlayer({
+          wrap: document.querySelector('.video-wrap'),
+          video: video,
+          url: url,
+          startAt: startSeconds,
+          label: label,
+          subs: cvpSubsApi(),
+          onFatal: function (reason) {
+            if (playToken !== state.playToken) return;
+            console.warn('[player-canvas] falhou:', reason);
+            clientHevcFallback('O player do navegador falhou (' + reason + '). Usando o servidor.', false);
+          },
+          onSlow: function (speed) {
+            if (playToken !== state.playToken) return;
+            console.warn('[player-canvas] decodificação lenta:', speed);
+            if (state.clientRes > 360) {
+              clientHevcFallback('Seu aparelho está lento para decodificar. Tentando em 360p.', true);
+            } else {
+              clientHevcFallback('Seu aparelho não acompanha a decodificação. Usando o servidor.', false);
+            }
+          },
+          onAutoplayBlocked: function () {
+            hideOverlay();
+            setStatus('warn', 'O navegador bloqueou o autoplay — clique no ▶ do vídeo.');
+          }
+        });
+      })
+      .then(function (player) {
+        if (!player) return;
+        if (playToken !== state.playToken) { player.destroy(); return; }
+        state.cvp = player;
+        player.setSubOffset(state.subOffset);
+        video.play();
+      })
+      .catch(function (err) {
+        if (playToken !== state.playToken) return;
+        console.warn('[player-canvas] erro ao iniciar:', err);
+        clientHevcFallback('Não deu para decodificar no navegador (' + ((err && err.message) || 'erro') + '). Usando o servidor.', false);
+      });
+  }
+
   function renderPlayer() {
     var item = state.selected;
     if (!item) return;
@@ -1316,16 +1430,6 @@
     $('subOffsetInput').value = String(state.subOffset);
     $('subBar').hidden = true;
 
-    var params = new URLSearchParams();
-    params.set('id', String(item.id));
-    params.set('type', item.type);
-    params.set('s', String(season));
-    params.set('e', String(episode));
-    params.set('hevc', state.hevc && !state.forceTranscode ? '1' : '0');
-    params.set('start', String(startSeconds));
-    if (quality) params.set('res', quality);
-    if (item.title) params.set('title', item.title);
-
     state.pendingSeek = startSeconds;
     showOverlay('Extraindo o stream…', true);
     setStatus('working', 'Pedindo o vídeo ao servidor…');
@@ -1341,7 +1445,40 @@
       setStatus('working', 'Acordando o servidor (Render gratuito)…');
     }, 6000);
 
-    apiFetch('/api/stream?' + params.toString(), { signal: controller.signal })
+    // Navegador sem HEVC nativo: decodifica AQUI (player canvas: só precisa de WebAssembly, Worker e MediaSource).
+    var needsConversion = !state.hevc || state.forceTranscode;
+    var wantClient = needsConversion && !state.clientHevcOff && cvpSupported();
+
+    Promise.resolve(wantClient)
+      .then(function (useClient) {
+        if (playToken !== state.playToken) {
+          var cancelled = new Error('cancelado');
+          cancelled.name = 'AbortError';
+          throw cancelled;
+        }
+        state.useClient = useClient;
+
+        var params = new URLSearchParams();
+        params.set('id', String(item.id));
+        params.set('type', item.type);
+        params.set('s', String(season));
+        params.set('e', String(episode));
+        // hevc=1: o servidor entrega o HEVC original (sem ffmpeg); quem decodifica é o navegador.
+        params.set('hevc', useClient || (state.hevc && !state.forceTranscode) ? '1' : '0');
+        params.set('start', String(startSeconds));
+        if (useClient) {
+          // WebAssembly dá conta de ~480p na maioria dos aparelhos (720p se você escolher); cai sozinho para 360p se ficar lento.
+          var wanted = Number(quality) || 0;
+          var cap = wanted ? Math.min(wanted, 720) : 480;
+          if (state.clientRes === 360) cap = Math.min(cap, 360);   // já ficou lento uma vez: fica em 360p
+          params.set('res', String(cap));
+        } else if (quality) {
+          params.set('res', quality);
+        }
+        if (item.title) params.set('title', item.title);
+
+        return apiFetch('/api/stream?' + params.toString(), { signal: controller.signal });
+      })
       .then(function (response) {
         return response.json().catch(function () { return {}; }).then(function (data) {
           if (!response.ok || !data.url) {
@@ -1361,7 +1498,8 @@
         // No stream convertido o servidor já começa em "start": não buscar de novo.
         if (data.mode === 'hls' && data.transcoded) state.pendingSeek = 0;
         state.captions = Array.isArray(data.captions) ? data.captions : [];
-        addCaptions(state.captions);
+        var clientPlay = data.mode === 'direct' && state.useClient && /hevc|h265|hev1|hvc1/i.test(String(data.sourceCodec || data.codec || ''));
+        addCaptions(state.captions, clientPlay);
         populateSubLang(state.captions);
         applySavedSubLang(state.captions);
         $('subBar').hidden = state.captions.length === 0;
@@ -1371,6 +1509,8 @@
         if (data.mode === 'hls') {
           showOverlay(data.transcoded ? 'Convertendo para H.264…' : 'Carregando stream…', true);
           attachHls(apiUrl(data.url), video, data.transcoded ? 0 : startSeconds);
+        } else if (clientPlay) {
+          startClientHevc(apiUrl(data.url), startSeconds, video, playToken, data.quality + 'p · decodificado no seu navegador');
         } else if (data.mode === 'direct') {
           video.src = apiUrl(data.url);
           video.play().catch(function () {
@@ -1384,6 +1524,7 @@
         var details = [];
         details.push('Fonte: ' + (data.provider || 'desconhecida'));
         details.push(data.transcoded ? ('convertido para ' + data.quality + 'p') : ('qualidade ' + data.quality + 'p'));
+        if (state.lastMode === 'hevc-wasm') details.push('decodificado no seu navegador (não usa o servidor)');
         if (data.note) details.push(data.note);
         setStatus('ok', details.join(' · '));
       })
@@ -1611,6 +1752,7 @@
     if (!state.selected) return;
     var error = video.error;
     if (!error) return;
+    if (state.lastMode === 'hevc-wasm') return; // o player canvas trata (onFatal -> servidor)
     var messages = {
       1: 'Carregamento interrompido.',
       2: 'Erro de rede ao carregar o vídeo.',
