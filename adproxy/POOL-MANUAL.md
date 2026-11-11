@@ -2,7 +2,8 @@
 
 > O mesmo tutorial está na página do fdsFlix, no botão **⚙ Configs** (ou no cantinho de banda do topo).
 
-Cada conta Vercel (plano Hobby) tem a própria cota de transferência (~100 GB/mês).
+Cada conta Vercel (plano Hobby) tem a própria cota de transferência (~100 GB/mês, com este kit: o vídeo sai
+pelo Edge runtime, que não gasta o limite de 10 GB de *Fast Origin Transfer* das funções).
 Este kit é o projeto `adproxy` pronto para subir em **mais uma conta**: cada Vercel
 nova entra no pool do fdsFlix e soma outra cota.
 
@@ -32,7 +33,7 @@ Isso reparte a banda por igual, melhor que um sorteio puro.
 - O mesmo valor vale em todas as contas, então nada a guardar nem a configurar.
 - O segredo é público por decisão do dono: quem o souber consegue assinar URLs e usar a Vercel como
   proxy. Para trocar, defina `PROXY_SECRET` nas variáveis da Vercel (a variável manda mais que o
-  embutido) ou mude `BUILTIN_PROXY_SECRET` em `lib/config.js` e publique de novo.
+  embutido) ou mude `BUILTIN_PROXY_SECRET` em `lib/secret.js` e publique de novo.
   Trocar o segredo só obriga a recarregar um filme que estava tocando.
 
 ## O que tem no zip
@@ -84,7 +85,9 @@ USAGE_RESET_DAY=1
 ```
 
 - Cada Vercel nova: **acrescente a URL dela no fim** da lista e salve (o Render faz redeploy).
-- `VERCEL_QUOTA_GB` é a cota **de cada** Vercel. `USAGE_RESET_DAY` é o dia em que a cota
+- `VERCEL_QUOTA_GB` é a cota de uma Vercel com este kit (Edge). Uma Vercel **antiga** (sem `api/hls.js`) tem
+  limite efetivo de 10 GB e o Render a reconhece sozinho; para liberar os 100 GB basta rodar o
+  `deploy-vercel.sh` do kit novo na conta dela (a URL não muda). `USAGE_RESET_DAY` é o dia em que a cota
   renova (veja em *Usage* na Vercel).
 - O botão **⚙ Configs** da página tem um campo que monta essa linha pronta a partir das URLs.
 - Depois do redeploy, do seu PC (no repositório do fdsFlix): `npm run pool:check`.

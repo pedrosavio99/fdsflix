@@ -12,6 +12,7 @@ const GB = 1024 ** 3;
 const A = 'https://a.vercel.app';
 
 process.env.VIDSRC_PROXY_URLS = A;
+process.env.USAGE_CAPABILITY_PROBE = '0';
 process.env.VERCEL_QUOTA_GB = '100';
 process.env.USAGE_RESET_DAY = '1';
 process.env.SUPABASE_SECRET_KEY = 'sb_secret_teste';
@@ -144,6 +145,8 @@ test('estatísticas: média pelos dias com dado, ritmo dos últimos 7 dias e pre
     db.rows.set(`${isoDay(-i)}|${A}`, { day: isoDay(-i), base: A, measured_bytes: 10 * GB, adjust_bytes: 0, seconds: 18000, reports: 5 });
   }
   const ledger = freshLedger();
+  // esta conta de previsão assume uma Vercel que entrega pelo Edge (cota cheia de 100 GB)
+  await ledger.refreshCapabilities(async () => new Response(JSON.stringify({ adproxy: 'edge', v: 1 }), { status: 200 }));
   await settle();
   await ledger.pull();
   const s = ledger.analytics(30).summary;

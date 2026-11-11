@@ -126,6 +126,12 @@ VIDSRC_PROXY_URL=https://SEU-PROJETO.vercel.app     # liga: Vidsrc vira a 1ª fo
 
 - O vídeo **passa pela Vercel**: 1080p ≈ 2,2 GB/hora. O plano Hobby tem ~100 GB/mês
   de transferência (≈ 45 h de 1080p) e é de uso não comercial; confira os termos atuais.
+- **Edge × função Node:** `/vidsrc/hls` roda no Edge runtime (`api/hls.js` + `lib/edgeHls.mjs`, ligado por
+  `vercel.json`), que não conta *Fast Origin Transfer* (10 GB no Hobby). Na função Node (`lib/vidsrc.js`,
+  usada por deploys antigos, sem esse rewrite) cada byte conta nos dois limites e o de 10 GB trava
+  primeiro. `/vidsrc/stream` e `/vidsrc/probe` seguem na função Node (decifrar a lista usa WASM, que o Edge
+  não compila). O Edge gera o PRÓPRIO token do CDN: o IP de saída dele é outro e o token é amarrado ao /24.
+  `GET /vidsrc/hls?cap=1` devolve `{"adproxy":"edge"}` (é como o Render descobre qual é qual).
 - Medido (função na Vercel, região padrão `iad1`): 6–15× tempo real por usuário e
   3 usuários simultâneos sem erro. Rajada de 12+ segmentos paralelos no mesmo IP
   leva 429 do CDN, o que um player normal (1–2 por vez) não faz.

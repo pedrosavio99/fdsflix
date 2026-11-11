@@ -30,13 +30,32 @@ estar em **uma conta diferente**.
 > acumular cota pode ferir os termos da Vercel e levar à suspensão das contas. A decisão
 > e o risco são seus; este guia não esconde isso.
 
-Contas por GB (valores aproximados; confirme em *Usage* na sua conta):
+Contas por GB (valores aproximados; confirme em *Usage* na sua conta; vale para Vercels **no Edge**, veja a
+seção "Edge × função Node" abaixo: uma Vercel antiga rende 10 GB):
 
 | Vercels | Banda/mês | 1080p (≈ 2,2 GB/h) | Filmes de 2 h |
 | --- | --- | --- | --- |
 | 1 | 100 GB | ≈ 45 h | ≈ 22 |
 | 3 | 300 GB | ≈ 135 h | ≈ 68 |
 | 5 | 500 GB | ≈ 225 h | ≈ 113 |
+
+### Edge (100 GB) × função Node (10 GB): por que reenviar o kit
+
+O plano Hobby tem **dois** limites de banda: *Fast Data Transfer* (100 GB, o que sai para o navegador) e
+*Fast Origin Transfer* (10 GB, o que passa por uma **função**). Quando o vídeo passa por uma função Node,
+cada byte conta nos dois, e o de 10 GB trava primeiro: a conta rende **10 GB, não 100**. Se estourar, a
+Vercel pausa o projeto.
+
+O kit atual entrega o vídeo pelo **Edge runtime** (`api/hls.js`, ligado por `vercel.json`), que **não conta**
+Fast Origin Transfer (medido: 300 MB pelo Edge, FOT = 0). Assim a conta usa os 100 GB.
+
+- **Nada quebra com Vercels antigas.** A URL assinada tem o mesmo formato, então uma Vercel antiga (função Node)
+  e uma nova (Edge) convivem na mesma pool. Cada uma é classificada sozinha: o Render pergunta
+  `GET <vercel>/vidsrc/hls?cap=1` (a nova responde `{"adproxy":"edge"}`) a cada 10 min e usa a cota certa:
+  **100 GB** para Edge e **10 GB** para a antiga (`VERCEL_FOT_QUOTA_GB`, padrão 10). Enquanto não sabe, usa 10.
+- **Para liberar os 100 GB de uma Vercel antiga:** `bash deploy-vercel.sh` (ou `npx vercel deploy --prod --yes`)
+  com o kit novo, na conta dela. A URL não muda; em até 10 min o Render passa a tratá-la como Edge.
+- Na página, cada barra mostra `· Edge` ou `· função Node` ao lado do nome.
 
 Existe um segundo limite: **chamadas de função**. Cada segmento é uma chamada (um filme
 de 2 h ≈ 1.700). Confira o limite de *Function Invocations* em *Usage*; ele pode apertar
@@ -87,7 +106,8 @@ USAGE_RESET_DAY=1
 ```
 
 - Sem barra no fim, separadas por vírgula (espaço também serve).
-- `VERCEL_QUOTA_GB`: a cota **de cada** Vercel (vale a mesma para todas).
+- `VERCEL_QUOTA_GB`: a cota de uma Vercel que entrega pelo **Edge** (100 no Hobby). Vercels antigas (função
+  Node) usam `VERCEL_FOT_QUOTA_GB` (padrão 10), detectado sozinho por Vercel.
 - `USAGE_RESET_DAY`: dia do mês em que a cota renova. Veja em *Usage* na Vercel (o ciclo
   nem sempre começa no dia 1).
 - `VIDSRC_PROXY_URL` (uma só) continua funcionando e entra na mesma pool.

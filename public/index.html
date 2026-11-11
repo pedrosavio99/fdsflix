@@ -764,7 +764,7 @@
       <details class="cfg-sec" open>
         <summary>1 · Como funciona</summary>
         <div>
-          <p>Cada conta Vercel (plano Hobby) tem a própria cota de transferência (~100 GB/mês). O vídeo passa pela Vercel,
+          <p>Cada conta Vercel (plano Hobby) tem a própria cota de transferência (~100 GB/mês com o kit atual, que entrega pelo Edge; uma Vercel antiga rende 10 GB e é reconhecida sozinha: reenvie o kit para liberar). O vídeo passa pela Vercel,
             então cada conta nova no pool <strong>soma outra cota</strong>. Para cada filme/episódio o fdsFlix escolhe a Vercel
             com <strong>mais cota sobrando</strong> (sorteia só no empate); se ela falhar, tenta a próxima (até 3).
             Um filme inteiro sai de uma Vercel só.</p>
@@ -805,7 +805,7 @@ npx vercel login</pre></li>
           <pre id="cfgEnvLine">VIDSRC_PROXY_URLS=</pre>
           <div class="cfg-row"><button id="cfgCopyLine" class="ghost" type="button">Copiar a linha</button></div>
           <p id="cfgUrlMsg" role="status"></p>
-          <p>Mais duas variáveis no Render, uma vez só: <code>VERCEL_QUOTA_GB=100</code> (cota <strong>de cada</strong> Vercel) e <code>USAGE_RESET_DAY=1</code>
+          <p>Mais duas variáveis no Render, uma vez só: <code>VERCEL_QUOTA_GB=100</code> (cota de uma Vercel no Edge) e <code>USAGE_RESET_DAY=1</code>
             (dia em que a cota renova; veja em <em>Usage</em> na Vercel). Depois do redeploy, no seu PC: <code>npm run pool:check</code>.
             O botão <em>Testar Vidsrc/Vercel</em> do diagnóstico testa todas pelo servidor.</p>
         </div>
@@ -2017,7 +2017,8 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
       row.className = 'usage-row';
       var name = document.createElement('div');
       name.className = 'name';
-      var a = document.createElement('span'); a.textContent = p.label;
+      var a = document.createElement('span'); a.textContent = p.label + (p.tag ? ' · ' + p.tag : '');
+      if (p.tag && !p.edge) a.title = 'Esta Vercel ainda entrega o vídeo pela função Node: o limite efetivo é o Fast Origin Transfer (10 GB). Reenvie o kit (deploy-vercel.sh) para liberar os 100 GB.';
       var b = document.createElement('span');
       b.textContent = fmtBytes(used) + ' / ' + fmtBytes(p.quotaBytes) + ' (' + pct.toFixed(1) + '%)';
       name.appendChild(a); name.appendChild(b);

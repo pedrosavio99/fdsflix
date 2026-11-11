@@ -5,6 +5,10 @@
   "buildCommand": "npm install",
   "rewrites": [
     {
+      "source": "/vidsrc/hls",
+      "destination": "/api/hls"
+    },
+    {
       "source": "/(.*)",
       "destination": "/api/index.js"
     }

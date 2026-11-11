@@ -61,11 +61,15 @@ test('buildKit: leva o adproxy com as envs embutidas, sem segredos locais nem no
   const files = readZip(built.zip);
   const names = Object.keys(files);
 
-  for (const must of ['api/index.js', 'lib/app.js', 'lib/vidsrc.js', 'lib/config.js', 'vercel.json',
+  for (const must of ['api/index.js', 'api/hls.js', 'lib/edgeHls.mjs', 'lib/secret.js', 'lib/app.js', 'lib/vidsrc.js', 'lib/config.js', 'vercel.json',
     'package.json', 'POOL-MANUAL.md', 'deploy-vercel.sh', 'LEIA-ME.txt']) {
     assert.ok(files[`adproxy-kit/${must}`], `falta ${must}`);
   }
-  assert.match(files['adproxy-kit/lib/config.js'].data.toString(), /BUILTIN_PROXY_SECRET =\s*'[a-f0-9]{64}'/);
+  assert.match(files['adproxy-kit/lib/secret.js'].data.toString(), /BUILTIN_PROXY_SECRET =\s*'[a-f0-9]{64}'/);
+  // O vídeo sai pelo Edge: sem este rewrite (antes do catch-all) o kit voltaria a gastar Fast Origin Transfer.
+  const vercelJson = JSON.parse(files['adproxy-kit/vercel.json'].data.toString());
+  assert.deepEqual(vercelJson.rewrites[0], { source: '/vidsrc/hls', destination: '/api/hls' });
+  assert.match(files['adproxy-kit/api/hls.js'].data.toString(), /runtime:\s*'edge'/);
   assert.equal(files['adproxy-kit/deploy-vercel.sh'].mode, 0o755);
   assert.ok(!names.some((n) => /ENVS\.txt/.test(n)), 'não deve haver ENVS.txt');
   assert.ok(!names.some((n) => /node_modules|\/test\/|Dockerfile/.test(n)), 'arquivo que não devia entrar');
