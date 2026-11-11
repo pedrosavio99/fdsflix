@@ -118,13 +118,30 @@ uma **TOTAL** quando há mais de uma:
 O botão **"Testar Vidsrc/Vercel"** do painel de diagnóstico testa todas as Vercels da pool
 a partir do servidor e mostra o IP de saída e cada etapa.
 
+### Histórico no Supabase (médias, previsão, sobrevive a reinício)
+
+Sem Supabase o contador fica no disco do Render e some quando ele reinicia. Com o Supabase cada dia
+e cada Vercel viram **uma linha** (`vercel_usage_daily`, ~30 linhas por Vercel por mês), e a página
+passa a mostrar média por dia, ritmo dos últimos 7 dias, **previsão até a renovação**, quando a cota
+esgota e quantas Vercels a mais o ritmo atual pede, mais um gráfico de 30 dias e CSV.
+
+1. Supabase → *SQL Editor* → cole `supabase/usage-schema.sql` → *Run* (idempotente; o botão **Configs** copia o SQL).
+2. No Render: `SUPABASE_URL` e `SUPABASE_SECRET_KEY` (a secret key só no servidor, nunca no git/página).
+3. **Configs → Histórico → ⟳ Sincronizar agora**: o selo fica verde.
+
+Como funciona por dentro: o servidor soma em memória e envia em lote (soma atômica por dia/Vercel, a
+cada ~20 s quando há consumo); relê o banco a cada 10 min. Se o Supabase cair ou a tabela não existir,
+nada se perde: as somas ficam na fila (e no arquivo local) e sobem quando voltar. A renovação da cota
+**não zera nada**: o ciclo é uma janela de dias sobre o histórico, e a calibração grava só a diferença
+como ajuste (`adjust_bytes`), então não distorce as médias (que usam só `measured_bytes`).
+
 ### Isto é uma estimativa. Calibre de vez em quando
 
 Quem mede é o navegador (hls.js informa os bytes a cada 20 s e ao fechar a aba). Por isso:
 
 - Quem fecha o navegador sem enviar perde alguns segundos de contagem.
-- Se o Render reiniciar, o contador pode zerar (no plano gratuito o disco é apagado).
-  Para guardar de verdade, use um disco persistente do Render e `USAGE_FILE=/data/usage.json`.
+- Se o Render reiniciar, o contador pode zerar (no plano gratuito o disco é apagado). Resolva com o
+  Supabase (seção abaixo) ou um disco persistente do Render e `USAGE_FILE=/data/usage.json`.
 - **A fonte da verdade é a Vercel** (*Usage → Fast Data Transfer*). Para acertar o contador:
 
 ```bash

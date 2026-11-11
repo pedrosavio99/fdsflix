@@ -243,6 +243,30 @@
   .cfg-body pre{background:#0d0d14;border:1px solid var(--line);border-radius:8px;padding:.6rem .8rem;overflow:auto;font-size:.78rem;color:#cfd3e4;margin:.4rem 0}
   .cfg-body textarea{width:100%;background:var(--panel-2);border:1px solid var(--line);border-radius:8px;color:var(--text);padding:.55rem .7rem;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.78rem;resize:vertical}
   #cfgEnvLine{white-space:pre-wrap;word-break:break-all;overflow:visible}
+  .st-status{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;margin:.2rem 0 .6rem;font-size:.8rem}
+  .st-pill{display:inline-block;padding:.12rem .55rem;border-radius:999px;font-weight:700;font-size:.72rem;background:#2a2a3a;color:var(--text)}
+  .st-pill.ok{background:#12351f;color:#7ee2a8}
+  .st-pill.warn{background:#3a2d0a;color:#ffd27a}
+  .st-pill.err{background:#3b1414;color:#ff9d9d}
+  .st-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.5rem;margin:.5rem 0}
+  .st-k{background:rgba(0,0,0,.22);border:1px solid var(--line);border-radius:10px;padding:.5rem .65rem}
+  .st-k .l{font-size:.7rem;color:var(--muted)}
+  .st-k .v{font-size:1.05rem;font-weight:700;color:var(--text);margin:.1rem 0}
+  .st-k .v.bad{color:#ff9d9d}
+  .st-k .s{font-size:.7rem;color:var(--muted)}
+  .st-chart{position:relative;margin:.7rem 0 .2rem 2.4rem;height:130px}
+  .st-grid{position:absolute;left:0;right:0;border-top:1px solid #23232f}
+  .st-grid span{position:absolute;left:-2.4rem;top:-.55rem;width:2rem;text-align:right;font-size:.65rem;color:#7d8597}
+  .st-bars{position:absolute;inset:0;display:flex;align-items:flex-end;gap:2px}
+  .st-col{flex:1;height:100%;display:flex;align-items:flex-end;cursor:default;min-width:0}
+  .st-bar{width:100%;background:#3d7be0;border-radius:3px 3px 0 0;min-height:0}
+  .st-col:hover .st-bar,.st-col:focus .st-bar{background:#6aa0ff}
+  .st-col.today .st-bar{background:#7ee2a8}
+  .st-tip{position:absolute;z-index:2;pointer-events:none;background:#211f2e;border:1px solid var(--line);border-radius:6px;padding:.25rem .5rem;font-size:.72rem;white-space:nowrap;color:var(--text);transform:translate(-50%,-110%)}
+  .st-axis{display:flex;justify-content:space-between;margin:.15rem 0 .4rem 2.4rem;font-size:.66rem;color:#7d8597}
+  .st-table{width:100%;border-collapse:collapse;font-size:.76rem;margin:.4rem 0}
+  .st-table th,.st-table td{text-align:left;padding:.2rem .4rem;border-bottom:1px solid var(--line);color:var(--muted)}
+  .st-table td:last-child,.st-table th:last-child{text-align:right}
   details.cfg-sec{border:1px solid var(--line);border-radius:10px;margin:.6rem 0;background:rgba(0,0,0,.18)}
   details.cfg-sec>summary{cursor:pointer;padding:.55rem .8rem;font-weight:700;font-size:.9rem}
   details.cfg-sec>div{padding:0 .9rem .8rem}
@@ -478,6 +502,27 @@
         <p id="cfgBwNote"></p>
       </div>
 
+      <details class="cfg-sec" open id="stSec">
+        <summary>📊 Histórico e previsão de consumo</summary>
+        <div>
+          <div class="st-status"><span id="stPill" class="st-pill">…</span><span id="stMsg"></span></div>
+          <div id="stKpis" class="st-kpis"></div>
+          <div id="stChartWrap" hidden>
+            <p><strong>GB por dia, todas as Vercels (últimos 30 dias)</strong></p>
+            <div id="stChart" class="st-chart" role="img" aria-label="Gráfico de barras: GB consumidos por dia nos últimos 30 dias"></div>
+            <div class="st-axis"><span id="stAxL"></span><span id="stAxM"></span><span id="stAxR"></span></div>
+            <details><summary>Ver como tabela</summary><table class="st-table" id="stTable"></table></details>
+          </div>
+          <p id="stEmpty">Ainda não há consumo registrado. Assim que alguém assistir, o histórico começa a aparecer aqui.</p>
+          <div class="cfg-row">
+            <button id="stSync" class="ghost" type="button" title="Envia o que falta ao Supabase e relê o histórico">⟳ Sincronizar agora</button>
+            <button id="stCsv" class="ghost" type="button">⬇ Baixar CSV (planilha)</button>
+          </div>
+          <p>Como ler: a média usa os dias que já têm dado (não divide por 30 se o histórico é novo); o <em>ritmo atual</em> é a média dos últimos 7 dias; a
+            <em>previsão</em> é o usado no ciclo + ritmo × dias até renovar. Tudo é estimativa dos navegadores, acertada pela calibração (seção 6).</p>
+        </div>
+      </details>
+
       <details class="cfg-sec" open>
         <summary>1 · Como funciona</summary>
         <div>
@@ -539,8 +584,28 @@ npx vercel login</pre></li>
         </div>
       </details>
 
+      <details class="cfg-sec" id="sbSec">
+        <summary>5 · Guardar o histórico no Supabase</summary>
+        <div>
+          <p>Sem isso o contador vive no disco do Render e <strong>some quando ele reinicia</strong>. Com o Supabase o histórico fica, e as médias e previsões acima passam a valer de verdade.
+            É uma tabela minúscula (1 linha por dia e por Vercel, ~30 por mês cada) e uma função de soma; o custo no Supabase é praticamente zero.</p>
+          <ol>
+            <li>No Supabase: <em>SQL Editor → New query</em>, cole o SQL abaixo e clique <em>Run</em> (pode rodar de novo sem problema):
+              <div class="cfg-row"><button id="sbCopySql" class="ghost" type="button">Copiar o SQL</button></div>
+              <p id="sbSqlMsg" role="status"></p></li>
+            <li>No Render → <em>Environment</em>, duas variáveis (a chave é <strong>secreta</strong>: só no servidor, nunca na página, nunca no git):
+              <pre>SUPABASE_URL=https://SEU-PROJETO.supabase.co
+SUPABASE_SECRET_KEY=sb_secret_...</pre>
+              A secret key está em <em>Project Settings → API Keys</em>. Salve e espere o redeploy.</li>
+            <li>Volte aqui e clique <strong>⟳ Sincronizar agora</strong> no quadro de histórico: o selo deve ficar verde (<em>Supabase conectado</em>).</li>
+          </ol>
+          <p>A tabela tem RLS ligado e sem policies: só a secret key do servidor lê e escreve (a chave publicável não enxerga nada).
+            Mudar de Vercel, adicionar contas ou a renovação da cota não apaga histórico: o ciclo é só uma janela sobre os dias gravados. Dias com mais de 400 dias são apagados sozinhos.</p>
+        </div>
+      </details>
+
       <details class="cfg-sec">
-        <summary>5 · A banda é estimativa: acertar com o número real</summary>
+        <summary>6 · A banda é estimativa: acertar com o número real</summary>
         <div>
           <p>O cantinho de banda é medido pelos navegadores (hls.js informa os bytes). Quem fecha a aba sem enviar, ou um reinício do Render sem disco persistente (<code>USAGE_FILE=/data/usage.json</code>), faz o número divergir.
             A fonte da verdade é a Vercel: <em>Usage → Fast Data Transfer</em>. Digite o valor de lá aqui para acertar o contador:</p>
@@ -555,14 +620,14 @@ npx vercel login</pre></li>
       </details>
 
       <details class="cfg-sec">
-        <summary>6 · Atualizar o código depois</summary>
+        <summary>7 · Atualizar o código depois</summary>
         <div>
           <p>Baixe um kit novo e rode <code>bash deploy-vercel.sh</code> em cada conta (<code>logout</code>/<code>login</code> entre elas).</p>
         </div>
       </details>
 
       <details class="cfg-sec">
-        <summary>7 · Problemas comuns</summary>
+        <summary>8 · Problemas comuns</summary>
         <div>
           <ol>
             <li><strong>404 "deployment not found":</strong> URL errada ou projeto apagado. Copie a de produção em <em>Domains</em>.</li>
@@ -570,6 +635,7 @@ npx vercel login</pre></li>
             <li><strong>403 "URL não assinada pelo proxy":</strong> o <code>PROXY_SECRET</code> mudou com o player aberto. Recarregue o título.</li>
             <li><strong>O script falha em <code>link</code>/<code>deploy</code>:</strong> CLI antiga ou não logado. <code>npx vercel@latest login</code> e rode de novo.</li>
             <li><strong>Uma Vercel nunca é escolhida:</strong> está ≥ 98 % ou falhando. Veja o diagnóstico e rode <code>pool:check</code>.</li>
+            <li><strong>Selo do histórico vermelho:</strong> leia a mensagem ao lado dele. "tabelas não criadas" = rode o SQL (seção 5); "chave recusada" = confira <code>SUPABASE_SECRET_KEY</code> no Render.</li>
             <li><strong>Esgotou antes pelas chamadas de função:</strong> o limite <em>Function Invocations</em> aperta antes da banda. Confira em <em>Usage</em>.</li>
           </ol>
         </div>
@@ -1650,6 +1716,11 @@ npx vercel login</pre></li>
     top.appendChild(b);
     top.appendChild(document.createTextNode(' livres de ' + fmtBytes(quota)));
     $('bwSub').textContent = pool.length + ' Vercel' + (pool.length > 1 ? 's' : '') + ' · ' + pct.toFixed(1) + '% usado · renova em ' + d.daysLeft + ' d · estimativa';
+    var st = d.stats;
+    if (st && st.willExhaustBeforeReset && st.exhaustDate) {
+      $('bwSub').textContent = '⚠ no ritmo atual esgota em ' + st.exhaustDate.slice(8, 10) + '/' + st.exhaustDate.slice(5, 7) + ' (renova em ' + d.daysLeft + ' d)';
+    }
+    el.title = 'Banda das Vercels (estimativa)' + (st ? '. Ritmo: ' + st.rateGbPerDay + ' GB/dia · previsão até renovar: ' + st.projectedCycleGb + ' de ' + st.totalQuotaGb + ' GB' : '') + '. Clique para abrir Configs.';
     $('bwFill').style.width = pct + '%';
     el.className = 'bw' + (pct >= 85 ? ' crit' : (pct >= 60 ? ' warn' : ''));
   }
@@ -3912,6 +3983,7 @@ npx vercel login</pre></li>
       status('');
       paintCfgBw();
       usageRefresh().then(paintCfgBw);
+      loadStats();
       apiFetch('/api/pool/info')
         .then(function (r) { return r.ok ? r.json() : null; })
         .then(function (info) {
@@ -4032,6 +4104,137 @@ npx vercel login</pre></li>
           });
         })
         .catch(function (err) { msg.textContent = 'Não consegui acertar: ' + err.message; });
+    });
+
+
+    /* ---------- Histórico e previsão (Supabase) ---------- */
+    var GBY = 1073741824;
+    function fmtDay(d) { var p = String(d).split('-'); return p[2] + '/' + p[1]; }
+    function niceMax(v) {
+      if (v <= 0) return 1;
+      var pow = Math.pow(10, Math.floor(Math.log(v) / Math.LN10));
+      var f = v / pow;
+      return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * pow;
+    }
+    function kpi(label, value, sub, bad) {
+      var box = document.createElement('div'); box.className = 'st-k';
+      var l = document.createElement('div'); l.className = 'l'; l.textContent = label;
+      var v = document.createElement('div'); v.className = 'v' + (bad ? ' bad' : ''); v.textContent = value;
+      var s = document.createElement('div'); s.className = 's'; s.textContent = sub || '';
+      box.appendChild(l); box.appendChild(v); box.appendChild(s);
+      return box;
+    }
+    function paintStorage(st) {
+      var pill = $('stPill'), msg = $('stMsg');
+      if (!st) { pill.className = 'st-pill'; pill.textContent = '…'; msg.textContent = ''; return; }
+      if (!st.configured) {
+        pill.className = 'st-pill warn'; pill.textContent = 'SÓ NO SERVIDOR';
+        msg.textContent = 'Sem Supabase: o histórico some quando o Render reinicia. Veja a seção 5.';
+      } else if (st.ok) {
+        pill.className = 'st-pill ok'; pill.textContent = 'SUPABASE CONECTADO';
+        msg.textContent = st.pendingRows ? st.pendingRows + ' linha(s) aguardando envio.' :
+          (st.lastFlushAt ? 'último envio ' + new Date(st.lastFlushAt).toLocaleTimeString() : 'histórico carregado.');
+      } else {
+        pill.className = 'st-pill err'; pill.textContent = st.tablesMissing ? 'TABELAS NÃO CRIADAS' : 'SUPABASE COM PROBLEMA';
+        msg.textContent = (st.error || 'ainda sincronizando…') + (st.pendingRows ? ' · ' + st.pendingRows + ' linha(s) guardadas, nada se perde.' : '');
+      }
+    }
+    function paintStats(a) {
+      var s = a.summary;
+      paintStorage(a.storage);
+      var k = $('stKpis'); k.innerHTML = '';
+      var hasData = a.activeDays > 0;
+      k.appendChild(kpi('Média por dia (30 d)', s.avgGbPerDay + ' GB', a.activeDays + ' dia(s) com dado'));
+      k.appendChild(kpi('Ritmo atual (7 d)', s.rateGbPerDay + ' GB/dia', s.hoursWatched + ' h assistidas em 30 d'));
+      k.appendChild(kpi('Previsão até renovar', s.projectedCycleGb + ' GB', 'de ' + s.totalQuotaGb + ' GB · renova em ' + s.daysLeft + ' d', s.projectedCycleGb > s.totalQuotaGb));
+      var ex = !hasData || s.rateGbPerDay <= 0 ? ['sem consumo', ''] :
+        (s.willExhaustBeforeReset ? ['~' + s.daysToExhaust + ' dias', 'em ' + fmtDay(s.exhaustDate) + ', antes de renovar'] : ['só após renovar', 'a cota dura até lá']);
+      k.appendChild(kpi('Cota esgota em', ex[0], ex[1], s.willExhaustBeforeReset));
+      k.appendChild(kpi('Vercels a mais', s.extraVercelsNeeded ? '+' + s.extraVercelsNeeded : 'nenhuma', s.extraVercelsNeeded ? 'para o ritmo atual caber no ciclo' : 'a pool atual comporta o ritmo', s.extraVercelsNeeded > 0));
+      k.appendChild(kpi('GB por hora de vídeo', s.gbPerHour === null ? 'estimando' : s.gbPerHour + ' GB/h', s.peakDay ? 'pico: ' + s.peakDay.gb + ' GB em ' + fmtDay(s.peakDay.day) : 'precisa de 10 min medidos'));
+
+      $('stChartWrap').hidden = !hasData;
+      $('stEmpty').hidden = hasData;
+      if (!hasData) return;
+      var max = 0;
+      a.series.forEach(function (d) { if (d.bytes > max) max = d.bytes; });
+      var top = niceMax(max / GBY);
+      var chart = $('stChart'); chart.innerHTML = '';
+      [0, 0.5, 1].forEach(function (f) {
+        var g = document.createElement('div'); g.className = 'st-grid'; g.style.bottom = (f * 100) + '%';
+        if (f > 0) g.style.borderTopColor = '#23232f';
+        var lab = document.createElement('span'); lab.textContent = (top * f).toFixed(top < 5 ? 1 : 0);
+        g.appendChild(lab); chart.appendChild(g);
+      });
+      var bars = document.createElement('div'); bars.className = 'st-bars';
+      var tip = document.createElement('div'); tip.className = 'st-tip'; tip.hidden = true;
+      var last = a.series.length - 1;
+      a.series.forEach(function (d, i) {
+        var col = document.createElement('div'); col.className = 'st-col' + (i === last ? ' today' : ''); col.tabIndex = 0;
+        var txt = fmtDay(d.day) + ' · ' + (d.bytes / GBY).toFixed(2) + ' GB';
+        col.setAttribute('aria-label', txt);
+        var bar = document.createElement('div'); bar.className = 'st-bar';
+        bar.style.height = d.bytes > 0 ? Math.max(2, d.bytes / GBY / top * 100) + '%' : '0';
+        col.appendChild(bar);
+        var show = function () {
+          tip.textContent = txt; tip.hidden = false;
+          tip.style.left = Math.min(Math.max(col.offsetLeft + col.offsetWidth / 2, 50), chart.clientWidth - 50) + 'px';
+          tip.style.top = (bar.offsetTop > 0 ? bar.offsetTop : chart.clientHeight - 2) + 'px';
+        };
+        col.addEventListener('mouseenter', show); col.addEventListener('focus', show);
+        col.addEventListener('mouseleave', function () { tip.hidden = true; });
+        col.addEventListener('blur', function () { tip.hidden = true; });
+        bars.appendChild(col);
+      });
+      chart.appendChild(bars); chart.appendChild(tip);
+      $('stAxL').textContent = fmtDay(a.series[0].day);
+      $('stAxM').textContent = fmtDay(a.series[Math.floor(last / 2)].day);
+      $('stAxR').textContent = fmtDay(a.series[last].day) + ' (hoje)';
+      var tb = $('stTable'); tb.innerHTML = '<tr><th>Dia</th><th>GB</th></tr>';
+      a.series.slice().reverse().forEach(function (d) {
+        var tr = document.createElement('tr');
+        var c1 = document.createElement('td'); c1.textContent = d.day;
+        var c2 = document.createElement('td'); c2.textContent = (d.bytes / GBY).toFixed(2);
+        tr.appendChild(c1); tr.appendChild(c2); tb.appendChild(tr);
+      });
+    }
+    function loadStats() {
+      return apiFetch('/api/usage/stats?days=30')
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (a) { if (a) paintStats(a); else paintStorage(null); })
+        .catch(function () { paintStorage(null); });
+    }
+    $('stSync').addEventListener('click', function () {
+      var btn = $('stSync'); btn.disabled = true; $('stMsg').textContent = 'Sincronizando…';
+      apiFetch('/api/usage/sync', { method: 'POST' })
+        .then(function (r) { return r.json().catch(function () { return {}; }); })
+        .then(function (out) { if (out.storage) paintStorage(out.storage); if (out.error) $('stMsg').textContent = out.error; return loadStats(); })
+        .catch(function (err) { $('stMsg').textContent = 'Falhou: ' + err.message; })
+        .then(function () { btn.disabled = false; });
+    });
+    $('stCsv').addEventListener('click', function () {
+      apiFetch('/api/usage/stats?days=90&format=csv')
+        .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.blob(); })
+        .then(function (blob) {
+          var url = URL.createObjectURL(blob), a = document.createElement('a');
+          a.href = url; a.download = 'fdsflix-consumo-vercels.csv';
+          document.body.appendChild(a); a.click(); a.remove();
+          setTimeout(function () { URL.revokeObjectURL(url); }, 10000);
+        })
+        .catch(function (err) { $('stMsg').textContent = 'Não consegui baixar o CSV: ' + err.message; });
+    });
+    $('sbCopySql').addEventListener('click', function () {
+      var msg = $('sbSqlMsg');
+      apiFetch('/api/usage/schema')
+        .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
+        .then(function (sql) {
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            return navigator.clipboard.writeText(sql).then(function () { msg.textContent = 'SQL copiado (' + sql.split('\n').length + ' linhas). Cole no SQL Editor e clique Run.'; },
+              function () { window.prompt('Copie o SQL:', sql); });
+          }
+          window.prompt('Copie o SQL:', sql);
+        })
+        .catch(function (err) { msg.textContent = 'Não consegui buscar o SQL: ' + err.message; });
     });
 
     $('cfgDownload').addEventListener('click', function () {

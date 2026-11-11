@@ -5,6 +5,8 @@ const os = require('node:os');
 const path = require('node:path');
 const { test } = require('node:test');
 
+delete process.env.SUPABASE_URL;
+delete process.env.SUPABASE_SECRET_KEY;
 process.env.USAGE_FILE = path.join(os.tmpdir(), `fdsflix-usage-${process.pid}.json`);
 process.env.VIDSRC_PROXY_URLS = 'https://a.vercel.app/, https://b.vercel.app';
 process.env.VIDSRC_PROXY_URL = 'https://a.vercel.app';

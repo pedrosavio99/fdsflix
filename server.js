@@ -663,6 +663,40 @@ app.post('/api/usage', (req, res) => {
   res.json({ ok: true, accepted });
 });
 
+// Histórico e médias (últimos N dias, só o medido). ?format=csv devolve planilha.
+app.get('/api/usage/stats', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const days = Math.max(1, Math.min(120, Number(req.query.days) || 30));
+  if (String(req.query.format || '') === 'csv') {
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="fdsflix-consumo-vercels.csv"');
+    return res.send(usageLedger.toCsv(days));
+  }
+  res.json({ ...usageLedger.analytics(days), storage: usageLedger.storageStatus() });
+});
+
+// "Sincronizar agora": envia o que falta ao Supabase, relê o histórico e devolve o estado.
+let lastUsageSync = 0;
+app.post('/api/usage/sync', async (req, res) => {
+  if (Date.now() - lastUsageSync < 5000) {
+    return res.status(429).json({ ok: false, error: 'Espere alguns segundos.', storage: usageLedger.storageStatus() });
+  }
+  lastUsageSync = Date.now();
+  res.setHeader('Cache-Control', 'no-store');
+  res.json(await usageLedger.syncNow());
+});
+
+// SQL das tabelas (para colar no SQL Editor do Supabase).
+app.get('/api/usage/schema', (req, res) => {
+  try {
+    res.type('text/plain; charset=utf-8').send(
+      fs.readFileSync(path.join(__dirname, 'supabase', 'usage-schema.sql'), 'utf8')
+    );
+  } catch (err) {
+    res.status(404).type('text').send('supabase/usage-schema.sql não está neste servidor.');
+  }
+});
+
 // Acerta o contador com o número do painel da Vercel. Exige API_KEY configurada.
 app.post('/api/usage/calibrate', (req, res) => {
   if (!API_KEY) return res.status(403).json({ error: 'Defina API_KEY no servidor para usar a calibração.' });
