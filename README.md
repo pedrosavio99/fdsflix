@@ -184,7 +184,8 @@ O player guarda, no `localStorage` do navegador, **título, temporada/episódio 
 | `GET /api/search?q=` | Busca no TMDB |
 | `GET /api/stream?id=&type=&s=&e=&res=&start=&hevc=&direct=` | Escolhe stream direto ou HLS transcodificado, legendas e sessão; `direct=1` devolve a URL original para a extensão |
 | `GET /api/proxy?t=` | Proxy do arquivo de vídeo (Range/206) |
-| `GET /api/subtitle?t=&shift=` | Legenda em WebVTT (`shift` em segundos, opcional) |
+| `GET /api/subtitle?t=&shift=` | Legenda em WebVTT (`shift` em segundos, opcional); o token da faixa "tradução automática" devolve a legenda já em PT-BR |
+| `GET /api/season?id=&n=` | Episódios da temporada (nome, sinopse, duração, imagem) para a lista do player |
 | `GET /hls/:id/index.m3u8` | Playlist HLS gerada pelo ffmpeg |
 | `GET /api/health` | Status do servidor, ffmpeg e sessões ativas |
 
@@ -249,8 +250,18 @@ docs/DEPLOY-RENDER.md  Guia do Render + Vercel (passo a passo)
   em `-start` segundos. Antes ela ficava exatamente o tempo do salto fora de
   sincronia (ex.: começar em 10 min deixava a legenda 600 s adiantada).
 - **Idioma:** a barra abaixo do player tem um seletor **Legenda** (Desligada /
-  Português / English / …), sincronizado com o menu CC nativo. A escolha é salva
-  por título no `localStorage`.
+  Português / English / …), sincronizado com o menu CC. O padrão é **português (BR)**;
+  quando o usuário escolhe outro idioma (ou desliga), a preferência fica salva no
+  navegador (`localStorage`, chave `fdsflix.sub.pref`) e vale para todos os títulos.
+- **Tradução automática (grátis, sem chave):** se a faixa não tem legenda em
+  português, o servidor baixa a de origem (inglês de preferência), traduz **só o
+  texto** de cada fala e serve como `Português (Brasil) · tradução automática`.
+  Os tempos não são tocados, então a sincronia (e o ajuste manual) é idêntica à da
+  original. Usa os endpoints gratuitos do Google Tradutor, com reserva automática
+  entre eles; `LIBRETRANSLATE_URL` (opcional) adiciona uma instância LibreTranslate
+  própria como 3º reserva. A tradução é feita só quando alguém abre a faixa e fica
+  em cache. Se o provedor limitar, a legenda sai com o texto original nas falas que
+  falharam (e não é guardada em cache, para tentar de novo). Código: `lib/translate.js`.
 - **Manual:** a mesma barra tem o ajuste de **Sincronia**
   (`−0,5s` / `+0,5s` / campo livre / `0`). Valores positivos atrasam a legenda.
   O ajuste também é salvo por título e sobrevive a recarregar a página.

@@ -5,6 +5,7 @@ require('dotenv').config({ quiet: true });
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 
 const { getVidLinkStream, probeVideo } = require('./lib/streamExtractor');
 const { getFallbackStream, getProviderList, getCineProReport } = require('./lib/fallbackCascade');
@@ -22,6 +23,7 @@ const {
 } = require('./lib/transcoder');
 const { proxyVideo, USER_AGENT, TOKEN_TTL_MS } = require('./lib/proxy');
 const { srtToVtt, shiftVtt, decodeSubtitle, stripSpamCues, analyzeVtt } = require('./lib/subtitles');
+const { translateVtt } = require('./lib/translate');
 const registry = require('./lib/registry');
 const usageLedger = require('./lib/usageLedger');
 const poolKit = require('./lib/poolKit');
@@ -204,16 +206,52 @@ function pickQualityKeyAtMost(qualities, limit) {
   return available[available.length - 1].key;
 }
 
+// Idioma-base para traduzir quando a faixa não tem legenda em português: inglês primeiro
+// (é a que as fontes mais têm e a que melhor traduz), depois idiomas próximos.
+const TRANSLATE_SOURCE_ORDER = ['en', 'es', 'fr', 'it', 'de'];
+const TRANSLATE_TARGET = 'pt';
+const TRANSLATE_LABEL = 'Português (Brasil) · tradução automática';
+
 function buildCaptions(rawCaptions, autoShift = 0) {
   const captions = (Array.isArray(rawCaptions) ? rawCaptions : []).map((caption) => {
-    const token = registry.register('subtitle', { url: caption.url, autoShift, lang: normalizeLang(caption.language) }, TOKEN_TTL_MS);
+    const lang = normalizeLang(caption.language);
+    const token = registry.register('subtitle', { url: caption.url, autoShift, lang }, TOKEN_TTL_MS);
     return {
       label: caption.language || 'Legenda',
-      srclang: normalizeLang(caption.language),
+      srclang: lang,
       default: false,
       url: `/api/subtitle?t=${token}`
     };
   });
+
+  // Tradução automática para PT-BR: o servidor baixa a legenda de origem e troca só o texto,
+  // sem mexer nos tempos (continua sincronizada). Só é feita quando alguém abre a faixa.
+  const hasPt = captions.some((caption) => caption.srclang === TRANSLATE_TARGET);
+  const sources = (Array.isArray(rawCaptions) ? rawCaptions : []).filter((c) => c && c.url && normalizeLang(c.language) !== TRANSLATE_TARGET);
+  if (sources.length) {
+    const rank = (c) => {
+      const i = TRANSLATE_SOURCE_ORDER.indexOf(normalizeLang(c.language));
+      return i === -1 ? TRANSLATE_SOURCE_ORDER.length : i;
+    };
+    const source = sources.slice().sort((a, b) => rank(a) - rank(b))[0];
+    const token = registry.register('subtitle', {
+      url: source.url,
+      autoShift,
+      lang: normalizeLang(source.language),
+      translateTo: TRANSLATE_TARGET
+    }, TOKEN_TTL_MS);
+    const translated = {
+      label: TRANSLATE_LABEL,
+      srclang: TRANSLATE_TARGET,
+      translated: true,
+      from: normalizeLang(source.language),
+      default: false,
+      url: `/api/subtitle?t=${token}`
+    };
+    // Sem PT nativo: a tradução vira a primeira opção (e o padrão). Com PT nativo: fica no fim,
+    // como reserva caso o arquivo nativo venha quebrado/incompleto.
+    if (hasPt) captions.push(translated); else captions.unshift(translated);
+  }
 
   const preferred =
     captions.find((caption) => caption.srclang === 'pt') ||
@@ -379,6 +417,53 @@ app.get('/api/details', requireApiKey, async (req, res) => {
 
   detailsCache.set(key, { value, expires: Date.now() + DETAILS_TTL_MS });
   if (detailsCache.size > 300) detailsCache.delete(detailsCache.keys().next().value);
+  res.json(value);
+});
+
+// Episódios de uma temporada (nome, sinopse curta, duração, imagem) para a lista do player.
+const seasonCache = new Map();
+
+app.get('/api/season', requireApiKey, async (req, res) => {
+  const id = String(req.query.id || '');
+  const n = Number(req.query.n);
+  if (!/^\d+$/.test(id) || !Number.isInteger(n) || n < 0 || n > 200) {
+    return res.status(400).json({ error: 'id/n inválidos' });
+  }
+  if (!TMDB_API_KEY) return res.status(503).json({ error: 'TMDB_API_KEY não configurada' });
+
+  const key = `${id}:${n}`;
+  const cached = seasonCache.get(key);
+  if (cached && cached.expires > Date.now()) return res.json(cached.value);
+
+  const data = await tmdbFetch(`/tv/${id}/season/${n}`);
+  if (!data) return res.status(502).json({ error: 'Falha ao consultar o TMDB' });
+
+  let list = data.episodes || [];
+  // Sinopse/nome que faltam em português: completa com o inglês (melhor que vazio).
+  if (list.some((ep) => !ep.overview || !ep.name)) {
+    const en = await tmdbFetch(`/tv/${id}/season/${n}`, 'en-US');
+    const byNumber = new Map(((en && en.episodes) || []).map((ep) => [ep.episode_number, ep]));
+    list = list.map((ep) => {
+      const fb = byNumber.get(ep.episode_number) || {};
+      return { ...ep, name: ep.name || fb.name || '', overview: ep.overview || fb.overview || '' };
+    });
+  }
+
+  const value = {
+    n,
+    name: data.name || '',
+    episodes: list.map((ep) => ({
+      e: ep.episode_number,
+      name: ep.name || '',
+      overview: String(ep.overview || '').slice(0, 280),
+      runtime: ep.runtime || 0,
+      still: ep.still_path || '',
+      air: ep.air_date || ''
+    }))
+  };
+
+  seasonCache.set(key, { value, expires: Date.now() + DETAILS_TTL_MS });
+  if (seasonCache.size > 400) seasonCache.delete(seasonCache.keys().next().value);
   res.json(value);
 });
 
@@ -1204,31 +1289,86 @@ app.get('/api/hls-proxy', async (req, res) => {
 });
 
 // Baixa, decodifica (UTF-8 ou página de código legada), limpa propaganda e converte para
-// WebVTT uma vez; trocar o atraso depois não refaz o download.
+// WebVTT uma vez; trocar o atraso depois não refaz o download. Guardado por URL de origem:
+// a faixa original e a traduzida (e recarregar o player) compartilham o mesmo download.
+const SOURCE_TTL_MS = 30 * 60 * 1000;
+const SOURCE_MAX = 80;
+const subtitleSources = new Map(); // url -> { promise, at }
+
+function fetchSubtitleSource(url, lang) {
+  const hit = subtitleSources.get(url);
+  if (hit && Date.now() - hit.at < SOURCE_TTL_MS) return hit.promise;
+
+  const promise = (async () => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 15000);
+    try {
+      const response = await fetch(url, {
+        signal: controller.signal,
+        headers: { 'User-Agent': USER_AGENT }
+      });
+      if (!response.ok) {
+        const err = new Error(`Falha ao baixar legenda (HTTP ${response.status})`);
+        err.status = 502;
+        throw err;
+      }
+      const text = decodeSubtitle(Buffer.from(await response.arrayBuffer()), lang);
+      const vtt = /^\s*\uFEFF?WEBVTT/.test(text) ? text : srtToVtt(text);
+      const cleaned = stripSpamCues(vtt);
+      return {
+        vtt: cleaned.vtt,
+        spamRemoved: cleaned.removed,
+        info: { ...analyzeVtt(cleaned.vtt), spamRemoved: cleaned.removed }
+      };
+    } finally {
+      clearTimeout(timer);
+    }
+  })();
+
+  subtitleSources.set(url, { promise, at: Date.now() });
+  promise.catch(() => { if (subtitleSources.get(url)?.promise === promise) subtitleSources.delete(url); });
+  while (subtitleSources.size > SOURCE_MAX) subtitleSources.delete(subtitleSources.keys().next().value);
+  return promise;
+}
+
 async function loadSubtitleVtt(entry) {
   if (entry.vtt) return entry;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 15000);
-  try {
-    const response = await fetch(entry.url, {
-      signal: controller.signal,
-      headers: { 'User-Agent': USER_AGENT }
-    });
-    if (!response.ok) {
-      const err = new Error(`Falha ao baixar legenda (HTTP ${response.status})`);
-      err.status = 502;
-      throw err;
-    }
-    const text = decodeSubtitle(Buffer.from(await response.arrayBuffer()), entry.lang);
-    const vtt = /^\s*\uFEFF?WEBVTT/.test(text) ? text : srtToVtt(text);
-    const cleaned = stripSpamCues(vtt);
-    entry.vtt = cleaned.vtt;
-    entry.spamRemoved = cleaned.removed;
-    entry.info = { ...analyzeVtt(entry.vtt), spamRemoved: cleaned.removed };
-    return entry;
-  } finally {
-    clearTimeout(timer);
+  const source = await fetchSubtitleSource(entry.url, entry.lang);
+  entry.vtt = source.vtt;
+  entry.spamRemoved = source.spamRemoved;
+  // Tradução não muda nº de falas nem tempos: o diagnóstico da origem vale para ela.
+  entry.info = source.info;
+  return entry;
+}
+
+// Tradução pronta (por conteúdo da legenda + idioma). Pedidos simultâneos da mesma legenda
+// esperam a mesma tradução em vez de disparar outra. Só guarda se saiu completa.
+const TRANSLATION_MAX = 60;
+const translations = new Map(); // chave -> { vtt }
+const translating = new Map();  // chave -> Promise
+
+function translatedVtt(sourceVtt, to) {
+  const key = to + ':' + crypto.createHash('sha1').update(sourceVtt).digest('hex');
+  const ready = translations.get(key);
+  if (ready) {
+    translations.delete(key);
+    translations.set(key, ready); // LRU
+    return Promise.resolve({ vtt: ready.vtt, complete: true, cached: true });
   }
+  if (translating.has(key)) return translating.get(key);
+
+  const job = translateVtt(sourceVtt, { to })
+    .then((result) => {
+      if (result.complete) {
+        translations.set(key, { vtt: result.vtt });
+        while (translations.size > TRANSLATION_MAX) translations.delete(translations.keys().next().value);
+      }
+      console.log(`[legenda] traduzida para ${to}: ${result.translated}/${result.total} falas` + (result.failed ? ` (${result.failed} falharam)` : ''));
+      return result;
+    })
+    .finally(() => translating.delete(key));
+  translating.set(key, job);
+  return job;
 }
 
 app.get('/api/subtitle', async (req, res) => {
@@ -1238,6 +1378,15 @@ app.get('/api/subtitle', async (req, res) => {
   try {
     await loadSubtitleVtt(entry);
 
+    // Faixa de tradução automática: troca só o texto; os tempos seguem os da origem.
+    let baseVtt = entry.vtt;
+    let complete = true;
+    if (entry.translateTo) {
+      const tr = await translatedVtt(entry.vtt, entry.translateTo);
+      baseVtt = tr.vtt;
+      complete = tr.complete;
+    }
+
     // autoShift compensa o "Início (min)"; shift é o ajuste manual do usuário;
     // scale corrige legenda de outro fps (escorrega ao longo do filme).
     const autoShift = Number(entry.autoShift) || 0;
@@ -1245,12 +1394,14 @@ app.get('/api/subtitle', async (req, res) => {
     const scale = Math.max(0.8, Math.min(1.25, Number(req.query.scale) || 1));
     const total = autoShift + manual;
     const body = Math.abs(total) > 0.001 || Math.abs(scale - 1) > 1e-6
-      ? shiftVtt(entry.vtt, total, scale)
-      : entry.vtt;
+      ? shiftVtt(baseVtt, total, scale)
+      : baseVtt;
 
     res.setHeader('Content-Type', 'text/vtt; charset=utf-8');
     res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Cache-Control', 'public, max-age=3600');
+    // Tradução incompleta (provedor limitado): não deixa o navegador guardar, para tentar de novo.
+    res.setHeader('Cache-Control', complete ? 'public, max-age=3600' : 'no-store');
+    if (entry.translateTo) res.setHeader('X-Subtitle-Translation', complete ? 'ok' : 'partial');
     res.send(body);
   } catch (err) {
     res.status(err.status || 502).json({ error: err.status ? err.message : 'Falha ao baixar legenda: ' + err.message });

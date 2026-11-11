@@ -367,6 +367,61 @@
   #playerMeta{color:var(--muted);font-size:.84rem;margin-top:.2rem}
   .controls{align-items:center}
   .season-hint{font-size:.74rem;color:var(--muted)}
+  .ep-now{font-weight:800;color:var(--text);font-size:.86rem;letter-spacing:.01em;padding:0 .15rem}
+  .ep-step{width:2rem;height:2rem;padding:0;font-size:1.1rem;line-height:1;display:grid;place-items:center}
+  .ep-step:disabled{opacity:.35;cursor:not-allowed}
+  .ep-manual{display:flex;gap:.4rem;align-items:center}
+  .ep-manual[hidden],.ep-panel[hidden]{display:none}
+
+  /* ---------- temporadas e episódios ---------- */
+  .ep-panel{margin-top:.9rem;padding:.8rem .85rem .6rem;border:1px solid var(--line);border-radius:14px;background:var(--panel-2)}
+  .ep-head{display:flex;align-items:baseline;justify-content:space-between;gap:.6rem;margin-bottom:.6rem}
+  .ep-head h3{margin:0;font-size:1.02rem;letter-spacing:-.005em}
+  .ep-summary{font-size:.76rem;color:var(--muted)}
+  .ep-seasons{display:flex;gap:.35rem;overflow-x:auto;padding:.1rem .05rem .55rem;margin-bottom:.35rem;
+    scrollbar-width:thin;scrollbar-color:#3a3a4c transparent;-webkit-overflow-scrolling:touch}
+  .ep-season{flex:none;display:flex;align-items:center;gap:.4rem;padding:.38rem .8rem;border-radius:999px;border:1px solid var(--line);
+    background:var(--panel);color:var(--muted);font:inherit;font-size:.8rem;font-weight:700;cursor:pointer;white-space:nowrap;transition:.15s}
+  .ep-season:hover{color:var(--text);border-color:#4a4a62}
+  .ep-season.sel{background:var(--text);color:#111;border-color:var(--text)}
+  .ep-season.playing:not(.sel)::after{content:"";width:.42rem;height:.42rem;border-radius:50%;background:var(--brand)}
+  .ep-season:focus-visible,.ep-item:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+  .ep-list{display:flex;flex-direction:column;gap:.35rem;max-height:min(46vh,430px);overflow-y:auto;overscroll-behavior:contain;
+    padding:.05rem .25rem .35rem 0;scrollbar-width:thin;scrollbar-color:#3a3a4c transparent}
+  .ep-item{position:relative;display:grid;grid-template-columns:2rem 128px minmax(0,1fr);gap:.7rem;align-items:center;width:100%;
+    text-align:left;padding:.5rem .6rem .5rem .4rem;border:1px solid transparent;border-radius:10px;background:transparent;
+    color:var(--text);font:inherit;cursor:pointer;transition:background .15s,border-color .15s}
+  .ep-item:hover{background:rgba(255,255,255,.05)}
+  .ep-item.now{background:rgba(229,9,20,.1);border-color:rgba(229,9,20,.55)}
+  .ep-num{text-align:center;font-size:1.05rem;font-weight:800;color:var(--muted);font-variant-numeric:tabular-nums}
+  .ep-item.now .ep-num{color:var(--brand)}
+  .ep-thumb{position:relative;aspect-ratio:16/9;border-radius:8px;overflow:hidden;background:#0d0d14;border:1px solid var(--line);
+    display:grid;place-items:center;color:#3c3c52;font-size:1.3rem}
+  .ep-thumb img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+  .ep-thumb .ep-play{position:absolute;inset:0;display:grid;place-items:center;background:rgba(0,0,0,.45);color:#fff;font-size:1.25rem;
+    opacity:0;transition:opacity .15s}
+  .ep-item:hover .ep-play,.ep-item.now .ep-play{opacity:1}
+  .ep-bar{position:absolute;left:0;right:0;bottom:0;height:3px;background:rgba(255,255,255,.22)}
+  .ep-bar span{display:block;height:100%;background:var(--brand)}
+  .ep-info{min-width:0}
+  .ep-title{display:flex;align-items:baseline;gap:.5rem;font-weight:700;font-size:.9rem;line-height:1.25}
+  .ep-title b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:700}
+  .ep-meta{flex:none;margin-left:auto;font-size:.72rem;color:var(--muted);font-weight:600;white-space:nowrap}
+  .ep-ov{margin:.2rem 0 0;font-size:.78rem;line-height:1.38;color:var(--muted);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .ep-tags{display:flex;gap:.35rem;margin-top:.3rem;flex-wrap:wrap}
+  .ep-tag{font-size:.66rem;font-weight:800;letter-spacing:.03em;text-transform:uppercase;padding:.08rem .42rem;border-radius:5px;
+    background:rgba(255,255,255,.08);color:var(--muted)}
+  .ep-tag.now{background:var(--brand);color:#fff}
+  .ep-tag.done{background:rgba(70,200,120,.16);color:#6fdc9c}
+  .ep-tag.resume{background:rgba(245,166,35,.16);color:#f5b84a}
+  .ep-item.skel .ep-thumb,.ep-item.skel .ep-title b{animation:pulse 1.2s ease-in-out infinite}
+  .ep-empty{padding:.7rem .4rem;font-size:.82rem;color:var(--muted)}
+  @media (max-width:640px){
+    .ep-item{grid-template-columns:1.5rem 96px minmax(0,1fr);gap:.5rem}
+    .ep-ov{display:none}
+    .ep-list{max-height:52vh}
+  }
+  @media (max-width:380px){.ep-item{grid-template-columns:1.4rem minmax(0,1fr)}.ep-thumb{display:none}}
   .opts{position:relative}
   .opts>summary{cursor:pointer;list-style:none;padding:.5rem .75rem;border:1px solid var(--line);border-radius:8px;font-size:.84rem;font-weight:600;color:var(--text);user-select:none}
   .opts>summary::-webkit-details-marker{display:none}
@@ -736,8 +791,15 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
                 </div>
                 <div class="controls">
                   <span id="tvControls" class="tv-controls" hidden>
-                    <label>T <input id="seasonInput" type="number" min="1" value="1"></label>
-                    <label>E <input id="episodeInput" type="number" min="1" value="1"></label>
+                    <span id="epNow" class="ep-now" aria-live="polite"></span>
+                    <button id="epPrev" class="step-btn ep-step" type="button" title="Episódio anterior" aria-label="Episódio anterior">‹</button>
+                    <button id="epNext" class="step-btn ep-step" type="button" title="Próximo episódio" aria-label="Próximo episódio">›</button>
+                    <!-- Fonte da verdade do T/E (o resto do app lê daqui). Só aparece como campo
+                         quando o TMDB não deu a lista de temporadas (modo manual). -->
+                    <span id="epManual" class="ep-manual" hidden>
+                      <label>T <input id="seasonInput" type="number" min="1" value="1"></label>
+                      <label>E <input id="episodeInput" type="number" min="1" value="1"></label>
+                    </span>
                     <span id="seasonHint" class="season-hint"></span>
                     <label class="switch" title="Ao terminar o episódio, abre o próximo sozinho (com contagem de 5 s para cancelar)">
                       <input id="autoNextToggle" type="checkbox">
@@ -815,6 +877,15 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
                 <p id="syncMsg" class="sync-msg"></p>
                 <div id="syncList" class="sync-list" role="listbox" aria-label="Falas da legenda perto deste ponto"></div>
               </div>
+
+              <section id="epPanel" class="ep-panel" aria-label="Temporadas e episódios" hidden>
+                <div class="ep-head">
+                  <h3>Episódios</h3>
+                  <span id="epSummary" class="ep-summary"></span>
+                </div>
+                <div id="epSeasons" class="ep-seasons" role="tablist" aria-label="Temporadas"></div>
+                <div id="epList" class="ep-list"></div>
+              </section>
 
               <div id="infoBox" class="info-box" aria-live="polite"></div>
 
@@ -1104,6 +1175,11 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
     } else {
       var entry = progEntryFor(item);
       if (entry.eps) delete entry.eps[state.curS + ':' + state.curE];
+      // marca como assistido (lista de episódios); limita o tamanho guardado
+      entry.w = entry.w || {};
+      entry.w[state.curS + ':' + state.curE] = 1;
+      var wKeys = Object.keys(entry.w);
+      if (wKeys.length > 500) wKeys.slice(0, wKeys.length - 500).forEach(function (k) { delete entry.w[k]; });
       // Terminou o episódio: o "continuar" aponta para o próximo, do início.
       entry.s = state.curS;
       entry.e = state.curE + 1;
@@ -2047,6 +2123,30 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
     } catch (err) { /* ignore */ }
   }
 
+  // Preferência GLOBAL de idioma da legenda ('pt' é o padrão; 'en', 'off', ...). Vale para todos
+  // os títulos e só muda quando o usuário escolhe de propósito (não nas trocas automáticas).
+  var SUB_PREF_KEY = 'fdsflix.sub.pref';
+
+  function loadSubPref() {
+    try {
+      return localStorage.getItem(SUB_PREF_KEY);
+    } catch (err) {
+      return null;
+    }
+  }
+
+  function saveSubPref(value) {
+    try {
+      localStorage.setItem(SUB_PREF_KEY, value);
+    } catch (err) { /* ignore */ }
+  }
+
+  function rememberSubChoice(index) {
+    var caption = state.captions[index];
+    saveSubPref(index < 0 || !caption ? 'off' : (caption.srclang || 'und'));
+    state.subUserChose = true;
+  }
+
   // clientSide: no player canvas a sincronia é aplicada no desenho (instantânea), então a
   // legenda vem do servidor sem deslocamento e nunca precisa ser recarregada ao ajustar.
   function addCaptions(captions, clientSide) {
@@ -2099,10 +2199,33 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
 
     state.subLang = off ? 'off' : (state.captions[index] ? state.captions[index].label : 'off');
     if (state.subKey) saveSubLang(state.subKey, state.subLang);
+    subTranslateNotice(off ? null : tracks[index], off ? null : state.captions[index]);
 
     // As tracks terminam de registrar de forma assíncrona; ignora os eventos
     // de change disparados pela própria aplicação.
     setTimeout(function () { state.applyingLang = false; }, 250);
+  }
+
+  // A 1ª vez que uma tradução automática é aberta o servidor leva alguns segundos para traduzir.
+  function subTranslateNotice(track, caption) {
+    var box = $('subWarn');
+    if (!caption || !caption.translated || !track) {
+      if (box && /^Traduzindo/.test(box.textContent)) box.hidden = true;
+      return;
+    }
+    if (track.cues && track.cues.length) return;
+    subShowWarn('Traduzindo a legenda para português (BR)… na primeira vez leva alguns segundos.', 'info');
+    var el = $('nativePlayer');
+    for (var i = 0; i < el.children.length; i++) {
+      if (el.children[i].tagName === 'TRACK' && el.children[i].track === track) {
+        el.children[i].addEventListener('load', function () {
+          if (/^Traduzindo/.test(box.textContent)) box.hidden = true;
+        }, { once: true });
+        el.children[i].addEventListener('error', function () {
+          subShowWarn('Não consegui traduzir agora. Tente de novo em instantes ou escolha outro idioma.', 'warn');
+        }, { once: true });
+      }
+    }
   }
 
   function applySubLangSoon(index, delay) {
@@ -2114,10 +2237,21 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
   }
 
   function applySavedSubLang(captions) {
+    var pref = loadSubPref();
     var saved = state.subKey ? loadSubLang(state.subKey) : null;
     var index = -1;
 
-    if (saved && saved !== 'off') {
+    if (pref === 'off') {
+      saved = 'off';
+    } else if (pref) {
+      // idioma preferido (ex.: 'en'); sem ele neste título, cai no padrão (PT-BR)
+      for (var p = 0; p < captions.length; p++) {
+        if (captions[p].srclang === pref) { index = p; break; }
+      }
+      saved = index === -1 ? null : captions[index].label;
+    }
+
+    if (index === -1 && saved && saved !== 'off') {
       for (var i = 0; i < captions.length; i++) {
         if (captions[i].label === saved) { index = i; break; }
       }
@@ -2535,7 +2669,7 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
     return {
       items: function () { return state.captions.map(function (c, i) { return c.label || ('Legenda ' + (i + 1)); }); },
       active: function () { return activeSubIndex(); },
-      select: function (i) { applySubLangByIndex(i); },
+      select: function (i) { rememberSubChoice(i); applySubLangByIndex(i); },
       offset: function () { return state.subOffset; },
       setOffset: function (v) { applySubOffset(v); }
     };
@@ -2613,13 +2747,14 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
 
     state.curS = season;
     state.curE = episode;
+    renderEpisodes(true);
 
     state.subKey = subtitleKey(item, season, episode);
     state.subOffset = loadSubOffset(state.subKey);
     state.subScale = loadSubScale(state.subKey);
     state.subInfo = {};
     state.subBad = {};
-    state.subUserChose = Boolean(loadSubLang(state.subKey));
+    state.subUserChose = Boolean(loadSubPref() || loadSubLang(state.subKey));
     state.syncAnchor = null;
     $('subOffsetInput').value = String(state.subOffset);
     subUiRefresh();
@@ -2945,6 +3080,178 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
     openRec(Number(el.getAttribute('data-rec')));
   });
 
+  /* ---------------------------------------------------------------- */
+  /* Temporadas e episódios                                            */
+  /* ---------------------------------------------------------------- */
+
+  // `season` = temporada que está sendo OLHADA na lista (pode ser diferente da que está tocando).
+  var epView = { key: '', season: null, cache: {}, token: 0 };
+
+  function epSeasons() {
+    var d = modal.current;
+    return d && d.type === 'tv' && d.seasons && d.seasons.length ? d.seasons : null;
+  }
+
+  function epCurrent() {
+    return {
+      s: Math.max(1, Number($('seasonInput').value) || 1),
+      e: Math.max(1, Number($('episodeInput').value) || 1)
+    };
+  }
+
+  function epCount(seasons, n) {
+    for (var i = 0; i < seasons.length; i++) if (seasons[i].n === n) return seasons[i].episodes || 0;
+    return 0;
+  }
+
+  function pickEpisode(s, e) {
+    var cur = epCurrent();
+    if (cur.s === s && cur.e === e) return;
+    $('seasonInput').value = s;
+    $('episodeInput').value = e;
+    updateSeasonHint();
+    $('episodeInput').dispatchEvent(new Event('change'));   // o listener existente retoma o ponto e recarrega
+    var main = document.querySelector('.modal-main');
+    if (main && main.scrollTop > 140) main.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function epStep(dir) {
+    var cur = epCurrent();
+    var seasons = epSeasons();
+    var s = cur.s;
+    var e = cur.e + dir;
+    if (seasons) {
+      var idx = -1;
+      for (var i = 0; i < seasons.length; i++) if (seasons[i].n === s) idx = i;
+      if (e < 1) {
+        if (idx > 0) { s = seasons[idx - 1].n; e = seasons[idx - 1].episodes || 1; } else return;
+      } else if (idx >= 0 && e > (seasons[idx].episodes || 0)) {
+        if (idx < seasons.length - 1) { s = seasons[idx + 1].n; e = 1; } else return;
+      }
+    } else if (e < 1) {
+      return;
+    }
+    pickEpisode(s, e);
+  }
+
+  function epFetchSeason(item, n) {
+    var key = item.id + ':' + n;
+    if (epView.cache[key] !== undefined) return;
+    epView.cache[key] = null;   // pedido em andamento
+    apiFetch('/api/season?id=' + encodeURIComponent(item.id) + '&n=' + encodeURIComponent(n))
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (data) {
+        if (data && Array.isArray(data.episodes)) epView.cache[key] = data.episodes;
+        else delete epView.cache[key];
+        if (state.selected && state.selected.id === item.id && epView.season === n) renderEpisodes(false);
+      })
+      .catch(function () { delete epView.cache[key]; });
+  }
+
+  function renderEpisodes(resetView) {
+    var item = state.selected;
+    var panel = $('epPanel');
+    if (!item || item.type !== 'tv') { panel.hidden = true; return; }
+
+    var cur = epCurrent();
+    var seasons = epSeasons();
+    var last = seasons ? seasons[seasons.length - 1] : null;
+
+    $('epNow').textContent = 'T' + cur.s + ' · E' + cur.e;
+    $('epManual').hidden = !modal.manualEp;
+    $('seasonHint').hidden = !modal.manualEp;
+    $('epPrev').disabled = cur.s <= (seasons ? seasons[0].n : 1) && cur.e <= 1;
+    $('epNext').disabled = Boolean(seasons) && cur.s >= last.n && cur.e >= (last.episodes || 0);
+
+    if (!seasons) { panel.hidden = true; return; }
+
+    var key = progKeyOf(item);
+    if (resetView || epView.key !== key || epView.season == null || !epCount(seasons, epView.season)) {
+      epView.key = key;
+      epView.season = epCount(seasons, cur.s) ? cur.s : seasons[0].n;
+    }
+    var view = epView.season;
+    var count = epCount(seasons, view);
+    var entry = progress[key] || {};
+    var done = entry.w || {};
+    var partial = entry.eps || {};
+    var details = epView.cache[item.id + ':' + view];
+    var d = modal.current;
+
+    // abas de temporada
+    var tabs = '';
+    seasons.forEach(function (sn) {
+      tabs += '<button type="button" role="tab" class="ep-season' + (sn.n === view ? ' sel' : '') + (sn.n === cur.s ? ' playing' : '') +
+        '" data-season="' + sn.n + '" aria-selected="' + (sn.n === view) + '" title="' + escapeHtml(sn.name || ('Temporada ' + sn.n)) + '">' +
+        (seasons.length > 7 ? 'T' + sn.n : 'Temporada ' + sn.n) + '</button>';
+    });
+    $('epSeasons').innerHTML = tabs;
+
+    var watched = 0;
+    for (var w = 1; w <= count; w++) if (done[view + ':' + w]) watched++;
+    $('epSummary').textContent = count + (count === 1 ? ' episódio' : ' episódios') + (watched ? ' · ' + watched + ' assistido' + (watched === 1 ? '' : 's') : '');
+
+    // lista (com o que já se sabe; nomes/imagens entram quando o TMDB responder)
+    if (details === undefined) epFetchSeason(item, view);
+    var byNumber = {};
+    (details || []).forEach(function (ep) { byNumber[ep.e] = ep; });
+
+    var html = '';
+    for (var n = 1; n <= count; n++) {
+      var ep = byNumber[n];
+      var isNow = view === cur.s && n === cur.e;
+      var pos = partial[view + ':' + n] || 0;
+      var isDone = Boolean(done[view + ':' + n]);
+      var total = ((ep && ep.runtime) || (d && d.runtime) || 0) * 60;
+      var pct = pos && total ? Math.max(3, Math.min(100, Math.round(pos / total * 100))) : 0;
+      var loading = details === null || details === undefined;
+      var title = ep && ep.name ? ep.name : 'Episódio ' + n;
+      var meta = ep && ep.runtime ? ep.runtime + ' min' : '';
+      var tags = '';
+      if (isNow) tags += '<span class="ep-tag now">Assistindo</span>';
+      else if (isDone) tags += '<span class="ep-tag done">✓ Assistido</span>';
+      else if (pos >= PROG_MIN_SECONDS) tags += '<span class="ep-tag resume">Parou em ' + fmtTime(pos) + '</span>';
+      var thumb = ep && ep.still
+        ? '<img src="' + escapeHtml(TMDB_IMG + 'w300' + ep.still) + '" alt="" loading="lazy" onerror="this.remove()">'
+        : '';
+
+      html += '<button type="button" class="ep-item' + (isNow ? ' now' : '') + (loading ? ' skel' : '') + '" data-e="' + n + '"' +
+        (isNow ? ' aria-current="true"' : '') + ' aria-label="' + escapeHtml('Episódio ' + n + ': ' + title) + '">' +
+        '<span class="ep-num">' + n + '</span>' +
+        '<span class="ep-thumb"><span aria-hidden="true">🎞</span>' + thumb +
+          '<span class="ep-play" aria-hidden="true">▶</span>' +
+          (pct ? '<span class="ep-bar"><span style="width:' + pct + '%"></span></span>' : '') + '</span>' +
+        '<span class="ep-info">' +
+          '<span class="ep-title"><b>' + escapeHtml(title) + '</b>' + (meta ? '<span class="ep-meta">' + escapeHtml(meta) + '</span>' : '') + '</span>' +
+          (ep && ep.overview ? '<p class="ep-ov">' + escapeHtml(ep.overview) + '</p>' : '') +
+          (tags ? '<span class="ep-tags">' + tags + '</span>' : '') +
+        '</span></button>';
+    }
+    var list = $('epList');
+    var keepTop = list.scrollTop;
+    list.innerHTML = html || '<div class="ep-empty">Sem episódios listados para esta temporada.</div>';
+    panel.hidden = false;
+
+    var nowEl = list.querySelector('.ep-item.now');
+    if (resetView && nowEl) list.scrollTop = Math.max(0, nowEl.offsetTop - list.clientHeight / 2 + nowEl.offsetHeight / 2);
+    else list.scrollTop = keepTop;
+  }
+
+  $('epSeasons').addEventListener('click', function (event) {
+    var btn = event.target.closest ? event.target.closest('[data-season]') : null;
+    if (!btn) return;
+    epView.season = Number(btn.getAttribute('data-season'));
+    $('epList').scrollTop = 0;
+    renderEpisodes(false);
+  });
+  $('epList').addEventListener('click', function (event) {
+    var btn = event.target.closest ? event.target.closest('[data-e]') : null;
+    if (!btn) return;
+    pickEpisode(epView.season, Number(btn.getAttribute('data-e')));
+  });
+  $('epPrev').addEventListener('click', function () { epStep(-1); });
+  $('epNext').addEventListener('click', function () { epStep(1); });
+
   function updateSeasonHint() {
     var hint = $('seasonHint');
     var d = modal.current;
@@ -3011,7 +3318,9 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
       $('modalBg').classList.remove('on');
     }
 
+    modal.manualEp = d.type === 'tv' && !(d.seasons && d.seasons.length);
     updateSeasonHint();
+    renderEpisodes(true);
     renderRecs(d.recommendations, 'Sem recomendações para este título.');
   }
 
@@ -3023,12 +3332,16 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
     var others = (state.items || []).filter(function (x) { return !(String(x.id) === String(item.id) && x.type === item.type); }).slice(0, 18);
     renderRecs(others, 'Sem sugestões no momento.');
     $('recCount').textContent = others.length ? 'em alta' : '';
+    modal.manualEp = true;   // sem TMDB: volta a escolher T/E digitando
     updateSeasonHint();
+    renderEpisodes(true);
   }
 
   function loadDetails(item) {
     var token = ++modal.token;
     modal.current = null;
+    modal.manualEp = false;
+    $('epPanel').hidden = true;
     $('seasonHint').textContent = '';
     $('seasonInput').removeAttribute('max');
     $('episodeInput').removeAttribute('max');
@@ -3173,7 +3486,9 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
   $('closeBtn').addEventListener('click', requestClose);
 
   $('subLangSelect').addEventListener('change', function () {
-    applySubLangByIndex(this.value === 'off' ? -1 : Number(this.value));
+    var index = this.value === 'off' ? -1 : Number(this.value);
+    rememberSubChoice(index);
+    applySubLangByIndex(index);
   });
 
   $('subMinus').addEventListener('click', function () { applySubOffset(state.subOffset - 0.5); });
