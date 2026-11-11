@@ -2018,7 +2018,8 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
       var name = document.createElement('div');
       name.className = 'name';
       var a = document.createElement('span'); a.textContent = p.label + (p.tag ? ' · ' + p.tag : '');
-      if (p.tag && !p.edge) a.title = 'Esta Vercel ainda entrega o vídeo pela função Node: o limite efetivo é o Fast Origin Transfer (10 GB). Reenvie o kit (deploy-vercel.sh) para liberar os 100 GB.';
+      if (p.fixed) a.title = 'Cota definida à mão em VIDSRC_PROXY_QUOTAS (provedor que não é Vercel). Confira o consumo real no painel dele.';
+      else if (p.tag && !p.edge) a.title = 'Esta Vercel ainda entrega o vídeo pela função Node: o limite efetivo é o Fast Origin Transfer (10 GB). Reenvie o kit (deploy-vercel.sh) para liberar os 100 GB.';
       var b = document.createElement('span');
       b.textContent = fmtBytes(used) + ' / ' + fmtBytes(p.quotaBytes) + ' (' + pct.toFixed(1) + '%)';
       name.appendChild(a); name.appendChild(b);

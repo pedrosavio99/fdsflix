@@ -38,6 +38,10 @@ services:
         sync: false
       - key: VERCEL_QUOTA_GB
         value: "100"
+      # Opcional, adicione à mão em Environment (de propósito não está declarada aqui, para o
+      # Blueprint não pedir valor): VIDSRC_PROXY_QUOTAS = cota por provedor que NÃO é Vercel
+      # (Wasmer etc.), `URL=GB` separados por vírgula. A URL também vai em VIDSRC_PROXY_URLS.
+      # Vazio = nada muda. Ver docs/VERCEL-POOL.md.
       # Dia do mês em que a cota da Vercel renova (veja em Usage no painel dela).
       - key: USAGE_RESET_DAY
         value: "1"

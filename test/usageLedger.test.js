@@ -121,3 +121,57 @@ test('VERCEL_FOT_QUOTA_GB ajusta o limite das Vercels antigas (ex.: conta Pro)',
   }
   assert.equal(ledger.quotaOf(A), 10 * GB);
 });
+
+test('VIDSRC_PROXY_QUOTAS: provedor fora da Vercel (Wasmer) tem cota fixa e convive com Vercel Edge/Node', async () => {
+  const W = 'https://node-base-12ae3.wasmer.app';
+  const savedUrls = process.env.VIDSRC_PROXY_URLS;
+  const savedOne = process.env.VIDSRC_PROXY_URL;
+  process.env.VIDSRC_PROXY_URLS = `${A}, ${B}, ${W}/`;
+  delete process.env.VIDSRC_PROXY_URL;
+  try {
+    // sem a variável nada muda: o Wasmer cairia na regra conservadora de 10 GB
+    delete process.env.VIDSRC_PROXY_QUOTAS;
+    assert.equal(ledger.fixedQuotaGb(W), 0);
+
+    // lixo no meio (sem "=", GB inválido, zero, URL sem http) é ignorado; caixa e "/" final não importam
+    process.env.VIDSRC_PROXY_QUOTAS = `lixo, https://x.app=abc, https://y.app=0, ${W.toUpperCase().replace('HTTPS', 'https')}/=150 ; ftp://z=5`;
+    assert.equal(ledger.fixedQuotaGb(W), 150);
+    assert.equal(ledger.fixedQuotaGb('https://x.app'), 0);
+    assert.equal(ledger.fixedQuotaGb('https://y.app'), 0);
+
+    // o probe de Edge/Node NÃO pergunta nada ao provedor de cota fixa
+    const asked = [];
+    const base = fakeProbe({ [A]: true, [B]: false });
+    await ledger.refreshCapabilities(async (url) => { asked.push(String(url)); return base(url); });
+    assert.equal(asked.some((u) => u.startsWith(W)), false, 'não deve sondar o Wasmer');
+    assert.equal(asked.length, 2);
+
+    // as Vercels seguem iguais; o Wasmer vale 150 (passa de VERCEL_QUOTA_GB=100)
+    assert.equal(ledger.quotaOf(A), 100 * GB);
+    assert.equal(ledger.quotaOf(B), 10 * GB);
+    assert.equal(ledger.quotaOf(W), 150 * GB);
+
+    const snap = ledger.snapshot();
+    const w = snap.pool.find((p) => p.base === W);
+    assert.equal(w.fixed, true);
+    assert.equal(w.tag, 'cota fixa');
+    assert.equal(w.quotaBytes / GB, 150);
+    assert.equal(snap.pool.filter((p) => p.fixed).length, 1, 'só o Wasmer é cota fixa');
+    assert.equal(snap.total.quotaBytes / GB, 100 + 10 + 150);
+
+    // o ranking usa a folga: 150 GB livres vence 100 GB livres
+    ledger.calibrate(A, 0);
+    ledger.calibrate(W, 0);
+    assert.equal(ledger.rankedPool()[0].base, W);
+
+    // esgota aos 98% da cota dele (147 GB), não aos de outra
+    ledger.calibrate(W, 148);
+    const ranked = ledger.rankedPool();
+    assert.equal(ranked[ranked.length - 1].base, W);
+    assert.equal(ranked[ranked.length - 1].exhausted, true);
+  } finally {
+    delete process.env.VIDSRC_PROXY_QUOTAS;
+    process.env.VIDSRC_PROXY_URLS = savedUrls;
+    if (savedOne === undefined) delete process.env.VIDSRC_PROXY_URL; else process.env.VIDSRC_PROXY_URL = savedOne;
+  }
+});

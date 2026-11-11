@@ -123,6 +123,30 @@ npm run pool:check
 `npm run pool:check -- https://a.vercel.app https://b.vercel.app` testa URLs avulsas antes de
 colocá-las no Render. Exit code 1 se alguma falhar.
 
+## Misturar outros provedores (Wasmer, etc.) na mesma pool
+
+O mesmo kit `adproxy` (Express, `node server.js`) roda fora da Vercel. Esses provedores entram em
+`VIDSRC_PROXY_URLS` junto com as Vercels, e a cota deles vai em **`VIDSRC_PROXY_QUOTAS`**:
+
+```env
+VIDSRC_PROXY_URLS=https://adproxy-aaa.vercel.app,https://adproxy-bbb.vercel.app,https://node-base-12ae3.wasmer.app
+VIDSRC_PROXY_QUOTAS=https://node-base-12ae3.wasmer.app=150
+```
+
+- Formato: `URL=GB`, separados por vírgula, espaço ou `;`. Para **cada provedor novo**, some a URL em
+  `VIDSRC_PROXY_URLS` e uma entrada em `VIDSRC_PROXY_QUOTAS`:
+  `...app=150,https://outro.exemplo.dev=20`.
+- Quem aparece em `VIDSRC_PROXY_QUOTAS` usa a cota informada (pode passar de `VERCEL_QUOTA_GB`) e **não** é
+  classificado como Edge/função Node (isso só existe na Vercel). Na barra aparece `· cota fixa`.
+- Quem **não** aparece continua como antes: Vercel Edge = `VERCEL_QUOTA_GB`, Vercel antiga = `VERCEL_FOT_QUOTA_GB`.
+  Sem a variável, nada muda.
+- URL sem `http(s)://`, GB inválido ou zero são ignorados em silêncio. Maiúscula e `/` no fim não importam.
+- A escolha e o fallback são os mesmos: vence quem tem **mais cota sobrando** e, se falhar, tenta a próxima.
+- `USAGE_RESET_DAY` é um só para todos. Se o ciclo do provedor renova em outro dia, o número da barra fica
+  aproximado; acerte com `/api/usage/calibrate`.
+- Valores de referência (conferir no painel do provedor): Wasmer Hobby = 150 GB/mês, 1 M requisições,
+  6 h de CPU ativa, "uso pessoal e não comercial". Não confirmei se pede cartão nem o que acontece ao estourar.
+
 ## A barra de consumo
 
 Abaixo do player aparece **"📶 Consumo das Vercels (cota mensal)"**, uma barra por Vercel e
