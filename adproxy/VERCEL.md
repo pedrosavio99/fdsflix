@@ -9,11 +9,13 @@ instalar extensão e não é preciso Oracle/VM.
 Na Vercel, crie um projeto separado apontando para a pasta `adproxy` deste
 repositório (Root Directory = `adproxy`).
 
-Variáveis de ambiente:
+Variáveis de ambiente: **nenhuma é obrigatória**. `TARGET_ORIGIN` (`https://vidlink.pro`) e
+`PROXY_SECRET` vêm embutidas em `lib/config.js`; se você definir a variável na Vercel, ela manda
+mais que o valor embutido:
 
 ```env
-TARGET_ORIGIN=https://vidlink.pro
-PROXY_SECRET=<openssl rand -hex 32>
+TARGET_ORIGIN=https://vidlink.pro      # opcional
+PROXY_SECRET=<openssl rand -hex 32>    # opcional (o embutido é público)
 ```
 
 O `vercel.json` já manda todas as rotas para `api/index.js`. A Vercel instala as

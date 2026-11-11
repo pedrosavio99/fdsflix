@@ -66,3 +66,16 @@ test('rotas /vidsrc respondem CORS e preflight', async () => {
   assert.equal(bad.status, 400);
   assert.equal(bad.headers.get('access-control-allow-origin'), '*');
 });
+
+test('sem nenhuma variável de ambiente o proxy já sobe configurado (valores embutidos)', () => {
+  const { BUILTIN_PROXY_SECRET, BUILTIN_TARGET_ORIGIN } = require('../lib/config');
+  const config = loadConfig({});
+  assert.equal(config.targetOrigin, BUILTIN_TARGET_ORIGIN);
+  assert.equal(config.secret, BUILTIN_PROXY_SECRET);
+  assert.equal(config.secretStable, true);
+  assert.match(BUILTIN_PROXY_SECRET, /^[a-f0-9]{64}$/);
+  // a variável de ambiente continua mandando mais que o embutido
+  const over = loadConfig({ PROXY_SECRET: 'x'.repeat(40), TARGET_ORIGIN: 'https://example.com' });
+  assert.equal(over.secret, 'x'.repeat(40));
+  assert.equal(over.targetOrigin, 'https://example.com');
+});

@@ -24,6 +24,7 @@ const { proxyVideo, USER_AGENT, TOKEN_TTL_MS } = require('./lib/proxy');
 const { srtToVtt, shiftVtt, decodeSubtitle, stripSpamCues, analyzeVtt } = require('./lib/subtitles');
 const registry = require('./lib/registry');
 const usageLedger = require('./lib/usageLedger');
+const poolKit = require('./lib/poolKit');
 const { relayFetch, getRelayConfig } = require('./lib/relayFetch');
 const { edgeEnabled, canUseEdge, edgeReachable, edgeUrl } = require('./lib/edgeMedia');
 
@@ -668,6 +669,37 @@ app.post('/api/usage/calibrate', (req, res) => {
   if (String(req.get('x-api-key') || '') !== API_KEY) return res.status(401).json({ error: 'API key inválida.' });
   const out = usageLedger.calibrate(req.body && req.body.base, req.body && req.body.usedGb);
   res.status(out.ok ? 200 : 400).json(out.ok ? usageLedger.snapshot() : out);
+});
+
+/* ------------------------------------------------------------------ */
+/* Kit "Vercel extra" (botão Configs): zip do adproxy                  */
+/* ------------------------------------------------------------------ */
+
+// GET -> .zip do adproxy pronto para subir noutra conta Vercel. Sem variáveis de ambiente:
+// PROXY_SECRET e TARGET_ORIGIN vêm embutidos em adproxy/lib/config.js. Sem node_modules/.env.
+app.get('/api/pool/kit', requireApiKey, (req, res) => {
+  if (!poolKit.kitAvailable()) {
+    return res.status(404).json({ error: 'A pasta adproxy/ não está neste servidor.' });
+  }
+  try {
+    const kit = poolKit.buildKit();
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="${kit.filename}"`);
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Content-Length', kit.zip.length);
+    res.end(kit.zip);
+  } catch (err) {
+    res.status(500).json({ error: `Não consegui montar o kit: ${err.message}` });
+  }
+});
+
+// Para o modal Configs: o kit existe aqui? Quantas Vercels já estão no pool?
+app.get('/api/pool/info', requireApiKey, (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({
+    kit: poolKit.kitAvailable(),
+    poolSize: usageLedger.getPool().length
+  });
 });
 
 /* ------------------------------------------------------------------ */

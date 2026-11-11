@@ -12,3 +12,4 @@ npm-debug.log
 .gitignore
 docs
 Dockerfile
+adproxy/node_modules

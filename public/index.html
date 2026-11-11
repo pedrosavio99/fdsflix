@@ -214,6 +214,44 @@
     box-shadow:0 10px 30px rgba(0,0,0,.5);z-index:50;max-width:90vw;
   }
   .toast[hidden]{display:none}
+  .bw{margin-left:auto;display:flex;flex-direction:column;gap:.25rem;min-width:15rem;max-width:22rem;text-align:left;
+    background:var(--panel-2);border:1px solid var(--line);border-radius:10px;padding:.4rem .7rem;color:var(--text);font-weight:500}
+  .bw:hover{filter:none;border-color:#44445c}
+  .bw .bw-top{font-size:.78rem;line-height:1.25}
+  .bw .bw-top b{font-weight:700}
+  .bw .bw-bar{position:relative;height:7px;border-radius:5px;background:#1b1f29;overflow:hidden}
+  .bw .bw-bar i{position:absolute;left:0;top:0;bottom:0;background:#3d7be0;transition:width .5s}
+  .bw.warn .bw-bar i{background:#d9a21c}
+  .bw.crit .bw-bar i{background:#e0524d}
+  .bw .bw-sub{font-size:.68rem;color:var(--muted)}
+  dialog.cfg{
+    background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:var(--radius);
+    padding:0;width:min(780px,calc(100vw - 2rem));max-height:calc(100vh - 2rem);box-shadow:0 20px 60px rgba(0,0,0,.6);
+  }
+  dialog.cfg::backdrop{background:rgba(0,0,0,.65)}
+  .cfg-head{display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:.9rem 1.1rem;border-bottom:1px solid var(--line)}
+  .cfg-head h3{margin:0;font-size:1.05rem}
+  .cfg-body{padding:1rem 1.1rem 1.2rem;overflow:auto;max-height:calc(100vh - 8rem);font-size:.88rem;line-height:1.5}
+  .cfg-body h4{margin:1.1rem 0 .4rem;font-size:.92rem}
+  .cfg-body h4:first-child{margin-top:0}
+  .cfg-body p{margin:.3rem 0;color:var(--muted)}
+  .cfg-body ol{margin:.3rem 0;padding-left:1.2rem;color:var(--muted)}
+  .cfg-body code{background:var(--panel-2);border:1px solid var(--line);border-radius:5px;padding:.05rem .35rem;font-size:.82rem;color:var(--text)}
+  .cfg-env{display:flex;gap:.5rem;align-items:center;margin:.35rem 0}
+  .cfg-env label{flex:0 0 7.2rem;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.78rem;color:var(--muted)}
+  .cfg-env input{flex:1;min-width:0;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.78rem;padding:.5rem .6rem}
+  .cfg-body pre{background:#0d0d14;border:1px solid var(--line);border-radius:8px;padding:.6rem .8rem;overflow:auto;font-size:.78rem;color:#cfd3e4;margin:.4rem 0}
+  .cfg-body textarea{width:100%;background:var(--panel-2);border:1px solid var(--line);border-radius:8px;color:var(--text);padding:.55rem .7rem;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.78rem;resize:vertical}
+  #cfgEnvLine{white-space:pre-wrap;word-break:break-all;overflow:visible}
+  details.cfg-sec{border:1px solid var(--line);border-radius:10px;margin:.6rem 0;background:rgba(0,0,0,.18)}
+  details.cfg-sec>summary{cursor:pointer;padding:.55rem .8rem;font-weight:700;font-size:.9rem}
+  details.cfg-sec>div{padding:0 .9rem .8rem}
+  .cfg-card{border:1px solid var(--line);border-radius:10px;background:var(--panel-2);padding:.7rem .9rem;margin-bottom:.8rem}
+  .cfg-card .usage-row{margin:.35rem 0}
+  .cfg-calib{display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin:.5rem 0}
+  .cfg-calib select,.cfg-calib input{padding:.45rem .6rem;font-size:.82rem}
+  .cfg-row{display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.7rem}
+  .cfg-note{margin-top:.9rem;padding:.6rem .8rem;border:1px solid var(--line);border-left:3px solid var(--warn);border-radius:8px;background:var(--panel-2);font-size:.8rem;color:var(--muted)}
   .server-notice{
     display:flex;align-items:center;gap:.55rem;margin:.7rem 0 0;
     padding:.55rem .8rem;border-radius:8px;font-size:.82rem;line-height:1.35;
@@ -419,7 +457,128 @@
   <header>
     <h1>🎬 fds<span>Flix</span></h1>
     <p class="sub">Busca no TMDB · player sem anúncios · legendas em português</p>
+    <button id="bwCorner" class="bw" type="button" title="Banda das Vercels (estimativa). Clique para abrir Configs e o tutorial.">
+      <span class="bw-top" id="bwTop">📶 Banda das Vercels: carregando…</span>
+      <span class="bw-bar"><i id="bwFill" style="width:0"></i></span>
+      <span class="bw-sub" id="bwSub"></span>
+    </button>
+    <button id="cfgOpen" class="ghost" type="button" title="Kit para subir mais uma Vercel no pool">⚙ Configs</button>
   </header>
+
+  <dialog id="cfgDialog" class="cfg" aria-labelledby="cfgTitle">
+    <div class="cfg-head">
+      <h3 id="cfgTitle">⚙ Configs · banda e Vercels extras</h3>
+      <button id="cfgClose" class="ghost" type="button" aria-label="Fechar">✕</button>
+    </div>
+    <div class="cfg-body">
+
+      <div class="cfg-card">
+        <strong>📶 Banda total de todas as Vercels</strong>
+        <div id="cfgBw"><p>Carregando…</p></div>
+        <p id="cfgBwNote"></p>
+      </div>
+
+      <details class="cfg-sec" open>
+        <summary>1 · Como funciona</summary>
+        <div>
+          <p>Cada conta Vercel (plano Hobby) tem a própria cota de transferência (~100 GB/mês). O vídeo passa pela Vercel,
+            então cada conta nova no pool <strong>soma outra cota</strong>. Para cada filme/episódio o fdsFlix escolhe a Vercel
+            com <strong>mais cota sobrando</strong> (sorteia só no empate); se ela falhar, tenta a próxima (até 3).
+            Um filme inteiro sai de uma Vercel só.</p>
+          <p>Contas diferentes, não projetos diferentes: vários projetos na mesma conta <em>não</em> somam.
+            1080p gasta ≈ 2,2 GB por hora assistida. Existe também um limite de chamadas de função (cada segmento é uma; ≈ 1.700 por filme de 2 h): confira em <em>Usage</em>.</p>
+        </div>
+      </details>
+
+      <details class="cfg-sec" open>
+        <summary>2 · Passo a passo: subir uma Vercel nova</summary>
+        <div>
+          <p>Faça uma vez por conta. Precisa de Node 20+ e uma conta Vercel nova (e-mail diferente, já confirmado).
+            <strong>Não há variável nenhuma para configurar</strong>: <code>PROXY_SECRET</code> e <code>TARGET_ORIGIN</code> já vêm embutidas no código do kit (arquivo <code>lib/config.js</code>).</p>
+          <div class="cfg-row"><button id="cfgDownload" type="button">⬇ Baixar kit (.zip)</button></div>
+          <p id="cfgStatus" role="status"></p>
+          <ol>
+            <li>Descompacte o zip e entre na pasta: <pre>unzip fdsflix-vercel-kit.zip
+cd adproxy-kit</pre></li>
+            <li>Entre na conta Vercel <strong>desta vez</strong> (saia da anterior antes): <pre>npx vercel logout
+npx vercel login</pre></li>
+            <li>Rode o script. Ele cria o projeto e publica em produção: <pre>bash deploy-vercel.sh</pre></li>
+            <li>Anote a <strong>URL de produção</strong> curta (<code>https://adproxy-kit.vercel.app</code> ou parecida; em <em>Project → Domains</em>, não a de um deploy avulso com hash) e teste:
+              <pre>curl -s "https://SEU-DOMINIO.vercel.app/vidsrc/probe?tmdb=603"</pre>
+              Se voltar uma página HTML de login: <em>Project → Settings → Deployment Protection</em> e desligue para <strong>Production</strong>.</li>
+            <li>Repita 2–4 em cada conta e cole as URLs no Render (seção 3).</li>
+          </ol>
+          <p>Sem o script: dentro da pasta, <code>npx vercel link --yes</code> e <code>npx vercel deploy --prod --yes</code>.
+            A ligação GitHub↔Vercel costuma aceitar uma conta só; por isso o caminho é pela linha de comando.</p>
+        </div>
+      </details>
+
+      <details class="cfg-sec" open>
+        <summary>3 · Colocar as URLs novas no Render</summary>
+        <div>
+          <p>No Render (fdsFlix) → <em>Environment</em>, a variável <code>VIDSRC_PROXY_URLS</code> guarda <strong>todas</strong> as URLs de produção, separadas por vírgula.
+            Cada Vercel nova: acrescente a URL dela e salve (o Render faz redeploy). Cole as URLs abaixo (uma por linha, ou separadas por vírgula/espaço) e copie a linha pronta:</p>
+          <textarea id="cfgUrls" rows="4" spellcheck="false" placeholder="https://adproxy-kit.vercel.app&#10;https://adproxy-kit-bbb.vercel.app"></textarea>
+          <pre id="cfgEnvLine">VIDSRC_PROXY_URLS=</pre>
+          <div class="cfg-row"><button id="cfgCopyLine" class="ghost" type="button">Copiar a linha</button></div>
+          <p id="cfgUrlMsg" role="status"></p>
+          <p>Mais duas variáveis no Render, uma vez só: <code>VERCEL_QUOTA_GB=100</code> (cota <strong>de cada</strong> Vercel) e <code>USAGE_RESET_DAY=1</code>
+            (dia em que a cota renova; veja em <em>Usage</em> na Vercel). Depois do redeploy, no seu PC: <code>npm run pool:check</code>.
+            O botão <em>Testar Vidsrc/Vercel</em> do diagnóstico testa todas pelo servidor.</p>
+        </div>
+      </details>
+
+      <details class="cfg-sec">
+        <summary>4 · Valores embutidos (PROXY_SECRET e TARGET_ORIGIN)</summary>
+        <div>
+          <p>Vêm fixos no código: <code>TARGET_ORIGIN = https://vidlink.pro</code> (site do modo AdShield, só na rota <code>/</code>; o pool de vídeo nem usa)
+            e um <code>PROXY_SECRET</code> de 64 caracteres que assina as URLs de vídeo. O mesmo valor vale em todas as contas.</p>
+          <p>O segredo é público por decisão do dono do projeto: quem o souber consegue assinar URLs e usar a Vercel como proxy aberto.
+            Para trocar, defina <code>PROXY_SECRET</code> nas variáveis da Vercel (a variável manda mais) ou mude <code>BUILTIN_PROXY_SECRET</code> em <code>lib/config.js</code> e publique de novo.
+            Trocar só obriga a recarregar um filme que estava tocando.</p>
+        </div>
+      </details>
+
+      <details class="cfg-sec">
+        <summary>5 · A banda é estimativa: acertar com o número real</summary>
+        <div>
+          <p>O cantinho de banda é medido pelos navegadores (hls.js informa os bytes). Quem fecha a aba sem enviar, ou um reinício do Render sem disco persistente (<code>USAGE_FILE=/data/usage.json</code>), faz o número divergir.
+            A fonte da verdade é a Vercel: <em>Usage → Fast Data Transfer</em>. Digite o valor de lá aqui para acertar o contador:</p>
+          <div class="cfg-calib">
+            <select id="cfgCalBase" aria-label="Vercel"></select>
+            <input id="cfgCalGb" type="number" min="0" step="0.1" placeholder="usado (GB)" aria-label="GB usados segundo a Vercel">
+            <button id="cfgCalBtn" class="ghost" type="button">Acertar contador</button>
+          </div>
+          <p id="cfgCalMsg" role="status"></p>
+          <p>Exige <code>API_KEY</code> definida no Render (e a mesma em <code>apiKey</code> do <code>config.js</code> se a página estiver em outro domínio).</p>
+        </div>
+      </details>
+
+      <details class="cfg-sec">
+        <summary>6 · Atualizar o código depois</summary>
+        <div>
+          <p>Baixe um kit novo e rode <code>bash deploy-vercel.sh</code> em cada conta (<code>logout</code>/<code>login</code> entre elas).</p>
+        </div>
+      </details>
+
+      <details class="cfg-sec">
+        <summary>7 · Problemas comuns</summary>
+        <div>
+          <ol>
+            <li><strong>404 "deployment not found":</strong> URL errada ou projeto apagado. Copie a de produção em <em>Domains</em>.</li>
+            <li><strong>Probe devolve HTML de login / 401:</strong> Deployment Protection ligada. Desligue para Production.</li>
+            <li><strong>403 "URL não assinada pelo proxy":</strong> o <code>PROXY_SECRET</code> mudou com o player aberto. Recarregue o título.</li>
+            <li><strong>O script falha em <code>link</code>/<code>deploy</code>:</strong> CLI antiga ou não logado. <code>npx vercel@latest login</code> e rode de novo.</li>
+            <li><strong>Uma Vercel nunca é escolhida:</strong> está ≥ 98 % ou falhando. Veja o diagnóstico e rode <code>pool:check</code>.</li>
+            <li><strong>Esgotou antes pelas chamadas de função:</strong> o limite <em>Function Invocations</em> aperta antes da banda. Confira em <em>Usage</em>.</li>
+          </ol>
+        </div>
+      </details>
+
+      <div class="cfg-note">O plano Hobby da Vercel é de uso pessoal e não comercial; várias contas só para somar cota
+        podem ferir os termos e levar à suspensão. A decisão e o risco são seus.</div>
+    </div>
+  </dialog>
 
   <div class="search-row">
     <input id="searchInput" type="text" placeholder="Buscar filme ou série…" autocomplete="off" spellcheck="false">
@@ -1464,8 +1623,40 @@
     }).catch(function () { /* servidor dormindo: tenta depois */ });
   }
 
+  function pendingBytes() {
+    return Object.keys(usage.pending).reduce(function (a, k) { return a + usage.pending[k].bytes; }, 0);
+  }
+
+  // Cantinho do cabeçalho: banda livre somada de TODAS as Vercels (estimativa).
+  function cornerPaint() {
+    var el = $('bwCorner');
+    var d = usage.data;
+    if (!el || !d) return;
+    var pool = d.pool || [];
+    if (!pool.length) {
+      $('bwTop').textContent = '📶 Nenhuma Vercel no pool';
+      $('bwSub').textContent = 'Clique para ver como adicionar';
+      $('bwFill').style.width = '0';
+      el.className = 'bw';
+      return;
+    }
+    var used = d.total.usedBytes + pendingBytes();
+    var quota = d.total.quotaBytes;
+    var pct = Math.min(100, used / quota * 100);
+    var top = $('bwTop');
+    top.innerHTML = '';
+    top.appendChild(document.createTextNode('📶 '));
+    var b = document.createElement('b'); b.textContent = fmtBytes(Math.max(0, quota - used));
+    top.appendChild(b);
+    top.appendChild(document.createTextNode(' livres de ' + fmtBytes(quota)));
+    $('bwSub').textContent = pool.length + ' Vercel' + (pool.length > 1 ? 's' : '') + ' · ' + pct.toFixed(1) + '% usado · renova em ' + d.daysLeft + ' d · estimativa';
+    $('bwFill').style.width = pct + '%';
+    el.className = 'bw' + (pct >= 85 ? ' crit' : (pct >= 60 ? ' warn' : ''));
+  }
+
   function usagePaint() {
     usage.lastPaint = Date.now();
+    cornerPaint();
     var box = $('usageBox');
     var data = usage.data;
     if (!box || !data || !data.pool || !data.pool.length) return;
@@ -1522,6 +1713,7 @@
   document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'hidden') usageFlush(true); });
   setInterval(function () { usageFlush(false); }, 20000);
   setTimeout(usageRefresh, 800);
+  setInterval(usageRefresh, 60000);
 
   /* ---------------------------------------------------------------- */
   /* Painel de diagnóstico: o caminho exato do vídeo, ao vivo          */
@@ -3708,6 +3900,164 @@
   }
 
   $('noticeRetry').addEventListener('click', wakeServer);
+
+  /* ---------------------------------------------------------------- */
+  /* Configs: banda total, tutorial, kit .zip e linha do Render        */
+  /* ---------------------------------------------------------------- */
+
+  (function setupConfigs() {
+    function status(text) { $('cfgStatus').textContent = text || ''; }
+
+    function openCfg() {
+      status('');
+      paintCfgBw();
+      usageRefresh().then(paintCfgBw);
+      apiFetch('/api/pool/info')
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (info) {
+          if (info && !info.kit) { $('cfgDownload').disabled = true; status('Este servidor não tem a pasta adproxy/.'); }
+          else { $('cfgDownload').disabled = false; }
+        })
+        .catch(function () { /* servidor dormindo: o botão tenta mesmo assim */ });
+      if (!$('cfgDialog').open) $('cfgDialog').showModal();
+    }
+    $('cfgOpen').addEventListener('click', openCfg);
+    $('bwCorner').addEventListener('click', openCfg);
+    $('cfgClose').addEventListener('click', function () { $('cfgDialog').close(); });
+    $('cfgDialog').addEventListener('click', function (e) { if (e.target === $('cfgDialog')) $('cfgDialog').close(); });
+
+    // Card "banda total" + lista por Vercel dentro do modal.
+    function paintCfgBw() {
+      var box = $('cfgBw');
+      var d = usage.data;
+      box.innerHTML = '';
+      $('cfgBwNote').textContent = d ? d.note : '';
+      var sel = $('cfgCalBase');
+      sel.innerHTML = '';
+      if (!d) { box.innerHTML = '<p>Sem resposta do servidor ainda (se for o Render grátis, ele pode estar acordando).</p>'; return; }
+      if (!d.pool.length) {
+        box.innerHTML = '<p>Nenhuma Vercel no pool. Siga o passo a passo abaixo e coloque as URLs em <code>VIDSRC_PROXY_URLS</code> no Render.</p>';
+        return;
+      }
+      var pend = pendingBytes();
+      var rows = d.pool.map(function (p) {
+        return { label: p.label, base: p.base, used: p.usedBytes + ((usage.pending[p.base] || {}).bytes || 0), quota: p.quotaBytes };
+      });
+      if (rows.length > 1) rows.push({ label: 'TOTAL (' + rows.length + ' Vercels)', base: '', used: d.total.usedBytes + pend, quota: d.total.quotaBytes });
+      rows.forEach(function (r) {
+        var pct = Math.min(100, r.used / r.quota * 100);
+        var left = Math.max(0, r.quota - r.used);
+        var row = document.createElement('div');
+        row.className = 'usage-row';
+        var name = document.createElement('div');
+        name.className = 'name';
+        var a = document.createElement('span'); a.textContent = r.label;
+        var b = document.createElement('span'); b.textContent = 'livres ' + fmtBytes(left) + ' de ' + fmtBytes(r.quota) + ' (' + pct.toFixed(1) + '% usado)';
+        name.appendChild(a); name.appendChild(b);
+        var bar = document.createElement('div');
+        bar.className = 'usage-bar' + (pct >= 85 ? ' crit' : (pct >= 60 ? ' warn' : ''));
+        var iu = document.createElement('i'); iu.className = 'used'; iu.style.width = pct + '%';
+        bar.appendChild(iu);
+        row.appendChild(name); row.appendChild(bar);
+        box.appendChild(row);
+        if (r.base) {
+          var opt = document.createElement('option');
+          opt.value = r.base; opt.textContent = r.label;
+          sel.appendChild(opt);
+        }
+      });
+      var foot = document.createElement('p');
+      foot.textContent = 'Renova em ' + d.daysLeft + ' dia(s) · ≈ ' + d.total.hoursLeft + ' h de vídeo ainda cabem no total.';
+      box.appendChild(foot);
+    }
+
+    // Monta a linha VIDSRC_PROXY_URLS=... a partir das URLs coladas (https, sem barra final, sem repetidas).
+    // Junta com as Vercels que o servidor já tem, para não esquecer nenhuma ao colar só a nova.
+    function buildLine() {
+      var seen = {};
+      var list = [];
+      var bad = 0;
+      String($('cfgUrls').value || '').split(/[\s,;]+/).forEach(function (raw) {
+        raw = raw.trim();
+        if (!raw) return;
+        var origin = '';
+        try {
+          var u = new URL(raw);
+          if (u.protocol === 'https:') origin = u.origin;
+        } catch (err) { /* inválida */ }
+        if (!origin) { bad += 1; return; }
+        if (!seen[origin]) { seen[origin] = true; list.push(origin); }
+      });
+      $('cfgEnvLine').textContent = 'VIDSRC_PROXY_URLS=' + list.join(',');
+      $('cfgUrlMsg').textContent = list.length
+        ? list.length + ' URL(s) na linha' + (bad ? ' · ' + bad + ' ignorada(s) por não serem https://...' : '') + '. Cole a linha inteira no Render (substitui o valor atual).'
+        : (bad ? bad + ' item(ns) ignorado(s): use URLs https://...' : '');
+      return list;
+    }
+    $('cfgUrls').addEventListener('input', buildLine);
+    $('cfgCopyLine').addEventListener('click', function () {
+      var list = buildLine();
+      if (!list.length) { $('cfgUrlMsg').textContent = 'Cole ao menos uma URL https:// antes.'; return; }
+      var text = $('cfgEnvLine').textContent;
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(function () { $('cfgUrlMsg').textContent = 'Linha copiada. Cole no Render → Environment.'; },
+          function () { window.prompt('Copie a linha:', text); });
+      } else { window.prompt('Copie a linha:', text); }
+    });
+    // Já preenche com as Vercels que o servidor conhece (é o valor atual do Render).
+    $('cfgOpen').addEventListener('click', function () { prefillUrls(); });
+    $('bwCorner').addEventListener('click', function () { prefillUrls(); });
+    function prefillUrls() {
+      if ($('cfgUrls').value || !usage.data || !usage.data.pool.length) return;
+      $('cfgUrls').value = usage.data.pool.map(function (p) { return p.base; }).join('\n') + '\n';
+      buildLine();
+    }
+
+    $('cfgCalBtn').addEventListener('click', function () {
+      var base = $('cfgCalBase').value;
+      var gb = Number($('cfgCalGb').value);
+      var msg = $('cfgCalMsg');
+      if (!base || !isFinite(gb) || gb < 0 || $('cfgCalGb').value === '') { msg.textContent = 'Escolha a Vercel e digite os GB usados.'; return; }
+      msg.textContent = 'Acertando…';
+      apiFetch('/api/usage/calibrate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ base: base, usedGb: gb })
+      })
+        .then(function (r) {
+          return r.json().catch(function () { return {}; }).then(function (body) {
+            if (!r.ok) throw new Error(body.error || ('HTTP ' + r.status));
+            msg.textContent = 'Contador acertado.';
+            return usageRefresh().then(paintCfgBw);
+          });
+        })
+        .catch(function (err) { msg.textContent = 'Não consegui acertar: ' + err.message; });
+    });
+
+    $('cfgDownload').addEventListener('click', function () {
+      var btn = $('cfgDownload');
+      btn.disabled = true;
+      status('Montando o kit…');
+      apiFetch('/api/pool/kit')
+        .then(function (r) {
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          return r.blob();
+        })
+        .then(function (blob) {
+          var url = URL.createObjectURL(blob);
+          var a = document.createElement('a');
+          a.href = url;
+          a.download = 'fdsflix-vercel-kit.zip';
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          setTimeout(function () { URL.revokeObjectURL(url); }, 10000);
+          status('Kit baixado (' + Math.round(blob.size / 1024) + ' KB). Siga os passos abaixo.');
+        })
+        .catch(function (err) { status('Não consegui baixar o kit: ' + err.message); })
+        .then(function () { btn.disabled = false; });
+    });
+  })();
 
   apiFetch('/api/config')
     .then(function (response) { return response.ok ? response.json() : null; })

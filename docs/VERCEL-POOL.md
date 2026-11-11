@@ -42,6 +42,11 @@ Existe um segundo limite: **chamadas de função**. Cada segmento é uma chamada
 de 2 h ≈ 1.700). Confira o limite de *Function Invocations* em *Usage*; ele pode apertar
 antes da banda.
 
+> **Atalho:** o botão **⚙ Configs** da página mostra a banda total e o tutorial completo, e baixa um kit
+> `.zip` (projeto `adproxy` + `deploy-vercel.sh` + `POOL-MANUAL.md`). `PROXY_SECRET` e `TARGET_ORIGIN` vêm
+> **embutidas** no código (`adproxy/lib/config.js`): cada conta nova é `npx vercel login` +
+> `bash deploy-vercel.sh`, sem configurar variável nenhuma. O passo a passo abaixo é a versão manual.
+
 ## Passo a passo: criar cada Vercel extra
 
 Faça isto **uma vez por conta**. O caminho mais confiável é pela linha de comando, porque
@@ -59,12 +64,8 @@ o GitHub costuma aceitar ligação com uma conta Vercel só.
    ```
    Na primeira vez ele cria o projeto `adproxy` nessa conta. Anote a URL de produção
    (`https://adproxy-xxxx.vercel.app`; use a **de produção**, não a de um deploy específico).
-4. **Defina o segredo de assinatura** (cada conta tem o seu):
-   ```bash
-   openssl rand -hex 32            # copie a saída
-   npx vercel env add PROXY_SECRET production    # cole o valor quando pedir
-   npx vercel deploy --prod --yes  # redeploy para a variável valer
-   ```
+4. **Segredo de assinatura:** nada a fazer. Vem embutido em `adproxy/lib/config.js` (a variável
+   `PROXY_SECRET` na Vercel, se existir, manda mais que o embutido).
 5. **Deixe o projeto público.** Se o teste devolver uma página HTML pedindo login, vá em
    *Project → Settings → Deployment Protection* e desligue a proteção para produção.
 6. **Teste essa Vercel sozinha** (deve ficar tudo 200):

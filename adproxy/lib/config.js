@@ -12,6 +12,15 @@ const DEFAULT_USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
   '(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
+// Valores EMBUTIDOS: o kit "Vercel extra" sobe sem configurar nenhuma variável de ambiente.
+// Variável de ambiente (PROXY_SECRET / TARGET_ORIGIN) continua valendo e manda mais que estes.
+// O segredo é público de propósito (decisão do dono): ele só assina as URLs de vídeo que a
+// Vercel emite; quem o souber consegue assinar URLs e usar a Vercel como proxy. Para trocar,
+// defina PROXY_SECRET na Vercel ou mude a linha abaixo e publique de novo.
+const BUILTIN_PROXY_SECRET =
+  'e58123d7001b6d1f7e2f14aa0ca02b8ef87465b062c870121613ffe8505bff3b';
+const BUILTIN_TARGET_ORIGIN = 'https://vidlink.pro';
+
 const DEFAULT_PLAYER_HOSTS = [
   // Players / embed services comuns
   'vidlink.pro',
@@ -110,8 +119,8 @@ function parseTargetOrigin(raw) {
 }
 
 function loadConfig(env = process.env) {
-  const target = parseTargetOrigin(env.TARGET_ORIGIN);
-  const explicitSecret = String(env.PROXY_SECRET || env.SESSION_SECRET || '').trim();
+  const target = parseTargetOrigin(env.TARGET_ORIGIN || BUILTIN_TARGET_ORIGIN);
+  const explicitSecret = String(env.PROXY_SECRET || env.SESSION_SECRET || BUILTIN_PROXY_SECRET).trim();
   const secret = explicitSecret || crypto.randomBytes(32).toString('hex');
 
   return {
@@ -145,6 +154,8 @@ function loadConfig(env = process.env) {
 }
 
 module.exports = {
+  BUILTIN_PROXY_SECRET,
+  BUILTIN_TARGET_ORIGIN,
   DEFAULT_USER_AGENT,
   DEFAULT_PLAYER_HOSTS,
   loadConfig,
