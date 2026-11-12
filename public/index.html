@@ -1960,7 +1960,7 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
 
   // Só conta o que passa pelo proxy Vidsrc da Vercel (é o que gasta a cota dela).
   function usageBaseOf(url) {
-    if (!/\/(?:vidsrc\/hls|live\/(?:hls|np))\?/.test(String(url || ''))) return null;
+    if (!/\/(?:vidsrc\/hls\?|live\/(?:hls|np)\?|_adshield\/r\/)/.test(String(url || ''))) return null;
     try { return new URL(url, location.href).origin; } catch (err) { return null; }
   }
 

@@ -281,7 +281,13 @@ test('planDelivery: sem Vercel pronta devolve "none" com motivo (nunca cai no Re
   assert.match(none.reason, /Vercel/);
   const old = await live.planDelivery({ url: 'http://x.example/a.m3u8', https: false, cors: false, kind: 'hls' }, { pool: ['https://old.vercel.app'], fetchImpl: okFetch({}) });
   assert.equal(old.mode, 'none');
-  assert.match(old.reason, /deploy-vercel|Reimplante/);
+  assert.match(old.reason, /Vercel/);
+  // Vercel antiga (sem rotas /live/*): entrega pelo AdShield, com um player que a própria Vercel serve.
+  const shield = await live.planDelivery({ url: 'http://x.example/a.m3u8', https: false, cors: false, kind: 'hls' }, { pool: ['https://old.vercel.app'], fetchImpl: okFetch({}), origin: 'https://render.example' });
+  assert.equal(shield.mode, 'shield');
+  assert.match(shield.url, /^https:\/\/old\.vercel\.app\/_adshield\/r\//);
+  const entry = verifyToken(shield.url.split('/_adshield/r/')[1], loadConfig({}));
+  assert.match(entry.url, /^https:\/\/render\.example\/api\/live\/player\?p=.+&k=hls$/);
 });
 
 test('planDelivery: página de player vai pelo AdShield com token que o adproxy aceita', async () => {
@@ -376,7 +382,7 @@ test('planDelivery com verify: pula a Vercel que recusa a fonte (403) e usa a pr
   live._reset();
   const only = await live.planDelivery(src, { pool: ['https://ruim.vercel.app'], fetchImpl, verify: true });
   assert.equal(only.mode, 'none');
-  assert.match(only.reason, /não conseguiu abrir.*403/);
+  assert.match(only.reason, /403/);
 });
 
 test('warm: rodadas seguintes testam as fontes que ainda não foram testadas, não só as 12 primeiras', async () => {
@@ -472,4 +478,35 @@ test('planDelivery: Vercel que recusa todas as assinaturas sai da entrega por un
   assert.match(second.reason, /recusa a assinatura/);
   assert.equal(live.diagnostics().vercels.length >= 0, true);
   delete process.env.PROXY_SECRET;
+});
+
+test('planDelivery: sem rota /live/*, o AdShield só serve se aceitar o token (verify) e troca para o segredo embutido', async () => {
+  const { BUILTIN_PROXY_SECRET } = require('../adproxy/lib/secret.js');
+  process.env.PROXY_SECRET = 'segredo-so-do-render';
+  const src = { url: 'http://cdn.example:8000/play/a/index.m3u8', kind: 'hls', https: false, cors: false };
+  const asked = [];
+  const fetchImpl = async (u) => {
+    if (u.includes('?cap=1')) return new Response('nao', { status: 404 }); // Vercel antiga: sem rotas de TV
+    asked.push(u);
+    const token = u.split('/_adshield/r/')[1];
+    const ok = verifyToken(token, loadConfig({ PROXY_SECRET: BUILTIN_PROXY_SECRET }));
+    return ok ? new Response('#EXTM3U\n#EXTINF:4,\ns.ts\n') : new Response('Token de recurso inválido.', { status: 403 });
+  };
+  const plan = await live.planDelivery(src, { pool: ['https://velha.vercel.app'], fetchImpl, verify: true, origin: 'https://render.example' });
+  assert.equal(plan.mode, 'shield');
+  assert.equal(asked.length, 2, 'token do Render (403) e depois o embutido (200)');
+  const again = await live.planDelivery(src, { pool: ['https://velha.vercel.app'], fetchImpl, verify: true, origin: 'https://render.example' });
+  assert.equal(again.mode, 'shield');
+  assert.equal(asked.length, 3, 'aprendeu o segredo certo');
+  delete process.env.PROXY_SECRET;
+});
+
+test('player da Vercel: só aceita token válido e escapa tudo', () => {
+  const { playerHtml, validToken } = require('../lib/livePlayer');
+  assert.equal(validToken('abc'), false);
+  assert.throws(() => playerHtml('x"</script><script>alert(1)</script>aaaaaaaaaaaaaaaaaaaa', 'hls'));
+  const html = playerHtml('A'.repeat(30) + '.' + 'B'.repeat(30), 'ts');
+  assert.match(html, /mpegts\.js/);
+  assert.doesNotMatch(html, /hls\.min\.js/);
+  assert.match(playerHtml('A'.repeat(40), 'hls'), /hls\.min\.js/);
 });

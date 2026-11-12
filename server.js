@@ -1242,6 +1242,27 @@ app.get('/api/live/diag', requireStatsKey, async (req, res) => {
   }
 });
 
+// Player de TV que a PRÓPRIA Vercel serve (via AdShield) para fontes HTTP sem CORS. Público de propósito: quem busca é o AdShield,
+// sem cabeçalhos. Só gera ~5 KB de HTML com o token recebido; o vídeo não passa pelo Render.
+app.get('/api/live/player', (req, res) => {
+  try {
+    const html = require('./lib/livePlayer').playerHtml(String(req.query.p || ''), String(req.query.k || 'hls'));
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-store');
+    res.send(html);
+  } catch (err) {
+    res.status(400).type('text').send('Pedido inválido.');
+  }
+});
+
+// Endereço público do Render (o AdShield da Vercel busca o player aqui). RENDER_EXTERNAL_URL é definido pelo próprio Render.
+function publicOrigin(req) {
+  const fixed = String(process.env.RENDER_EXTERNAL_URL || process.env.PUBLIC_URL || '').trim().replace(/\/+$/, '');
+  if (/^https?:\/\//i.test(fixed)) return fixed;
+  const proto = String(req.get('x-forwarded-proto') || req.protocol || 'https').split(',')[0].trim();
+  return `${proto}://${req.get('host')}`;
+}
+
 app.get('/api/live/stream', requireApiKey, async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   const id = String(req.query.ch || '');
@@ -1265,7 +1286,7 @@ app.get('/api/live/stream', requireApiKey, async (req, res) => {
       tried += found.tried;
       // Se já havia fonte boa e foi a ENTREGA que falhou, o motivo útil é o da entrega, não "nenhuma fonte respondeu".
       if (!found.ok) { if (!skipped.length) lastReason = found.error; break; }
-      const plan = await liveTv.planDelivery(found.source, { pool: fallbackPool, verify: true });
+      const plan = await liveTv.planDelivery(found.source, { pool: fallbackPool, verify: true, origin: publicOrigin(req) });
       if (plan.mode === 'none') {
         // Esta fonte não tem como chegar ao navegador sem gastar o Render; tenta a próxima.
         lastReason = plan.reason;

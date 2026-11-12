@@ -79,18 +79,35 @@ Fontes que entregam o fluxo MPEG-TS direto (sem playlist) agora tocam: se nenhum
 `mpegts.js` só nesse momento (CDN jsDelivr com SRI; cópia local de reserva em `public/vendor/mpegts.min.js`, que só pesa no Render se o CDN
 falhar). A Vercel corta streams longos (~5 min): o player reconecta sozinho (até 30 vezes) e a banda é contada no medidor das Vercels.
 
+## Plano B: AdShield (funciona SEM redeploy das Vercels)
+
+As Vercels já publicadas não têm as rotas `/live/*`, e a rota genérica do AdShield (`/_adshield/r/<token>`) entrega HLS e TS mas **sem CORS**,
+então o site (outro domínio) não conseguiria ler a resposta. A solução é um **player servido pela própria Vercel**:
+
+1. O servidor (Render) gera um token do AdShield para a fonte e outro para a página `GET /api/live/player?p=<token>&k=hls|ts` (≈5 KB de HTML,
+   `lib/livePlayer.js`; o vídeo nunca passa pelo Render). O endereço público vem de `RENDER_EXTERNAL_URL` (o Render define sozinho).
+2. O navegador abre um iframe em `https://<vercel>/_adshield/r/<token da página>`. O AdShield busca a página no Render, reescreve o script
+   do hls.js/mpegts.js (CDN) para passar por ele e entrega.
+3. Dentro do iframe, o player busca o vídeo em `/_adshield/r/<token da fonte>` do **mesmo domínio**: sem CORS. Playlists têm os segmentos
+   reescritos pelo AdShield. O TS cru reconecta sozinho quando a Vercel corta o stream (~60 s).
+4. O player avisa o site por `postMessage` (tocando, erro, bytes, buffer, velocidade); é daí que vêm a banda contada e a área nerd.
+
+O servidor confere de ponta a ponta antes de entregar (abre a playlist, ou lê o primeiro pacote do TS, por `/_adshield/r/`). Ordem de entrega
+para fonte HTTP/sem CORS: rotas `/live/*` (se a Vercel as tem e aceita a assinatura) e, senão, este plano B. Custo: o AdShield é função Node,
+então conta também a cota de Fast Origin Transfer (10 GB no Hobby); as rotas `/live/hls` (Edge) são mais baratas, mas exigem redeploy.
+
 ## Assinatura das Vercels
 
-Os links `/live/hls` e `/live/np` são assinados pelo Render e conferidos pela Vercel. O padrão é o segredo embutido (`adproxy/lib/secret.js`);
-se alguma das duas pontas tiver `PROXY_SECRET`/`SESSION_SECRET` próprio, os segredos divergem e a Vercel devolve `403 URL não assinada`
-(o canal aparece "no ar", porque o teste é feito pelo Render, mas nenhuma fonte consegue chegar ao navegador).
+O link `/live/hls` e `/live/np` é assinado pelo Render e conferido pela Vercel; o AdShield usa a mesma cadeia de segredo
+(`PROXY_SECRET` > `SESSION_SECRET` > embutido em `adproxy/lib/secret.js`). Se uma Vercel tiver segredo próprio (o caso da `fdsflix-mu` em
+produção, que recusa até o segredo embutido), a assinatura do Render dá `403 URL não assinada` / `Token de recurso inválido`.
 
-- **Vercel:** confere o link com o segredo próprio **e** com o embutido (`getSecrets` em `adproxy/lib/liveHls.mjs`). Precisa de redeploy.
 - **Render:** tenta o segredo dele e, se for diferente do embutido, o embutido; lembra qual cada Vercel aceita.
 - **Vercel que recusa tudo:** sai da entrega por 5 min (evento `vercel` no log) em vez de gastar 12 s por fonte, e o erro mostrado ao usuário
-  passa a ser o motivo real ("Há fonte no ar, mas nenhuma conseguiu chegar ao navegador: ...").
-- Atenção: aceitar o segredo embutido significa que quem lê o repositório consegue gerar links para a rota. Se o repositório for público e isso
-  incomodar, defina o **mesmo** `PROXY_SECRET` no Render e nas Vercels (e a rota deixa de depender do embutido no Render).
+  passa a ser o motivo real ("Nenhuma Vercel conseguiu entregar esta fonte: ...").
+- **Vercel nova (com redeploy):** passa a conferir o link com o segredo próprio **e** com o embutido (`getSecrets` em `adproxy/lib/liveHls.mjs`).
+  Aceitar o embutido significa que quem lê o repositório consegue gerar links para a rota; se isso incomodar, use o mesmo `PROXY_SECRET`
+  no Render e nas Vercels.
 
 ## Cascata mais rápida
 

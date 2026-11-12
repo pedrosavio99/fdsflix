@@ -287,6 +287,9 @@
         if (typeof state.hls.latency === 'number' && isFinite(state.hls.latency)) s.lat = state.hls.latency;
       } catch (e) { /* ignora */ }
     }
+    if (n.ext && now - n.ext.t < 3500) {
+      s.cap = n.ext.cap; s.use = n.ext.use; s.buf = n.ext.buf || 0; s.drop = n.ext.drop || 0; s.w = n.ext.w; s.h = n.ext.h;
+    }
     n.samples.push(s);
     if (n.samples.length > 90) n.samples.shift();
     if (els.nerd && els.nerd.open) { renderTiles(); drawChart(); }
@@ -299,7 +302,7 @@
     T.down.textContent = s.cap == null ? '–' : fmt(s.cap) + ' Mbps';
     T.use.textContent = s.use == null ? '–' : fmt(s.use, 2) + ' Mbps';
     T.buf.textContent = s.buf == null ? '–' : fmt(s.buf) + ' s';
-    T.q.textContent = (v && v.videoWidth ? v.videoWidth + 'x' + v.videoHeight : '–') + (s.kbps ? ' · ' + s.kbps + ' kbps' : '');
+    T.q.textContent = (s.w ? s.w + 'x' + s.h : (v && v.videoWidth ? v.videoWidth + 'x' + v.videoHeight : '–')) + (s.kbps ? ' · ' + s.kbps + ' kbps' : '');
     T.drop.textContent = s.drop == null ? '–' : String(s.drop);
     T.lat.textContent = s.lat == null ? '–' : fmt(s.lat) + ' s';
     T.tot.textContent = fmt(state.net.bytes / 1048576, 1) + ' MB' + (state.net.count ? ' · ' + state.net.count + ' pedaços' : '');
@@ -577,6 +580,7 @@
       try { state.ts.pause(); state.ts.unload(); state.ts.detachMediaElement(); state.ts.destroy(); } catch (e) { /* ignora */ }
       state.ts = null; state.tsLast = null; state.net.tsMbps = null;
     }
+    if (state.net) state.net.ext = null;
     try { els.video.pause(); } catch (e) { /* ignora */ }
     els.video.removeAttribute('src');
     try { els.video.load(); } catch (e) { /* ignora */ }
@@ -634,6 +638,7 @@
     cur.sid = job.sid;
     cur.played = false;
     els.via.textContent = '· ' + job.via;
+    if (job.mode === 'shield') { startShield(job); return; }
     if (job.mode === 'page') {
       // Página de player entregue pelo AdShield: não dá para medir quadros dentro do iframe.
       els.video.hidden = true;
@@ -704,6 +709,43 @@
       return r.text().then(function (t) { nlog('diagnostico', 'GET ' + shortUrl(url) + ' → HTTP ' + r.status + ' · ' + t.slice(0, 160).replace(/\s+/g, ' ')); });
     }).catch(function (e) { nlog('diagnostico', 'GET ' + shortUrl(url) + ' falhou: ' + e.message); });
   }
+
+  /** Fontes HTTP sem CORS: um player que a PRÓPRIA Vercel serve (AdShield) toca o vídeo e avisa o site por postMessage. */
+  function startShield(job) {
+    var cur = state.cur, sid = job.sid;
+    cur.shield = true;
+    state.net.ext = null;
+    els.video.hidden = true;
+    els.frame.hidden = false;
+    els.frame.src = job.url;
+    nlog('shield', 'player na Vercel (' + (job.kind === 'ts' ? 'TS' : 'HLS') + ')');
+    setMsg('Abrindo o player pela Vercel…', 'work');
+    clearTimeout(state.watch);
+    state.watch = setTimeout(function () {
+      if (state.cur && state.cur.sid === sid && !state.cur.played) failSource('o player da Vercel não começou a tocar');
+    }, 30000);
+  }
+
+  window.addEventListener('message', function (e) {
+    var d = e.data, cur = state.cur;
+    if (!d || d.fds !== 'live' || !cur || !cur.shield || !els.frame || e.source !== els.frame.contentWindow) return;
+    if (d.ev === 'playing') {
+      clearTimeout(state.watch);
+      setMsg('');
+      if (!cur.played) { cur.played = true; nlog('tocando', cur.name + ' fonte ' + cur.sid + ' · ' + d.w + 'x' + d.h + ' (player na Vercel)'); }
+    } else if (d.ev === 'error') {
+      nlog('shield', 'ERRO ' + d.detail);
+      if (!cur.played) failSource(d.detail);
+      else setMsg('A transmissão parou (' + d.detail + ').', 'err', true);
+    } else if (d.ev === 'bytes') {
+      try { if (window.FdsUsage && d.bytes) window.FdsUsage.add(els.frame.src, d.bytes, d.dur || 0); } catch (err) { /* estatística nunca derruba a TV */ }
+      state.net.bytes += d.bytes || 0;
+    } else if (d.ev === 'stat') {
+      state.net.ext = { t: Date.now(), buf: d.buf, drop: d.drop, w: d.w, h: d.h, cap: d.cap, use: d.use };
+    } else if (d.ev === 'reconnect') {
+      nlog('shield', 'a Vercel cortou o fluxo; reconectando ' + d.n + '/30');
+    }
+  });
 
   function loadMpegts(done) {
     if (window.mpegts) return done(null);
