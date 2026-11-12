@@ -123,6 +123,9 @@ horário, classificação indicativa e barra de progresso) e, ao assistir, o pro
   Os horários vêm do guia (Brasília) e aparecem no fuso do aparelho. Canais sem programa no guia (Fox Sports, TBS, Syfy, abertas pequenas)
   aparecem só com o nome.
 - **Novo canal:** acrescente o id e os nomes em `NAMES` (nomes em minúsculas, sem acento).
+- **Visual:** a aba reaproveita as classes globais do site (`.hero`, `.row`, `.card`, `.modal`...), então segue o mesmo estilo dos filmes.
+  Clicar num canal abre um modal (como o de filmes) com o player, o programa no ar, a grade completa de 24 h e a lista "Outros canais".
+  O destaque e as fileiras vêm do guia; "Assistir agora" e "Ver programação" abrem o modal do canal em destaque. Esc fecha o modal e depois a TV.
 
 ## Imagem e fontes que não tocam
 

@@ -946,6 +946,20 @@ const RENDER_VIDEO_MSG =
   'Todas as fontes disponíveis agora passariam o vídeo pelo servidor (Render), e isso está bloqueado para poupar a banda ' +
   'grátis de 5 GB/mês. Tente de novo em instantes (o Vidsrc costuma voltar) ou libere com ALLOW_RENDER_VIDEO=1 no Render.';
 
+/**
+ * Mensagem do 503 com o motivo REAL. A trava do Render só entra quando a fonte principal (Vidsrc pelas Vercels) não
+ * respondeu e as outras só entregariam pelo Render; dizer só "bloqueado" escondia que o problema era a fonte principal.
+ */
+function outageMessage(trace) {
+  const vp = (trace || []).find((t) => t.provider === 'Vidsrc Proxy');
+  const resumo = vp && vp.notes.map((n) => String(n)).find((n) => n.startsWith('RESUMO:'));
+  if (!resumo) return RENDER_VIDEO_MSG;
+  const skipped = trace.filter((t) => t.outcome === 'PULADA').map((t) => t.provider);
+  return `A fonte principal (Vidsrc, pelas Vercels) não respondeu agora (${resumo.slice(7).trim()}). ` +
+    (skipped.length ? `As outras fontes (${skipped.join(', ')}) só entregariam pelo Render, bloqueado para poupar os 5 GB/mês. ` : '') +
+    'Isso costuma passar em instantes: tente de novo em alguns segundos.';
+}
+
 /** true se entregar esta fonte ao navegador gastaria banda de saída do Render. */
 async function renderBound(info, { hevcOk, direct }) {
   if (direct) return false; // extensão fdsFlix Direct: o navegador busca no CDN
@@ -1027,7 +1041,7 @@ app.get('/api/stream', requireApiKey, async (req, res) => {
 
     if (!streamInfo && skip.length) {
       console.log('[stream] nenhuma fonte sem gastar o Render: ' + skip.join(', '));
-      return res.status(503).json({ error: RENDER_VIDEO_MSG });
+      return res.status(503).json({ error: outageMessage(trace), retryable: true });
     }
 
     if (!streamInfo || !streamInfo.url) {

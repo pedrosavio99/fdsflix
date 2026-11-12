@@ -2157,6 +2157,30 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
       ' · HEVC nativo: ' + (state.hevc ? 'sim' : 'não'));
   }
 
+  // 503 "retryable": a fonte principal (Vidsrc) caiu por instantes. Espera um pouco e pergunta de novo, até 2 vezes,
+  // em vez de entregar o erro na primeira queda.
+  function apiFetchStream(path, opts, playToken) {
+    var tries = 0;
+    function go() {
+      return apiFetch(path, opts).then(function (response) {
+        if (response.status !== 503) return response;
+        return response.clone().json().catch(function () { return {}; }).then(function (data) {
+          if (!data.retryable || tries >= 2 || playToken !== state.playToken) return response;
+          tries += 1;
+          diag('err', 'Fonte principal instável: ' + String(data.error || '').slice(0, 220));
+          try { diagDebug(data.debug); } catch (err) { /* só diagnóstico */ }
+          diag('info', 'Tentando de novo em 8 s (' + tries + '/2)…');
+          showOverlay('A fonte principal está instável. Tentando de novo em 8 s (' + tries + '/2)…', true);
+          return new Promise(function (resolve) { setTimeout(resolve, 8000); }).then(function () {
+            if (playToken !== state.playToken || (opts.signal && opts.signal.aborted)) return response;
+            return go();
+          });
+        });
+      });
+    }
+    return go();
+  }
+
   function diagDebug(dbg) {
     if (!dbg) {
       diag('warn', 'O servidor NÃO enviou "debug" na resposta → o Render está rodando uma versão ANTIGA do código (sem o Vidsrc Proxy). Faça Deploy do commit mais recente.');
@@ -3246,12 +3270,13 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
 
         reqStart = Date.now();
         diag('step', 'Pedindo ao servidor: GET ' + apiUrl('/api/stream?' + params.toString()));
-        return apiFetch('/api/stream?' + params.toString(), { signal: controller.signal });
+        return apiFetchStream('/api/stream?' + params.toString(), { signal: controller.signal }, playToken);
       })
       .then(function (response) {
         diag(response.ok ? 'ok' : 'err', 'Servidor respondeu HTTP ' + response.status + ' em ' + (Date.now() - reqStart) + ' ms');
         return response.json().catch(function () { return {}; }).then(function (data) {
           if (!response.ok || !data.url) {
+            try { diagDebug(data.debug); } catch (err) { /* o rastro é só diagnóstico */ }
             throw new Error(data.error || 'O servidor não retornou um vídeo.');
           }
           return data;
