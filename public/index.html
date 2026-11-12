@@ -1150,6 +1150,7 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
 <!-- hls.js 1.7.4 vem do CDN (jsDelivr): economiza ~190 KB de banda do Render por visita nova. Arquivo idêntico ao
      de /vendor/hls.min.js (mesmo SHA-384); se o CDN falhar ou o hash não bater, cai na cópia local. -->
 <script src="https://cdn.jsdelivr.net/npm/hls.js@1.7.4/dist/hls.min.js" integrity="sha384-p9vgU/7IYJWd3I4STrtqxqR/2cAQlhIX7D/HrTnIMEjjcUox165b7se7sxmm3zDg" crossorigin="anonymous" onerror="document.write('&lt;script src=&quot;/vendor/hls.min.js&quot;&gt;&lt;\/script&gt;')"></script>
+<script src="/autosync.js"></script>
 <script>
 (function () {
   'use strict';
@@ -1255,6 +1256,9 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
     subScale: 1,
     subInfo: {},
     subUserChose: false,
+    subManual: false,
+    autoApplying: false,
+    auto: null,
     syncAnchor: null,
     subKey: null,
     subLang: null,
@@ -2253,6 +2257,7 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
   }
 
   function stopPlayback() {
+    autoSyncStop();
     clearTimeout(state.hlsWatch);
     state.hlsIssue = '';
     if (state.controller) {
@@ -2424,6 +2429,7 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
     state.subLang = off ? 'off' : (state.captions[index] ? state.captions[index].label : 'off');
     if (state.subKey) saveSubLang(state.subKey, state.subLang);
     subTranslateNotice(off ? null : tracks[index], off ? null : state.captions[index]);
+    if (!off) autoSyncKick(2500);   // cada idioma é um arquivo diferente: confere esta legenda também
 
     // As tracks terminam de registrar de forma assíncrona; ignora os eventos
     // de change disparados pela própria aplicação.
@@ -2526,6 +2532,7 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
   }
 
   function applySubOffset(value) {
+    if (!state.autoApplying) state.subManual = true;   // o usuário mexeu: a sincronia automática para de interferir
     var offset = Number(value);
     if (!isFinite(offset)) offset = 0;
     offset = Math.max(-600, Math.min(600, Math.round(offset * 1000) / 1000));
@@ -2675,6 +2682,7 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
   }
 
   function applySubScale(scale, offset) {
+    if (!state.autoApplying) state.subManual = true;
     state.subScale = Math.max(0.8, Math.min(1.25, Math.round(scale * 1e6) / 1e6)) || 1;
     if (state.subKey) saveSubScale(state.subKey, state.subScale);
     subUiRefresh();
@@ -2785,6 +2793,150 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
     syncRender();
   }
 
+  /* ---- sincronia AUTOMÁTICA pelo áudio do filme (public/autosync.js) ---- */
+  // Os segmentos que o hls.js já baixa para tocar têm o áudio: medimos onde há voz e comparamos com os
+  // horários das falas da legenda ativa. Nada extra é baixado, nada passa pelo Render, e só o horário da
+  // legenda (neste navegador) é alterado. Se o usuário mexer no ajuste à mão, a automática para.
+
+  var AUTO_MIN_SECONDS = 150;   // áudio mínimo antes da 1ª tentativa
+  var AUTO_STEP_SECONDS = 45;   // só tenta de novo quando entrou este tanto de áudio novo
+  var AUTO_WIN_SECONDS = 240;   // janela de cada medida local (para detectar fps/escala diferente)
+  var AUTO_APPLY_MIN = 0.3;     // mudanças menores que isto (s) não valem o recarregamento da legenda
+
+  function autoSyncStart(hls) {
+    autoSyncStop();
+    if (!window.FdsAutoSync || state.cvp || !window.Hls) return;
+    var a = { sess: null, timer: null, covered: 0, retry: 0, key: '', token: state.playToken, applied: 0, reason: '' };
+    try {
+      a.sess = FdsAutoSync.attachHls(hls, Hls, { onData: function () { autoSyncSchedule(); } });
+    } catch (err) {
+      diag('warn', '[sincronia automática] indisponível: ' + ((err && err.message) || err));
+      return;
+    }
+    if (!a.sess.supported) {
+      diag('warn', '[sincronia automática] este navegador não decodifica o áudio dos segmentos (sem OfflineAudioContext).');
+      return;
+    }
+    state.auto = a;
+    diag('info', '[sincronia automática] ligada: vai conferir a legenda pelo áudio do filme.');
+  }
+
+  function autoSyncStop() {
+    var a = state.auto;
+    if (!a) return;
+    clearTimeout(a.timer);
+    try { a.sess.stop(); } catch (err) { /* ignore */ }
+    state.auto = null;
+  }
+
+  function autoSyncSchedule(delay) {
+    var a = state.auto;
+    if (!a || a.timer || state.subManual) return;
+    var covered = a.sess.collector.coveredSeconds();
+    if (!a.sess.ok && a.sess.failed >= 6 && !a.warned) {
+      a.warned = true;
+      diag('warn', '[sincronia automática] não consegui ler o áudio destes segmentos (formato/codec não suportado aqui): fica só a sincronia manual.');
+    }
+    if (covered < AUTO_MIN_SECONDS || covered - a.covered < AUTO_STEP_SECONDS) return;
+    a.timer = setTimeout(autoSyncRun, delay || 300);
+  }
+
+  // Troca de legenda/idioma (ou primeira legenda a aparecer): confere de novo, sem esperar áudio novo.
+  function autoSyncKick(delay) {
+    var a = state.auto;
+    if (!a || state.subManual) return;
+    a.covered = 0;
+    a.retry = 0;
+    clearTimeout(a.timer);
+    a.timer = null;
+    if (a.sess.collector.coveredSeconds() >= AUTO_MIN_SECONDS) a.timer = setTimeout(autoSyncRun, delay || 300);
+  }
+
+  function autoSyncNum(x) { return (Math.round(x * 100) / 100).toString().replace('.', ','); }
+
+  function autoSyncRun() {
+    var a = state.auto;
+    if (!a) return;
+    a.timer = null;
+    if (a.token !== state.playToken || state.subManual || state.cvp) return;
+    var track = syncTrack();
+    if (!track || !track.cues || track.cues.length < 20) {
+      // legenda ainda carregando (ou recarregando após um ajuste): tenta de novo daqui a pouco
+      if (a.retry < 10) { a.retry += 1; a.timer = setTimeout(autoSyncRun, 1500); }
+      return;
+    }
+    var key = activeSubIndex() + '|' + state.subScale;
+    if (key !== a.key) { a.key = key; a.reason = ''; }
+    var col = a.sess.collector;
+    a.covered = col.coveredSeconds();
+
+    // horários das falas "como estão agora, menos o atraso aplicado" (mesma escala de agora)
+    var cues = [];
+    for (var i = 0; i < track.cues.length; i++) {
+      var c = track.cues[i];
+      if (c.endTime > c.startTime) cues.push({ s: c.startTime - state.subOffset, e: c.endTime - state.subOffset });
+    }
+
+    // hipóteses de fps (escala) só a cada 120 s de áudio novo: poupa CPU em aparelho fraco
+    var tryScale = a.covered - (a.lastScale || 0) >= 120;
+    if (tryScale && a.covered >= 360) a.lastScale = a.covered;
+    var chk = FdsAutoSync.estimateAuto(col, cues, { maxLag: 120, scaleMinSeconds: tryScale ? 360 : 1e9 });
+    if (!chk.ok) {
+      if (a.reason !== chk.reason) {
+        a.reason = chk.reason;
+        diag('dim', '[sincronia automática] ainda sem certeza (' + chk.reason + ') com ' + Math.round(a.covered) + ' s de áudio.');
+      }
+      return;
+    }
+
+    // descobre se o atraso muda ao longo do filme (legenda de outro fps): estimativa por janela
+    var autoShift = state.transcoded ? -state.baseOffset : 0;
+    var newOffset = chk.offset;
+    var newScale = state.subScale;
+    var note = '';
+    var pts = [];
+    if (chk.ratio !== 1) {
+      // legenda de outro fps (ex.: 23,976 → 25): fala_nova = fala * razão + atraso
+      newScale = state.subScale * chk.ratio;
+      newOffset = chk.offset + autoShift * (chk.ratio - 1);
+      note = ' e velocidade ×' + newScale.toFixed(4).replace('.', ',') + ' (a legenda era de outro fps)';
+    } else FdsAutoSync.windows(col, AUTO_WIN_SECONDS).forEach(function (w) {
+      var e = FdsAutoSync.estimate(col, cues, {
+        center: chk.offset, maxLag: 12, minSeconds: 60, from: w.from - chk.offset - 12, to: w.to - chk.offset + 12
+      });
+      if (e && e.conf >= 3.0) pts.push({ t: w.mid - e.offset, d: e.offset, conf: e.conf });
+    });
+    if (chk.ratio === 1 && pts.length >= 3) {
+      var fit = FdsAutoSync.fitScale(pts.map(function (p) { return { t: p.t, d: p.d }; }), 900);
+      var ds = pts.map(function (p) { return p.d; }).sort(function (x, y) { return x - y; });
+      var spread = ds[ds.length - 1] - ds[0];
+      if (fit && fit.resid <= 0.7 && spread >= 1.0 && Math.abs(fit.scale - 1) >= 0.0004 && Math.abs(fit.scale - 1) <= 0.1) {
+        newScale = state.subScale * fit.scale;
+        newOffset = fit.offset + (fit.scale - 1) * autoShift;
+        note = ' e velocidade ×' + newScale.toFixed(4).replace('.', ',') + ' (a legenda era de outro fps)';
+      }
+    }
+
+    var dOff = Math.abs(newOffset - state.subOffset);
+    var dScale = Math.abs(newScale - state.subScale);
+    diag('ok', '[sincronia automática] medido: ' + autoSyncNum(chk.offset) + ' s' + (chk.ratio !== 1 ? ' e escala ×' + chk.ratio.toFixed(4) : '') + ' (confiança ' + chk.conf.toFixed(1) + ', ' +
+      Math.round(a.covered) + ' s de áudio' + (pts.length >= 3 ? ', ' + pts.length + ' janelas' : '') + ')' +
+      (dOff < AUTO_APPLY_MIN && dScale < 0.0003 ? ' — a legenda já está no ponto.' : ''));
+    if (dOff < AUTO_APPLY_MIN && dScale < 0.0003) return;
+
+    state.autoApplying = true;
+    try {
+      if (dScale >= 0.0003) applySubScale(newScale, newOffset); else applySubOffset(newOffset);
+    } finally {
+      state.autoApplying = false;
+    }
+    a.applied += 1;
+    a.retry = 0;
+    var abs = Math.abs(newOffset);
+    subShowWarn('🤖 Legenda sincronizada sozinha pelo áudio do filme: ' + (abs < 0.05 ? 'sem atraso' : (newOffset < 0 ? 'adiantada ' : 'atrasada ') + autoSyncNum(abs) + ' s') + note +
+      '. Se algo ficar estranho, ajuste à mão em 🎯 Sincronizar (a automática então para).', 'info');
+  }
+
   function attachHls(url, video, startPosition) {
     if (!window.Hls || !Hls.isSupported()) {
       if (video.canPlayType('application/vnd.apple.mpegurl')) {
@@ -2809,6 +2961,7 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
     });
     state.hls = hls;
     diagHlsEvents(hls);
+    autoSyncStart(hls);
 
     var fatalCount = 0;
 
@@ -3005,6 +3158,7 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
     state.subBad = {};
     state.subUserChose = Boolean(loadSubPref() || loadSubLang(state.subKey));
     state.syncAnchor = null;
+    state.subManual = false;
     $('subOffsetInput').value = String(state.subOffset);
     subUiRefresh();
     $('syncPanel').hidden = true;
