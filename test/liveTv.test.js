@@ -377,3 +377,17 @@ test('planDelivery com verify: pula a Vercel que recusa a fonte (403) e usa a pr
   assert.equal(only.mode, 'none');
   assert.match(only.reason, /não conseguiu abrir.*403/);
 });
+
+test('warm: rodadas seguintes testam as fontes que ainda não foram testadas, não só as 12 primeiras', async () => {
+  process.env.LIVE_SCAN_CATALOGS = '0';
+  const seen = new Set();
+  const probe = async (url) => { seen.add(url); return { ok: false, reason: 'HTTP 404', https: false, port: '80', cors: false, ms: 1 }; };
+  const all = live.candidatesFor('espn').map((c) => c.url);
+  assert.ok(all.length > 24, 'o seed do ESPN tem mais de 24 fontes');
+  await live.warm({ probe });
+  assert.equal(all.slice(0, 12).every((u) => seen.has(u)), true);
+  assert.equal(seen.has(all[13]), false);
+  await live.warm({ probe });
+  assert.equal(all.slice(0, 24).every((u) => seen.has(u)), true);
+  delete process.env.LIVE_SCAN_CATALOGS;
+});
