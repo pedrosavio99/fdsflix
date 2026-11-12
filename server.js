@@ -30,6 +30,7 @@ const usageLedger = require('./lib/usageLedger');
 const visitors = require('./lib/visitors');
 const egress = require('./lib/egressMeter');
 const poolKit = require('./lib/poolKit');
+const liveTv = require('./lib/liveTv');
 const { relayFetch, getRelayConfig } = require('./lib/relayFetch');
 const { edgeEnabled, canUseEdge, edgeReachable, edgeUrl } = require('./lib/edgeMedia');
 
@@ -1216,6 +1217,65 @@ app.all('/api/stream/stop', (req, res) => {
 });
 
 /* ------------------------------------------------------------------ */
+/* TV ao vivo (cascata própria; o vídeo NUNCA passa pelo Render)       */
+/* ------------------------------------------------------------------ */
+
+app.get('/api/live/channels', requireApiKey, (req, res) => {
+  liveTv.warmIfStale();
+  res.setHeader('Cache-Control', 'no-store');
+  res.json(liveTv.channelsSnapshot());
+});
+
+app.get('/api/live/stream', requireApiKey, async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const id = String(req.query.ch || '');
+  const channel = liveTv.CHANNELS.find((c) => c.id === id);
+  if (!channel) return res.status(404).json({ ok: false, error: 'Canal desconhecido.' });
+  liveTv.touch();
+
+  const sids = (value) => String(value || '').split(',').filter((v) => /^[0-9a-f]{10}$/.test(v)).slice(0, 40);
+  // O navegador avisa quando uma fonte que parecia boa não tocou (geobloqueio, token preso ao IP...).
+  for (const bad of sids(req.query.bad)) liveTv.reportBad(id, bad);
+  const skip = sids(req.query.skip);
+
+  try {
+    const pool = usageLedger.rankedPool().filter((p) => !p.exhausted).map((p) => p.base);
+    const fallbackPool = pool.length ? pool : usageLedger.getPool();
+    let tried = 0;
+    let lastReason = '';
+    const skipped = []; // fontes que tocam, mas que não têm como chegar ao navegador sem gastar o Render
+    for (let round = 0; round < 4; round += 1) {
+      const found = await liveTv.resolveChannel(id, { skip });
+      tried += found.tried;
+      if (!found.ok) { lastReason = found.error; break; }
+      const plan = await liveTv.planDelivery(found.source, { pool: fallbackPool });
+      if (plan.mode === 'none') {
+        // Esta fonte não tem como chegar ao navegador sem gastar o Render; tenta a próxima.
+        lastReason = plan.reason;
+        skipped.push({ sid: found.source.sid, reason: plan.reason });
+        skip.push(found.source.sid);
+        continue;
+      }
+      return res.json({
+        ok: true,
+        channel: { id: channel.id, name: channel.name, group: channel.group },
+        sid: found.source.sid,
+        mode: plan.mode,
+        url: plan.url,
+        kind: found.source.kind,
+        via: plan.via,
+        tried,
+        origin: found.source.origin,
+        skipped
+      });
+    }
+    return res.status(503).json({ ok: false, error: lastReason || 'Nenhuma fonte deste canal respondeu agora.', tried, skipped });
+  } catch (err) {
+    return res.status(502).json({ ok: false, error: 'Falha ao achar o canal: ' + err.message });
+  }
+});
+
+/* ------------------------------------------------------------------ */
 /* Proxy de vídeo / legendas                                           */
 /* ------------------------------------------------------------------ */
 
@@ -1612,6 +1672,7 @@ app.get('/hls/:id/:file', blockRenderVideo, (req, res) => {
 /* ------------------------------------------------------------------ */
 
 egress.startLogging();
+liveTv.startWarmer();
 
 const server = app.listen(PORT, () => {
   console.log('');

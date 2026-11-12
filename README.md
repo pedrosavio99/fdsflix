@@ -83,6 +83,13 @@ várias Vercels e acompanhar o consumo numa barra: [docs/VERCEL-POOL.md](docs/VE
 > tem anúncios no HTML e o vídeo não passa por ele; use o AdShield como proxy
 > do player, não da aplicação toda.
 
+## TV ao vivo (aba ao lado da lupa)
+
+Canais de esportes, filmes, infantil e abertos com cascata própria de fontes, testadas de verdade antes de abrir. O
+vídeo não passa pelo Render: HTTPS com CORS toca direto; o resto vai pela Vercel; páginas de player vão pelo AdShield
+(sem anúncios). Como funciona, variáveis e limites: [docs/TV-AO-VIVO.md](docs/TV-AO-VIVO.md). **Reimplante cada Vercel do
+pool** para ativar as rotas `/live/hls` e `/live/np`.
+
 ## Como rodar
 
 ```bash

@@ -725,6 +725,10 @@
       <button id="clearBtn" class="search-x" type="button" aria-label="Limpar busca">✕</button>
     </div>
     <div class="nav-right">
+      <button id="liveOpen" class="nav-btn" type="button" aria-pressed="false" title="TV ao vivo: esportes, filmes, infantil e canais abertos" aria-label="TV ao vivo">
+        <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 3H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h5v2h8v-2h5c1.1 0 1.99-.9 1.99-2L23 5c0-1.1-.9-2-2-2m0 14H3V5h18z"/></svg>
+        <span class="lbl">TV ao vivo</span>
+      </button>
       <button id="bwCorner" class="bw" type="button" title="Banda das Vercels (estimativa). Clique para abrir Configs e o tutorial.">
         <span class="bw-top" id="bwTop">📶 Banda das Vercels: carregando…</span>
         <span class="bw-bar"><i id="bwFill" style="width:0"></i></span>
@@ -1151,6 +1155,7 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
      de /vendor/hls.min.js (mesmo SHA-384); se o CDN falhar ou o hash não bater, cai na cópia local. -->
 <script src="https://cdn.jsdelivr.net/npm/hls.js@1.7.4/dist/hls.min.js" integrity="sha384-p9vgU/7IYJWd3I4STrtqxqR/2cAQlhIX7D/HrTnIMEjjcUox165b7se7sxmm3zDg" crossorigin="anonymous" onerror="document.write('&lt;script src=&quot;/vendor/hls.min.js&quot;&gt;&lt;\/script&gt;')"></script>
 <script src="/autosync.js"></script>
+<script src="/livetv.js"></script>
 <script>
 (function () {
   'use strict';
@@ -1955,7 +1960,7 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
 
   // Só conta o que passa pelo proxy Vidsrc da Vercel (é o que gasta a cota dela).
   function usageBaseOf(url) {
-    if (!/\/vidsrc\/hls\?/.test(String(url || ''))) return null;
+    if (!/\/(?:vidsrc\/hls|live\/(?:hls|np))\?/.test(String(url || ''))) return null;
     try { return new URL(url, location.href).origin; } catch (err) { return null; }
   }
 
@@ -1969,6 +1974,9 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
     usage.sessionBy[base] = (usage.sessionBy[base] || 0) + bytes;
     if (Date.now() - usage.lastPaint > 2000) usagePaint();
   }
+
+  // A aba "TV ao vivo" (livetv.js) soma o consumo das Vercels pela mesma contagem.
+  window.FdsUsage = { add: usageAdd };
 
   function usageFlush(beacon) {
     var items = Object.keys(usage.pending).map(function (base) {

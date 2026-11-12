@@ -9,6 +9,10 @@
       "destination": "/api/hls"
     },
     {
+      "source": "/live/hls",
+      "destination": "/api/live"
+    },
+    {
       "source": "/(.*)",
       "destination": "/api/index.js"
     }

@@ -433,6 +433,28 @@ function createApp(config) {
     }
   });
 
+  // TV ao vivo por função Node: alcança qualquer porta (o Edge só vai às 80/443). Mesmo código do Edge
+  // (lib/liveHls.mjs); o Edge atende /live/hls. Ver o cabeçalho de liveHls.mjs.
+  app.all('/live/np', async (req, res) => {
+    try {
+      const { handleLive } = await import('./liveHls.mjs');
+      const headers = {};
+      if (req.headers.range) headers.range = req.headers.range;
+      const request = new Request(`https://${req.headers.host || 'localhost'}${req.originalUrl}`, { method: req.method, headers });
+      const out = await handleLive(request, { route: '/live/np' });
+      res.status(out.status);
+      out.headers.forEach((value, name) => res.setHeader(name, value));
+      if (!out.body) return res.end();
+      const stream = Readable.fromWeb(out.body);
+      res.on('close', () => stream.destroy());
+      stream.on('error', () => res.destroy());
+      stream.pipe(res);
+    } catch (error) {
+      if (!res.headersSent) res.status(502).type('text').send(`Falha na TV ao vivo: ${error.message}`);
+      else res.destroy();
+    }
+  });
+
   app.all('/_adshield/*', (req, res) => {
     res.status(404).json({ error: 'Rota interna desconhecida.' });
   });
