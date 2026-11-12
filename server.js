@@ -26,6 +26,7 @@ const { srtToVtt, shiftVtt, decodeSubtitle, stripSpamCues, analyzeVtt } = requir
 const { translateVtt } = require('./lib/translate');
 const registry = require('./lib/registry');
 const usageLedger = require('./lib/usageLedger');
+const visitors = require('./lib/visitors');
 const poolKit = require('./lib/poolKit');
 const { relayFetch, getRelayConfig } = require('./lib/relayFetch');
 const { edgeEnabled, canUseEdge, edgeReachable, edgeUrl } = require('./lib/edgeMedia');
@@ -64,6 +65,13 @@ app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Range, x-api-key');
   res.setHeader('Access-Control-Expose-Headers', 'Content-Length, Content-Range, Accept-Ranges');
   if (req.method === 'OPTIONS') return res.status(204).end();
+  next();
+});
+
+// Contador de acessos por IP (lib/visitors.js). Síncrono e barato; qualquer erro é ignorado.
+visitors.init();
+app.use((req, res, next) => {
+  try { visitors.record(req); } catch (err) { /* estatística nunca derruba o site */ }
   next();
 });
 
@@ -791,6 +799,43 @@ app.post('/api/usage/calibrate', (req, res) => {
 });
 
 /* ------------------------------------------------------------------ */
+/* Acessos por IP (painel /visitors.html)                              */
+/* ------------------------------------------------------------------ */
+
+// IP é dado pessoal: a leitura EXIGE chave (STATS_KEY, ou API_KEY se não houver). Sem nenhuma das
+// duas a rota fica desligada (403), nunca aberta.
+function requireStatsKey(req, res, next) {
+  const key = String(process.env.STATS_KEY || API_KEY || '').trim();
+  if (!key) {
+    return res.status(403).json({ error: 'Defina STATS_KEY (ou API_KEY) no servidor para ver os acessos.' });
+  }
+  const provided = Buffer.from(String(req.get('x-api-key') || req.query.key || ''));
+  const expected = Buffer.from(key);
+  if (provided.length === expected.length && crypto.timingSafeEqual(provided, expected)) return next();
+  return res.status(401).json({ error: 'Chave inválida. Envie o header x-api-key.' });
+}
+
+app.get('/api/visitors', requireStatsKey, async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  try {
+    res.json(await visitors.stats({ days: Number(req.query.days) || 7 }));
+  } catch (err) {
+    res.status(500).json({ error: 'Falha ao montar as estatísticas.' });
+  }
+});
+
+// SQL da tabela (sem dados, pode ser aberto): para colar no SQL Editor do Supabase.
+app.get('/api/visitors/schema', (req, res) => {
+  try {
+    res.type('text/plain; charset=utf-8').send(
+      fs.readFileSync(path.join(__dirname, 'supabase', 'visitors-schema.sql'), 'utf8')
+    );
+  } catch (err) {
+    res.status(404).type('text').send('supabase/visitors-schema.sql não está neste servidor.');
+  }
+});
+
+/* ------------------------------------------------------------------ */
 /* Kit "Vercel extra" (botão Configs): zip do adproxy                  */
 /* ------------------------------------------------------------------ */
 
@@ -1485,7 +1530,9 @@ let embeddedCinePro = null;
 function gracefulExit() {
   if (embeddedCinePro) embeddedCinePro.stop();
   shutdown();
-  server.close(() => process.exit(0));
+  // Envia os acessos que ainda não subiram ao Supabase antes de sair (o teto de 3 s continua valendo).
+  const closing = () => server.close(() => process.exit(0));
+  visitors.flush().then(closing, closing);
   setTimeout(() => process.exit(0), 3000).unref();
 }
 

@@ -45,6 +45,8 @@ services:
       # Dia do mês em que a cota da Vercel renova (veja em Usage no painel dela).
       - key: USAGE_RESET_DAY
         value: "1"
+      # Acessos por IP (painel /visitors.html), adicione à mão em Environment: STATS_KEY = senha de leitura
+      # (sem ela o painel fica desligado). Tabela: supabase/visitors-schema.sql. Ver docs/VISITANTES.md.
       # Worker repassador da Cloudflare (deploy/cloudflare-worker). Opcional: sem as duas, vai direto.
       - key: VIDEO_RELAY_URL
         sync: false

@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>fdsFlix · Acessos</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #fff; --ink: #14181f; --muted: #66707e; --line: #e3e6eb;
+    --accent: #e50914; --bar: #3b82f6; --ok: #16a34a; --warn: #b45309; --warnbg: #fef3c7;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1115; --card: #181b21; --ink: #eef1f5; --muted: #9aa4b2; --line: #2a2f38;
+      --bar: #60a5fa; --ok: #4ade80; --warn: #fbbf24; --warnbg: #3a2f10;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+  main { max-width: 1180px; margin: 0 auto; padding: 16px; }
+  h1 { font-size: 20px; margin: 0; }
+  h2 { font-size: 14px; margin: 0 0 10px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+  header { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  input, select, button { font: inherit; color: inherit; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; }
+  button { cursor: pointer; background: var(--accent); border-color: var(--accent); color: #fff; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 14px; }
+  .card, .panel { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
+  .card .n { font-size: 28px; font-weight: 700; }
+  .card .l { color: var(--muted); font-size: 12px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 10px; margin-bottom: 14px; }
+  .row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; padding: 3px 0; position: relative; }
+  .row .fill { position: absolute; inset: 2px auto 2px 0; background: var(--bar); opacity: .16; border-radius: 4px; }
+  .row span { position: relative; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-left: 4px; }
+  .row b { position: relative; padding-right: 4px; }
+  .series { display: flex; align-items: flex-end; gap: 4px; height: 110px; }
+  .series div { flex: 1; min-width: 6px; background: var(--bar); border-radius: 3px 3px 0 0; position: relative; }
+  .series div:hover::after { content: attr(data-tip); position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 3px 6px; border-radius: 4px; white-space: nowrap; font-size: 11px; z-index: 2; }
+  .banner { background: var(--warnbg); color: var(--warn); border-radius: 10px; padding: 9px 12px; margin-bottom: 12px; display: none; }
+  .tablewrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; min-width: 860px; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--line); margin-right: 6px; }
+  .dot.on { background: var(--ok); }
+  .muted { color: var(--muted); }
+  #msg { color: var(--muted); font-size: 12px; }
+  .search { margin-bottom: 8px; width: 100%; max-width: 320px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>📊 fdsFlix · Acessos</h1>
+    <div class="controls">
+      <input id="key" type="password" placeholder="Chave (STATS_KEY)" autocomplete="off" size="18">
+      <select id="days">
+        <option value="1">Hoje</option>
+        <option value="7" selected>7 dias</option>
+        <option value="30">30 dias</option>
+        <option value="90">90 dias</option>
+      </select>
+      <button id="go" type="button">Atualizar</button>
+    </div>
+  </header>
+  <div id="msg">Digite a chave e clique em Atualizar.</div>
+  <div id="banner" class="banner"></div>
+
+  <section class="cards" id="cards"></section>
+
+  <section class="panel" style="margin-bottom:14px">
+    <h2>Visitantes únicos por dia</h2>
+    <div class="series" id="series"></div>
+  </section>
+
+  <section class="grid">
+    <div class="panel"><h2>Países</h2><div id="countries"></div></div>
+    <div class="panel"><h2>Cidades</h2><div id="cities"></div></div>
+    <div class="panel"><h2>Aparelhos</h2><div id="devices"></div></div>
+    <div class="panel"><h2>Provedores de internet</h2><div id="isps"></div></div>
+  </section>
+
+  <section class="panel">
+    <h2>Quem acessou</h2>
+    <input id="q" class="search" placeholder="Filtrar por IP, cidade, aparelho, título...">
+    <div class="tablewrap">
+      <table>
+        <thead><tr>
+          <th>IP</th><th>Local</th><th>Aparelho</th><th>Provedor</th><th>Dias</th><th>Acessos</th><th>Vídeos</th>
+          <th>Último título</th><th>Primeira vez</th><th>Última vez</th>
+        </tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+<script>
+(function () {
+  'use strict';
+  var $ = function (id) { return document.getElementById(id); };
+  var last = null;
+  var timer = null;
+  var regionNames = null;
+  try { regionNames = new Intl.DisplayNames(['pt-BR'], { type: 'region' }); } catch (e) { regionNames = null; }
+
+  function store(get, v) {
+    try { if (get) return sessionStorage.getItem('fdsflix.statsKey') || ''; sessionStorage.setItem('fdsflix.statsKey', v); } catch (e) { /* sem storage */ }
+    return '';
+  }
+  function el(tag, cls, text) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text !== undefined) n.textContent = text;
+    return n;
+  }
+  function flag(code) {
+    if (!/^[A-Z]{2}$/.test(code || '')) return '🌐';
+    return String.fromCodePoint(0x1f1e6 + code.charCodeAt(0) - 65, 0x1f1e6 + code.charCodeAt(1) - 65);
+  }
+  function country(code) {
+    if (!code || code === '??') return '🌐 Desconhecido';
+    var name = code;
+    try { if (regionNames) name = regionNames.of(code) || code; } catch (e) { /* mantém o código */ }
+    return flag(code) + ' ' + name;
+  }
+  function when(iso) {
+    if (!iso) return '';
+    var d = new Date(iso);
+    return d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  }
+  function ago(iso) {
+    if (!iso) return '';
+    var s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+    if (s < 90) return 'agora';
+    if (s < 3600) return Math.round(s / 60) + ' min atrás';
+    if (s < 86400) return Math.round(s / 3600) + ' h atrás';
+    return Math.round(s / 86400) + ' d atrás';
+  }
+
+  function bars(box, items, label) {
+    box.textContent = '';
+    if (!items.length) { box.appendChild(el('div', 'muted', 'Sem dados ainda.')); return; }
+    var max = Math.max.apply(null, items.map(function (i) { return i.visitors; })) || 1;
+    items.forEach(function (it) {
+      var row = el('div', 'row');
+      var fill = el('div', 'fill');
+      fill.style.width = Math.max(2, it.visitors / max * 100) + '%';
+      row.appendChild(fill);
+      row.appendChild(el('span', '', label(it)));
+      row.appendChild(el('b', '', String(it.visitors)));
+      box.appendChild(row);
+    });
+  }
+
+  function card(n, l) {
+    var c = el('div', 'card');
+    c.appendChild(el('div', 'n', String(n)));
+    c.appendChild(el('div', 'l', l));
+    return c;
+  }
+
+  function renderRows() {
+    var tb = $('rows');
+    tb.textContent = '';
+    if (!last) return;
+    var q = $('q').value.trim().toLowerCase();
+    var n = 0;
+    last.visitors.forEach(function (v) {
+      var hay = [v.visitor, v.location, v.device, v.isp, v.lastWatch].join(' ').toLowerCase();
+      if (q && hay.indexOf(q) === -1) return;
+      n += 1;
+      var tr = el('tr');
+      var ip = el('td');
+      ip.appendChild(el('span', 'dot' + (v.online ? ' on' : '')));
+      ip.appendChild(document.createTextNode(v.visitor));
+      ip.title = v.online ? 'Online agora' : '';
+      tr.appendChild(ip);
+      var loc = el('td', '', v.country ? flag(v.country) + ' ' + (v.location || v.country) : '—');
+      loc.title = v.location || '';
+      tr.appendChild(loc);
+      [v.device || '—', v.isp || '—', v.daysActive, v.requests, v.watches, v.lastWatch || '—'].forEach(function (t) {
+        var td = el('td', '', String(t));
+        td.title = String(t);
+        tr.appendChild(td);
+      });
+      tr.appendChild(el('td', 'muted', when(v.firstSeen)));
+      var seen = el('td', 'muted', ago(v.lastSeen));
+      seen.title = when(v.lastSeen);
+      tr.appendChild(seen);
+      tb.appendChild(tr);
+    });
+    if (!n) {
+      var tr0 = el('tr');
+      var td0 = el('td', 'muted', 'Ninguém encontrado.');
+      td0.colSpan = 10;
+      tr0.appendChild(td0);
+      tb.appendChild(tr0);
+    }
+  }
+
+  function render(d) {
+    last = d;
+    var cards = $('cards');
+    cards.textContent = '';
+    cards.appendChild(card(d.online.count, 'online agora (últimos ' + d.online.windowMin + ' min)'));
+    cards.appendChild(card(d.today.visitors, 'visitantes hoje'));
+    cards.appendChild(card(d.period.visitors, 'visitantes únicos no período'));
+    cards.appendChild(card(d.period.returning, 'voltaram em mais de um dia'));
+    cards.appendChild(card(d.period.watches, 'vídeos pedidos'));
+    cards.appendChild(card(d.period.requests, 'acessos no total'));
+
+    var s = $('series');
+    s.textContent = '';
+    var max = Math.max.apply(null, d.series.map(function (x) { return x.visitors; })) || 1;
+    d.series.forEach(function (x) {
+      var b = el('div');
+      b.style.height = Math.max(2, x.visitors / max * 100) + '%';
+      b.dataset.tip = x.day.slice(5) + ': ' + x.visitors + ' visitantes, ' + x.watches + ' vídeos';
+      s.appendChild(b);
+    });
+
+    bars($('countries'), d.countries, function (i) { return country(i.country); });
+    bars($('cities'), d.cities, function (i) { return i.city; });
+    bars($('devices'), d.devices, function (i) { return i.device; });
+    bars($('isps'), d.isps, function (i) { return i.isp; });
+
+    var notes = [];
+    if (d.storage.note) notes.push(d.storage.note);
+    if (d.storage.error && !d.storage.tablesMissing) notes.push('Supabase: ' + d.storage.error);
+    if (!d.storage.geo) notes.push('Localização desligada (GEO_API_URL=off): só IP, aparelho e contagens.');
+    if (d.hashed) notes.push('IPs guardados como hash (VISITORS_HASH_IP=1): não dá para ver o IP real.');
+    var banner = $('banner');
+    banner.textContent = notes.join(' · ');
+    banner.style.display = notes.length ? 'block' : 'none';
+    $('msg').textContent = 'Atualizado às ' + new Date(d.generatedAt).toLocaleTimeString('pt-BR') +
+      ' · apagamos linhas com mais de ' + d.storage.keepDays + ' dias' +
+      (d.storage.pending ? ' · ' + d.storage.pending + ' aguardando envio ao Supabase' : '');
+    renderRows();
+  }
+
+  function load() {
+    var key = $('key').value.trim();
+    if (!key) { $('msg').textContent = 'Digite a chave.'; return; }
+    store(false, key);
+    $('msg').textContent = 'Carregando...';
+    fetch('/api/visitors?days=' + encodeURIComponent($('days').value), { headers: { 'x-api-key': key }, cache: 'no-store' })
+      .then(function (r) {
+        return r.json().catch(function () { return {}; }).then(function (j) { return { ok: r.ok, status: r.status, body: j }; });
+      })
+      .then(function (r) {
+        if (!r.ok) {
+          $('msg').textContent = (r.status === 401 ? 'Chave inválida.' : (r.body && r.body.error) || ('Erro ' + r.status));
+          return;
+        }
+        render(r.body);
+      })
+      .catch(function () { $('msg').textContent = 'Sem resposta do servidor.'; });
+  }
+
+  $('go').addEventListener('click', load);
+  $('days').addEventListener('change', load);
+  $('q').addEventListener('input', renderRows);
+  $('key').addEventListener('keydown', function (e) { if (e.key === 'Enter') load(); });
+  $('key').value = store(true);
+  if ($('key').value) load();
+  timer = setInterval(function () { if (!document.hidden && $('key').value) load(); }, 30000);
+})();
+</script>
+</body>
+</html>
