@@ -510,3 +510,64 @@ test('player da Vercel: só aceita token válido e escapa tudo', () => {
   assert.doesNotMatch(html, /hls\.min\.js/);
   assert.match(playerHtml('A'.repeat(40), 'hls'), /hls\.min\.js/);
 });
+
+/* ----------------------- só áudio / direto bloqueado ------------------- */
+
+/** Segmento MPEG-TS mínimo: PAT -> PMT (PID 0x100) com os tipos de fluxo pedidos. */
+function tsWithTypes(types) {
+  const packet = (pid, section) => {
+    const p = Buffer.alloc(188, 0xff);
+    p[0] = 0x47; p[1] = 0x40 | (pid >> 8); p[2] = pid & 0xff; p[3] = 0x10;
+    p[4] = 0; // pointer_field
+    section.copy(p, 5);
+    return p;
+  };
+  const pat = Buffer.from([0x00, 0xb0, 0x0d, 0x00, 0x01, 0xc1, 0x00, 0x00, 0x00, 0x01, 0xe1, 0x00, 0, 0, 0, 0]);
+  const es = Buffer.concat(types.map((t, i) => Buffer.from([t, 0xe1, 0x01 + i, 0xf0, 0x00])));
+  const len = 9 + es.length + 4;
+  const pmt = Buffer.concat([Buffer.from([0x02, 0xb0, len, 0x00, 0x01, 0xc1, 0x00, 0x00, 0xe1, 0x01, 0xf0, 0x00]), es, Buffer.alloc(4)]);
+  return Buffer.concat([packet(0, pat), packet(0x100, pmt)]);
+}
+
+test('tsStreams: lê o PMT e separa vídeo de áudio', () => {
+  const { tsStreams } = require('../lib/liveProbe');
+  assert.deepEqual(tsStreams(tsWithTypes([0x1b, 0x0f])).video, true);
+  const audio = tsStreams(tsWithTypes([0x0f]));
+  assert.equal(audio.video, false);
+  assert.equal(audio.audio, true);
+  assert.equal(tsStreams(TS), null, 'sem PAT/PMT não dá para saber');
+});
+
+test('probe: segmento TS só com áudio é recusado; com vídeo passa', async () => {
+  const mk = (seg) => opts({
+    'http://a.example/l/index.m3u8': { body: '#EXTM3U\n#EXTINF:4,\ns1.ts\n' },
+    'http://a.example/l/s1.ts': { body: seg }
+  });
+  const audio = await probeSource('http://a.example/l/index.m3u8', mk(tsWithTypes([0x0f])));
+  assert.equal(audio.ok, false);
+  assert.match(audio.reason, /só áudio/);
+  const video = await probeSource('http://a.example/l/index.m3u8', mk(tsWithTypes([0x1b, 0x0f])));
+  assert.equal(video.ok, true);
+});
+
+test('probe: master em que nenhuma variante tem vídeo é recusado; com vídeo escolhe só entre as que têm imagem', async () => {
+  const audioOnly = await probeSource('http://a.example/m.m3u8', opts({
+    'http://a.example/m.m3u8': { body: '#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=64000,CODECS="mp4a.40.2"\na.m3u8\n' }
+  }));
+  assert.equal(audioOnly.ok, false);
+  assert.match(audioOnly.reason, /só áudio/);
+  const pl = parsePlaylist('#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=64000,CODECS="mp4a.40.2"\na.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=900000,RESOLUTION=640x360\nv.m3u8\n', 'http://a.example/m.m3u8');
+  assert.deepEqual(pl.variants.map((v) => v.video), [false, true]);
+});
+
+test('reportBad direct: a mesma fonte passa a ir pela Vercel; novideo tira a fonte por horas', () => {
+  const sid = live.candidatesFor('cultura')[0].sid;
+  const cand = live.candidatesFor('cultura')[0];
+  live.reportBad('cultura', sid, 'direct');
+  return live.planDelivery({ url: 'https://x.example/a.m3u8', https: true, cors: true, kind: 'hls' }, { pool: [] }).then(async (direct) => {
+    assert.equal(direct.mode, 'direct', 'outra URL continua direta');
+    const blocked = await live.planDelivery({ url: cand.url, https: true, cors: true, kind: 'hls' }, { pool: [] });
+    assert.equal(blocked.mode, 'none', 'a URL bloqueada já não é direta (sem Vercel no pool, nada a fazer)');
+    assert.equal(live.reportBad('cultura', sid, 'novideo'), true);
+  });
+});

@@ -613,8 +613,8 @@
     var token = cur.token;
     setMsg('Procurando a melhor fonte para ' + cur.name + '…', 'work');
     var q = '/api/live/stream?ch=' + encodeURIComponent(cur.id) +
-      (cur.skip.length ? '&skip=' + cur.skip.join(',') : '') + (cur.bad.length ? '&bad=' + cur.bad.join(',') : '');
-    cur.bad = []; // o servidor guarda o aviso; não precisa repetir
+      (cur.skip.length ? '&skip=' + cur.skip.join(',') : '') + (cur.bad.length ? '&bad=' + cur.bad.join(',') + (cur.badWhy ? '&why=' + cur.badWhy : '') : '');
+    cur.bad = []; cur.badWhy = ''; // o servidor guarda o aviso; não precisa repetir
     api(q).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); }).then(function (res) {
       if (!state.cur || state.cur.token !== token) return; // trocou de canal no meio
       nlog('servidor', res.ok && res.j.ok
@@ -636,6 +636,9 @@
   function start(job) {
     var cur = state.cur;
     cur.sid = job.sid;
+    cur.mode = job.mode;
+    cur.shield = false;
+    cur.videoCheckSid = '';
     cur.played = false;
     els.via.textContent = '· ' + job.via;
     if (job.mode === 'shield') { startShield(job); return; }
@@ -689,7 +692,10 @@
           hls.recoverMediaError();
           return;
         }
-        failSource((data.details || 'erro') + (data.response && data.response.code ? ' HTTP ' + data.response.code : ''));
+        var noReply = !(data.response && data.response.code);
+        var directFetch = state.cur.mode === 'direct' && !state.cur.played && noReply && data.type === Hls.ErrorTypes.NETWORK_ERROR &&
+          /manifestLoadError|manifestLoadTimeOut|levelLoadError|levelLoadTimeOut|fragLoadError/.test(data.details || '');
+        failSource((data.details || 'erro') + (data.response && data.response.code ? ' HTTP ' + data.response.code : ''), directFetch ? 'direct' : '');
       });
       hls.loadSource(url);
       hls.attachMedia(video);
@@ -733,6 +739,7 @@
       clearTimeout(state.watch);
       setMsg('');
       if (!cur.played) { cur.played = true; nlog('tocando', cur.name + ' fonte ' + cur.sid + ' · ' + d.w + 'x' + d.h + ' (player na Vercel)'); }
+      armVideoCheck();
     } else if (d.ev === 'error') {
       nlog('shield', 'ERRO ' + d.detail);
       if (!cur.played) failSource(d.detail);
@@ -818,14 +825,30 @@
     if (state.cur && !state.cur.played) { state.cur.played = true; nlog('tocando', state.cur.name + ' fonte ' + state.cur.sid + ' · ' + els.video.videoWidth + 'x' + els.video.videoHeight); }
     if (!els.msg.hidden && state.cur) setMsg('');
     clearTimeout(state.watch);
-    if (state.cur) state.cur.recovered = false;
+    if (state.cur) { state.cur.recovered = false; armVideoCheck(); }
+  }
+
+  /** Tocou mas sem imagem (só áudio, ou vídeo que este navegador não decodifica, como HEVC): descarta a fonte e pede outra. */
+  function armVideoCheck() {
+    var cur = state.cur;
+    if (!cur || cur.videoCheckSid === cur.sid) return;
+    cur.videoCheckSid = cur.sid;
+    var sid = cur.sid;
+    setTimeout(function () {
+      var c = state.cur;
+      if (!c || c.sid !== sid || !c.played) return;
+      var w = c.shield ? (state.net.ext && state.net.ext.w) : els.video.videoWidth;
+      if (w > 0) return;
+      failSource('toca só o áudio, sem imagem', 'novideo');
+    }, 9000);
   }
 
   /** A fonte atual não serve para este navegador: avisa o servidor e pede a próxima. */
-  function failSource(reason) {
+  function failSource(reason, why) {
     var cur = state.cur;
     if (!cur) return;
-    if (cur.sid) { cur.bad.push(cur.sid); cur.skip.push(cur.sid); }
+    // 'direct': o navegador não conseguiu buscar direto (CORS/rede). O servidor passa a entregar a MESMA fonte pela Vercel; não pula.
+    if (cur.sid) { cur.bad.push(cur.sid); cur.badWhy = why || ''; if (why !== 'direct') cur.skip.push(cur.sid); }
     cur.attempt += 1;
     nlog('falhou', 'fonte ' + (cur.sid || '-') + ': ' + reason + ' (tentativa ' + cur.attempt + '/' + MAX_ATTEMPTS + ')');
     stopPlayer();

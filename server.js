@@ -1272,7 +1272,8 @@ app.get('/api/live/stream', requireApiKey, async (req, res) => {
 
   const sids = (value) => String(value || '').split(',').filter((v) => /^[0-9a-f]{10}$/.test(v)).slice(0, 40);
   // O navegador avisa quando uma fonte que parecia boa não tocou (geobloqueio, token preso ao IP...).
-  for (const bad of sids(req.query.bad)) liveTv.reportBad(id, bad);
+  const badWhy = ['direct', 'novideo'].includes(String(req.query.why)) ? String(req.query.why) : '';
+  for (const bad of sids(req.query.bad)) liveTv.reportBad(id, bad, badWhy);
   const skip = sids(req.query.skip);
 
   try {
