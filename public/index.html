@@ -708,7 +708,6 @@
 </script>
 <style>
   html:not(.is-admin) #bwCorner,
-  html:not(.is-admin) #cfgOpen,
   html:not(.is-admin) #usageBox,
   html:not(.is-admin) #diagPanel,
   html:not(.is-admin) .admin-only{display:none !important}
@@ -744,6 +743,21 @@
       </button>
     </div>
   </nav>
+
+  <dialog id="adminDialog" class="cfg" aria-labelledby="adminTitle" style="max-width:380px">
+    <div class="cfg-head">
+      <h3 id="adminTitle">🔒 Área do administrador</h3>
+      <button id="adminClose" class="ghost" type="button" aria-label="Fechar">✕</button>
+    </div>
+    <form id="adminForm" class="cfg-body" autocomplete="off">
+      <p>Digite a senha para ver as estatísticas, o consumo das Vercels e os acessos por região.</p>
+      <div class="cfg-row">
+        <input id="adminPass" type="password" placeholder="Senha" aria-label="Senha de administrador" autocomplete="current-password" style="flex:1;min-width:0">
+        <button id="adminGo" type="submit">Entrar</button>
+      </div>
+      <p id="adminMsg" role="status"></p>
+    </form>
+  </dialog>
 
   <dialog id="cfgDialog" class="cfg" aria-labelledby="cfgTitle">
     <div class="cfg-head">
@@ -4866,27 +4880,59 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
     try { localStorage.removeItem(KEY); } catch (e) { /* sem storage */ }
     location.reload();
   }
-  function unlock() {
-    var key = window.prompt('Senha de administrador:');
+  var dlg = document.getElementById('adminDialog');
+  var pass = document.getElementById('adminPass');
+  var msg = document.getElementById('adminMsg');
+  var openCfgAfter = false;
+  function unlock(thenOpenConfigs) {
+    openCfgAfter = Boolean(thenOpenConfigs);
+    msg.textContent = '';
+    pass.value = '';
+    if (dlg.showModal) dlg.showModal(); else dlg.setAttribute('open', '');
+    setTimeout(function () { pass.focus(); }, 50);
+  }
+  document.getElementById('adminClose').addEventListener('click', function () { dlg.close(); });
+  document.getElementById('adminForm').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var key = pass.value.trim();
     if (!key) return;
-    check(key.trim()).then(function (r) {
-      if (!r.ok) { window.alert('Senha inválida.'); return; }
-      try { localStorage.setItem(KEY, key.trim()); } catch (e) { window.alert('O navegador bloqueou o armazenamento local.'); return; }
+    msg.textContent = 'Conferindo…';
+    check(key).then(function (r) {
+      if (!r.ok) { msg.textContent = 'Senha inválida.'; pass.select(); return; }
+      try {
+        localStorage.setItem(KEY, key);
+        if (openCfgAfter) sessionStorage.setItem('fdsflix.openCfg', '1');
+      } catch (err) { msg.textContent = 'O navegador bloqueou o armazenamento local.'; return; }
       location.reload();
     }).catch(function () {
-      window.alert('Sem resposta do servidor. No plano grátis do Render ele pode levar ~1 min para acordar: tente de novo.');
+      msg.textContent = 'Sem resposta do servidor. No plano grátis do Render ele pode levar ~1 min para acordar: tente de novo.';
     });
-  }
+  });
+  // Engrenagem (Configs): sem senha guardada pede a senha em vez de abrir; com senha abre normal.
+  document.addEventListener('click', function (e) {
+    var t = e.target;
+    if (stored() || !t || !t.closest || !t.closest('#cfgOpen')) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    unlock(true);
+  }, true);
   var out = document.getElementById('adminLogout');
   if (out) out.addEventListener('click', lock);
   // Ctrl+Shift+L, ou abrir o site com #admin no endereço, pede a senha. Sem botão visível para o público.
   document.addEventListener('keydown', function (e) {
-    if (e.ctrlKey && e.shiftKey && (e.key === 'L' || e.key === 'l')) { e.preventDefault(); unlock(); }
+    if (e.ctrlKey && e.shiftKey && (e.key === 'L' || e.key === 'l')) { e.preventDefault(); unlock(false); }
   });
   if (location.hash === '#admin') {
     try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { /* ignora */ }
-    unlock();
+    unlock(false);
   }
+  // Logo depois de entrar pela engrenagem, abre as Configs já com os números.
+  try {
+    if (stored() && sessionStorage.getItem('fdsflix.openCfg') === '1') {
+      sessionStorage.removeItem('fdsflix.openCfg');
+      setTimeout(function () { var g = document.getElementById('cfgOpen'); if (g) g.click(); }, 400);
+    }
+  } catch (err) { /* sem storage */ }
   // Senha guardada que o servidor não aceita mais (trocaram a STATS_KEY): volta ao modo público.
   if (stored()) {
     check(stored()).then(function (r) { if (r.status === 401) lock(); }).catch(function () { /* servidor dormindo: mantém */ });
