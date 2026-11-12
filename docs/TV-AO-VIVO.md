@@ -132,6 +132,19 @@ horário, classificação indicativa e barra de progresso) e, ao assistir, o pro
   Clicar num canal abre um modal (como o de filmes) com o player, o programa no ar, a grade completa de 24 h e a lista "Outros canais".
   O destaque e as fileiras vêm do guia; "Assistir agora" e "Ver programação" abrem o modal do canal em destaque. Esc fecha o modal e depois a TV.
 
+## Adult Swim, geobloqueio e AES-128
+
+- **Grupo "Adult Swim":** o canal (fontes IPTV da comunidade) e cinco canais 24 h da CDN da Turner (Rick and Morty, Metalocalypse, Toonami,
+  Samurai Jack, Eric Andre). Listas de varredura acrescentadas: `iptv-org .../countries/us.m3u` e duas listas de pastebin/gist.
+- **Hosts só para os EUA** (`turner.com`, `warnermediacdn.com`, regra `GEO_FENCED` em `lib/liveTv.js`): do Brasil dão 403. Os nós da Wasmer
+  saem de Ashburn (EUA), então para esses hosts a sonda do servidor e a entrega ao navegador passam SEMPRE por um nó (AdShield), nunca direto.
+  Se nenhum nó estiver configurado, o canal aparece "fora do ar" com o motivo. Essa regra existe só para o que a própria emissora publica de graça nos EUA.
+- **AES-128:** a sonda agora aceita HLS com AES-128 de chave clara (baixa a chave de 16 bytes, decifra o início do segmento e confere que é vídeo).
+  SAMPLE-AES e DRM continuam recusados. O hls.js e o Safari decifram sozinhos, e as duas rotas dos nós já reescrevem o endereço da chave.
+- **Resposta da origem não derruba o nó:** o AdShield repassa o status da origem (ex.: 403 de geobloqueio, marcado com `x-adshield-version`); isso
+  não tira mais o nó da rotação nem faz trocar de assinatura.
+- **Logos:** `scripts/live-logos.js` inclui os canais do grupo (todos com a logo do Adult Swim).
+
 ## Imagem e fontes que não tocam
 
 - **Só áudio:** o probe lê a tabela de programas (PMT) do segmento MPEG-TS e as variantes (`CODECS`/`RESOLUTION`) do HLS mestre;

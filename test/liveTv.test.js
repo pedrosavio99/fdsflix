@@ -65,7 +65,7 @@ test('probe: segmento que é HTML, stream criptografado e playlist vazia são re
   }));
   assert.match(html.reason, /não é MPEG-TS/);
   const enc = await probeSource('http://e.example/i.m3u8', opts({
-    'http://e.example/i.m3u8': { body: '#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI="k"\n#EXTINF:4,\ns.ts\n' }
+    'http://e.example/i.m3u8': { body: '#EXTM3U\n#EXT-X-KEY:METHOD=SAMPLE-AES,URI="k"\n#EXTINF:4,\ns.ts\n' }
   }));
   assert.match(enc.reason, /criptografado/);
   const empty = await probeSource('http://f.example/i.m3u8', opts({ 'http://f.example/i.m3u8': { body: '#EXTM3U\n' } }));
@@ -633,4 +633,75 @@ test('logos: arquivo gerado é válido, só de canais que existem, https e com c
   const snap = live.channelsSnapshot();
   assert.equal(snap.channels.find((c) => c.id === 'globo').logo.u, logos.globo.u, 'a lista de canais leva a logo');
   assert.equal(snap.channels.find((c) => c.id === 'darkflix').logo, null, 'canal sem logo continua válido');
+});
+
+/* ------------------- AES-128 e hosts só para os EUA (Adult Swim) ------------------- */
+
+const crypto = require('crypto');
+function aesSegment(key, iv) {
+  const plain = Buffer.alloc(384); plain[0] = 0x47; plain[188] = 0x47; plain[376] = 0x47;
+  const c = crypto.createCipheriv('aes-128-cbc', key, iv); c.setAutoPadding(false);
+  return Buffer.concat([c.update(plain), c.final()]);
+}
+
+test('probe: AES-128 de chave clara é aceito (a chave baixa e o segmento decifrado é MPEG-TS)', async () => {
+  const key = crypto.randomBytes(16);
+  const iv = Buffer.alloc(16); iv[15] = 1;
+  const m3u8 = '#EXTM3U\n#EXT-X-TARGETDURATION:10\n#EXT-X-MEDIA-SEQUENCE:5\n#EXT-X-KEY:METHOD=AES-128,URI="key.bin",IV=0x00000000000000000000000000000001\n#EXTINF:10,\nseg1.ts\n';
+  const ok = await probeSource('http://a.example/l/index.m3u8', opts({
+    'http://a.example/l/index.m3u8': { body: m3u8 },
+    'http://a.example/l/key.bin': { body: key },
+    'http://a.example/l/seg1.ts': { body: aesSegment(key, iv) }
+  }));
+  assert.equal(ok.ok, true, ok.reason);
+  assert.equal(ok.kind, 'hls');
+
+  // chave inacessível (o caso do geobloqueio da chave) derruba a fonte, com motivo claro
+  const noKey = await probeSource('http://a.example/l/index.m3u8', opts({
+    'http://a.example/l/index.m3u8': { body: m3u8 },
+    'http://a.example/l/seg1.ts': { body: aesSegment(key, iv) }
+  }));
+  assert.equal(noKey.ok, false);
+  assert.match(noKey.reason, /chave de criptografia inacessível/);
+
+  // chave errada: o segmento decifrado vira lixo e a fonte é recusada
+  const wrong = await probeSource('http://a.example/l/index.m3u8', opts({
+    'http://a.example/l/index.m3u8': { body: m3u8 },
+    'http://a.example/l/key.bin': { body: crypto.randomBytes(16) },
+    'http://a.example/l/seg1.ts': { body: aesSegment(key, iv) }
+  }));
+  assert.equal(wrong.ok, false);
+});
+
+test('probe: SAMPLE-AES e DRM continuam recusados', async () => {
+  const drm = await probeSource('http://a.example/l/index.m3u8', opts({
+    'http://a.example/l/index.m3u8': { body: '#EXTM3U\n#EXT-X-KEY:METHOD=SAMPLE-AES,URI="skd://x",KEYFORMAT="com.apple.streamingkeydelivery"\n#EXTINF:4,\nseg1.ts\n' },
+    'http://a.example/l/seg1.ts': { body: TS }
+  }));
+  assert.equal(drm.ok, false);
+  assert.match(drm.reason, /criptografado/);
+});
+
+test('geobloqueio: hosts da Turner/Warner nunca vão direto ao navegador e são sondados por um nó', async () => {
+  const url = 'https://adultswim-vodlive.cdn.turner.com/live/x/stream.m3u8';
+  assert.equal(live.geoFenced(url), true);
+  assert.equal(live.geoFenced('https://turnerlive.warnermediacdn.com/a.m3u8'), true);
+  assert.equal(live.geoFenced('https://example.com/a.m3u8'), false);
+  const plan = await live.planDelivery({ url, https: true, cors: true, kind: 'hls' }, { pool: [] });
+  assert.equal(plan.mode, 'none', 'com https+CORS ainda não vai direto: só os nós dos EUA alcançam');
+
+  // sem nó configurado a sonda diz o motivo; com um nó, a sonda sai por ele
+  live.setPoolProvider(() => []);
+  const none = await live.check(url, { force: true });
+  assert.equal(none.ok, false);
+  assert.match(none.reason, /só entrega para os EUA/);
+  live._reset();
+  live.setPoolProvider(() => ['https://us-node.example']);
+  const seen = [];
+  await live.check(url, {
+    force: true,
+    fetchImpl: async (u) => { seen.push(String(u)); return new Response('#EXTM3U\n#EXTINF:4,\ns.ts\n', { status: 200 }); }
+  });
+  live.setPoolProvider(() => []);
+  assert.ok(seen.length > 0 && seen.every((u) => u.startsWith('https://us-node.example/_adshield/r/')), 'a sonda sai pelo nó, nunca direto ao host da Turner');
 });

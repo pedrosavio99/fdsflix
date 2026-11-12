@@ -1235,6 +1235,12 @@ app.all('/api/stream/stop', (req, res) => {
 /* TV ao vivo (cascata própria; o vídeo NUNCA passa pelo Render)       */
 /* ------------------------------------------------------------------ */
 
+// Os nós (Vercel/Wasmer, os da Wasmer saem dos EUA) também servem para sondar fontes que só entregam para os EUA.
+liveTv.setPoolProvider(() => {
+  const ranked = usageLedger.rankedPool().filter((p) => !p.exhausted).map((p) => p.base);
+  return ranked.length ? ranked : usageLedger.getPool();
+});
+
 app.get('/api/live/channels', requireApiKey, (req, res) => {
   liveTv.warmIfStale();
   res.setHeader('Cache-Control', 'no-store');

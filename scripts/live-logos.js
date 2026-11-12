@@ -34,7 +34,9 @@ const IDS = {
   redetv: 'RedeTV.br', cultura: 'TVCultura.br', tnt: 'TNT.us', history: 'History.br', tlc: 'TLCLatinAmerica.us',
   warner: 'WarnerChannel.us', tcm: 'TCM.us', viva: 'CanalViva.br', vh1: 'VH1.us', tooncast: 'Tooncast.us',
   woohoo: 'WooHoo.br', camara: 'TVCamara.br', amazonsat: 'AmazonSat.br', mil1noites: '1001Noites.br',
-  adesso: 'AdessoTV.br', telabrasil: 'TelaBrasilTV.br'
+  adesso: 'AdessoTV.br', telabrasil: 'TelaBrasilTV.br',
+  adultswim: 'AdultSwim.us', rickandmorty: 'AdultSwim.us', metalocalypse: 'AdultSwim.us', toonami: 'AdultSwim.us',
+  samuraijack: 'AdultSwim.us', ericandre: 'AdultSwim.us'
 };
 
 const UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36';
