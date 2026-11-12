@@ -122,6 +122,9 @@ test('estatísticas: únicos, voltaram, países, cidades, aparelhos e quem está
   assert.deepEqual(s.devices.map((d) => d.device).sort(), ['Android · Chrome', 'Windows · Edge', 'iPhone · Safari']);
   assert.equal(s.online.count, 2, 'hoje: o de Niterói (T0) e o de São Paulo (heartbeat), dentro de 5 min');
   assert.equal(s.series.length, 7);
+  assert.equal(s.hours.length, 24);
+  assert.equal(s.hours[9], 4, '12:00Z = 9h em Brasília; as quatro visitas (visitante+dia) chegaram nessa hora');
+  assert.equal(s.hours.reduce((x, y) => x + y, 0), 4);
   assert.equal(s.series[s.series.length - 1].visitors, 2);
   const sp = s.visitors.find((v) => v.visitor === '200.1.2.3');
   assert.equal(sp.lastWatch, 'Matrix');

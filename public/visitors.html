@@ -74,6 +74,12 @@
     <div class="series" id="series"></div>
   </section>
 
+  <section class="panel" style="margin-bottom:14px">
+    <h2>Horários em que as pessoas chegam (Brasília)</h2>
+    <div class="series" id="hours"></div>
+    <div class="muted" id="hoursAxis" style="display:flex;justify-content:space-between;font-size:11px;margin-top:4px"><span>0h</span><span>6h</span><span>12h</span><span>18h</span><span>23h</span></div>
+  </section>
+
   <section class="grid">
     <div class="panel"><h2>Países</h2><div id="countries"></div></div>
     <div class="panel"><h2>Cidades</h2><div id="cities"></div></div>
@@ -191,7 +197,7 @@
         tr.appendChild(td);
       });
       tr.appendChild(el('td', 'muted', when(v.firstSeen)));
-      var seen = el('td', 'muted', ago(v.lastSeen));
+      var seen = el('td', 'muted', when(v.lastSeen) + ' · ' + ago(v.lastSeen));
       seen.title = when(v.lastSeen);
       tr.appendChild(seen);
       tb.appendChild(tr);
@@ -224,6 +230,17 @@
       b.style.height = Math.max(2, x.visitors / max * 100) + '%';
       b.dataset.tip = x.day.slice(5) + ': ' + x.visitors + ' visitantes, ' + x.watches + ' vídeos';
       s.appendChild(b);
+    });
+
+    var hb = $('hours');
+    hb.textContent = '';
+    var hv = d.hours || [];
+    var hmax = Math.max.apply(null, hv.concat([0])) || 1;
+    hv.forEach(function (n, h) {
+      var b = el('div');
+      b.style.height = Math.max(2, n / hmax * 100) + '%';
+      b.dataset.tip = h + 'h: ' + n + (n === 1 ? ' chegada' : ' chegadas');
+      hb.appendChild(b);
     });
 
     bars($('countries'), d.countries, function (i) { return country(i.country); });
