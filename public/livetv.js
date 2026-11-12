@@ -17,12 +17,16 @@
   var MAX_ATTEMPTS = 4;          // fontes diferentes tentadas antes de desistir
   var START_TIMEOUT_MS = 16000;  // sem quadro tocando nesse tempo = fonte ruim
   var STORE_KEY = 'fdsflix.live';
+  // MPEG-TS cru (ESPN 2, SporTV 3, Premiere...): tocado por mpegts.js, carregado só quando um canal precisa (CDN; cópia local de reserva).
+  var MPEGTS_CDN = 'https://cdn.jsdelivr.net/npm/mpegts.js@1.7.3/dist/mpegts.js';
+  var MPEGTS_SRI = 'sha384-gWBszQzp4KdKY3PNUrFbTuvAcChcUSMKpSrt/OjDS3qe16Ef4OZSfP5E/+KcPueP';
+  var MAX_RECONNECTS = 30;       // a Vercel corta streams longos (~5 min); reconecta sozinho
 
   var state = {
     open: false, data: null, group: '', onlyLive: false,
-    cur: null, seq: 0, hls: null, watch: 0, poll: 0, polls: 0,
+    cur: null, seq: 0, hls: null, ts: null, tsLast: null, watch: 0, poll: 0, polls: 0,
     log: [], diag: null, diagAt: 0, diagTimer: 0, diagBusy: false, netTimer: 0,
-    net: { frags: [], samples: [], bytes: 0, count: 0 }
+    net: { frags: [], samples: [], bytes: 0, count: 0, tsMbps: null }
   };
   var els = {};
 
@@ -270,9 +274,10 @@
     var now = Date.now(), v = els.video, n = state.net, s = { t: now, cap: null, use: null, buf: 0, drop: 0, lat: null, h: 0, kbps: 0 };
     var recent = n.frags.filter(function (f) { return now - f.t < 20000; });
     var last = recent[recent.length - 1];
-    if (last && last.ms > 20) s.cap = last.bytes * 8 / last.ms / 1000;                        // Mbps durante a baixada do último pedaço
+    if (n.tsMbps == null && last && last.ms > 20) s.cap = last.bytes * 8 / last.ms / 1000;                        // Mbps durante a baixada do último pedaço
+    if (n.tsMbps != null) { s.cap = n.tsMbps; s.use = n.tsMbps; }
     var win = n.frags.filter(function (f) { return now - f.t < 12000; });
-    if (win.length) s.use = win.reduce(function (a, f) { return a + f.bytes; }, 0) * 8 / 12 / 1e6; // Mbps médios consumidos
+    if (n.tsMbps == null && win.length) s.use = win.reduce(function (a, f) { return a + f.bytes; }, 0) * 8 / 12 / 1e6; // Mbps médios consumidos
     try { if (v.buffered && v.buffered.length) s.buf = Math.max(0, v.buffered.end(v.buffered.length - 1) - v.currentTime); } catch (e) { /* ignora */ }
     try { var q = v.getVideoPlaybackQuality && v.getVideoPlaybackQuality(); if (q) s.drop = q.droppedVideoFrames; } catch (e) { /* ignora */ }
     if (state.hls) {
@@ -297,7 +302,7 @@
     T.q.textContent = (v && v.videoWidth ? v.videoWidth + 'x' + v.videoHeight : '–') + (s.kbps ? ' · ' + s.kbps + ' kbps' : '');
     T.drop.textContent = s.drop == null ? '–' : String(s.drop);
     T.lat.textContent = s.lat == null ? '–' : fmt(s.lat) + ' s';
-    T.tot.textContent = fmt(state.net.bytes / 1048576, 1) + ' MB · ' + state.net.count + ' pedaços';
+    T.tot.textContent = fmt(state.net.bytes / 1048576, 1) + ' MB' + (state.net.count ? ' · ' + state.net.count + ' pedaços' : '');
     var c = navigator.connection;
     T.net.textContent = c ? ((c.effectiveType || '?') + (c.downlink ? ' · ↓' + c.downlink + ' Mbps' : '') + (c.rtt ? ' · ' + c.rtt + ' ms' : '')) : 'sem dado do navegador';
   }
@@ -375,7 +380,7 @@
       L.push(['info', 'video: t=' + (v.currentTime || 0).toFixed(1) + 's · pausado=' + v.paused + ' · readyState=' + v.readyState + ' · ' + (v.videoWidth || 0) + 'x' + (v.videoHeight || 0)]);
     } else L.push(['dim', 'canal atual: nenhum']);
     var n = state.net, s = n.samples[n.samples.length - 1];
-    if (s) L.push(['info', 'rede: baixada ' + fmt(s.cap) + ' Mbps · vídeo ' + fmt(s.use, 2) + ' Mbps · buffer ' + fmt(s.buf) + ' s · perdidos ' + s.drop + ' · total ' + fmt(n.bytes / 1048576) + ' MB em ' + n.count + ' pedaços']);
+    if (s) L.push(['info', 'rede: baixada ' + fmt(s.cap) + ' Mbps · vídeo ' + fmt(s.use, 2) + ' Mbps · buffer ' + fmt(s.buf) + ' s · perdidos ' + s.drop + ' · total ' + fmt(n.bytes / 1048576) + ' MB' + (n.count ? ' em ' + n.count + ' pedaços' : '')]);
     L.push(['step', '== EVENTOS DO NAVEGADOR (últimos 80) ==']);
     state.log.slice(-80).forEach(function (e) { L.push([cliClass(e), clock(e.t) + ' ' + e.type + ' ' + e.msg]); });
     if (!state.log.length) L.push(['dim', '(vazio)']);
@@ -563,6 +568,10 @@
   function stopPlayer() {
     clearTimeout(state.watch);
     if (state.hls) { try { state.hls.destroy(); } catch (e) { /* ignora */ } state.hls = null; }
+    if (state.ts) {
+      try { state.ts.pause(); state.ts.unload(); state.ts.detachMediaElement(); state.ts.destroy(); } catch (e) { /* ignora */ }
+      state.ts = null; state.tsLast = null; state.net.tsMbps = null;
+    }
     try { els.video.pause(); } catch (e) { /* ignora */ }
     els.video.removeAttribute('src');
     try { els.video.load(); } catch (e) { /* ignora */ }
@@ -575,7 +584,7 @@
     stopPlayer();
     var ch = state.data && state.data.channels.filter(function (c) { return c.id === id; })[0];
     state.seq += 1;
-    state.net = { frags: [], samples: [], bytes: 0, count: 0 };
+    state.net = { frags: [], samples: [], bytes: 0, count: 0, tsMbps: null };
     state.cur = { id: id, name: ch ? ch.name : id, sid: '', skip: [], bad: [], attempt: 0, token: state.seq };
     els.stage.hidden = false;
     els.name.textContent = state.cur.name;
@@ -631,7 +640,7 @@
     }
     els.frame.hidden = true;
     els.video.hidden = false;
-    attach(job.url);
+    if (job.kind === 'ts') attachTs(job.url); else attach(job.url);
     clearTimeout(state.watch);
     var sid = job.sid;
     state.watch = setTimeout(function () {
@@ -688,6 +697,73 @@
     fetch(url, { cache: 'no-store' }).then(function (r) {
       return r.text().then(function (t) { nlog('diagnostico', 'GET ' + shortUrl(url) + ' → HTTP ' + r.status + ' · ' + t.slice(0, 160).replace(/\s+/g, ' ')); });
     }).catch(function (e) { nlog('diagnostico', 'GET ' + shortUrl(url) + ' falhou: ' + e.message); });
+  }
+
+  function loadMpegts(done) {
+    if (window.mpegts) return done(null);
+    var tag = document.createElement('script');
+    tag.src = MPEGTS_CDN; tag.integrity = MPEGTS_SRI; tag.crossOrigin = 'anonymous';
+    tag.onload = function () { done(null); };
+    tag.onerror = function () {
+      nlog('mpegts', 'CDN falhou; usando a cópia local');
+      var local = document.createElement('script');
+      local.src = '/vendor/mpegts.min.js';
+      local.onload = function () { done(null); };
+      local.onerror = function () { done(new Error('não consegui carregar o mpegts.js')); };
+      document.head.appendChild(local);
+    };
+    document.head.appendChild(tag);
+  }
+
+  /** MPEG-TS ao vivo (sem playlist): mpegts.js lê o fluxo pela Vercel. Reconecta quando a Vercel corta o stream. */
+  function attachTs(url) {
+    var sid = state.cur.sid, token = state.cur.token;
+    setMsg('Carregando o player de TS…', 'work');
+    loadMpegts(function (err) {
+      if (!state.cur || state.cur.sid !== sid || state.cur.token !== token) return;
+      if (err || !window.mpegts || !mpegts.getFeatureList().mseLivePlayback) {
+        failSource(err ? err.message : 'este navegador não toca TS ao vivo');
+        return;
+      }
+      var player = mpegts.createPlayer({ type: 'mpegts', isLive: true, url: url }, {
+        enableWorker: true, lazyLoad: false, autoCleanupSourceBuffer: true,
+        liveBufferLatencyChasing: true, liveBufferLatencyMaxLatency: 8, liveBufferLatencyMinRemain: 1.5
+      });
+      state.ts = player;
+      var cur = state.cur;
+      var lost = function (why) {
+        if (!state.cur || state.cur.sid !== sid || state.ts !== player) return;
+        if (cur.played) {
+          cur.reconnects = (cur.reconnects || 0) + 1;
+          nlog('mpegts', 'fluxo terminou (' + why + '); reconectando ' + cur.reconnects + '/' + MAX_RECONNECTS);
+          if (cur.reconnects > MAX_RECONNECTS) { failSource('muitas reconexões'); return; }
+          stopPlayer(); cur.played = false; request();
+        } else failSource(why);
+      };
+      player.on(mpegts.Events.ERROR, function (type, detail, info) {
+        nlog('mpegts', 'ERRO ' + type + '/' + detail + (info && info.msg ? ' ' + info.msg : ''));
+        lost(detail || type);
+      });
+      player.on(mpegts.Events.LOADING_COMPLETE, function () { lost('fim do fluxo'); });
+      player.on(mpegts.Events.STATISTICS_INFO, function (st) {
+        // O mpegts.js não informa bytes totais, só a velocidade (KB/s): integra no tempo para contar a banda da Vercel.
+        var now = Date.now();
+        try {
+          if (state.tsLast && st.speed > 0) {
+            var dt = Math.min(5, (now - state.tsLast) / 1000);
+            var delta = st.speed * 1024 * dt;
+            if (window.FdsUsage && delta) window.FdsUsage.add(url, delta, dt);
+            state.net.bytes += delta;
+          }
+          state.tsLast = now;
+          state.net.tsMbps = st.speed != null ? st.speed * 8 / 1000 : null; // KB/s -> Mbps
+        } catch (e) { /* estatística nunca derruba a TV */ }
+      });
+      player.attachMediaElement(els.video);
+      player.load();
+      var started = player.play();
+      if (started && started.catch) started.catch(function () { setMsg('Toque no ▶ para começar.', 'err'); });
+    });
   }
 
   function onPlaying() {

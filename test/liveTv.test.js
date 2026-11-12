@@ -214,7 +214,7 @@ test('resolveChannel: pula o que o cliente já tentou e o que falhou', async () 
   delete process.env.LIVE_SCAN_CATALOGS;
 });
 
-test('resolveChannel: HLS ganha de página de player e TS cru não conta como tocável', async () => {
+test('resolveChannel: HLS ganha de página de player e TS cru só entra como último recurso', async () => {
   process.env.LIVE_SCAN_CATALOGS = '0';
   process.env.LIVE_PAGE_HOSTS = 'player.example';
   process.env.LIVE_SOURCES_JSON = JSON.stringify({
@@ -229,9 +229,10 @@ test('resolveChannel: HLS ganha de página de player e TS cru não conta como to
   assert.equal(r.source.kind, 'page');
   live._reset();
   r = await live.resolveChannel('sportv3', { probe: probeBy({ [hls]: { ok: true, kind: 'ts' }, [page]: { ok: false, reason: 'x' } }) });
-  assert.equal(r.ok, false);
+  assert.equal(r.ok, true, 'TS cru vivo é o último recurso');
+  assert.equal(r.source.kind, 'ts');
   assert.equal(r.rawTs, 1);
-  assert.match(r.error, /TS cru/);
+  assert.equal(live.channelsSnapshot().channels.find((c) => c.id === 'sportv3').status, 'ok');
   delete process.env.LIVE_SCAN_CATALOGS;
   delete process.env.LIVE_PAGE_HOSTS;
   delete process.env.LIVE_SOURCES_JSON;
@@ -390,4 +391,63 @@ test('warm: rodadas seguintes testam as fontes que ainda não foram testadas, n�
   await live.warm({ probe });
   assert.equal(all.slice(0, 24).every((u) => seen.has(u)), true);
   delete process.env.LIVE_SCAN_CATALOGS;
+});
+
+test('planDelivery com verify: se o Render tem outro segredo, aprende a assinatura embutida da Vercel e não erra de novo', async () => {
+  const { BUILTIN_PROXY_SECRET } = require('../adproxy/lib/secret.js');
+  process.env.PROXY_SECRET = 'segredo-so-do-render';
+  const src = { url: 'http://cdn.example:8000/play/a/index.m3u8', kind: 'hls', https: false, cors: false };
+  const hits = [];
+  const fetchImpl = async (u) => {
+    if (u.includes('?cap=1')) return new Response(JSON.stringify({ live: true }), { status: 200 });
+    const q = new URL(u).searchParams;
+    hits.push(u);
+    const ok = q.get('s') === live.signLive(q.get('u'), q.get('e'), BUILTIN_PROXY_SECRET);
+    return ok ? new Response('#EXTM3U\n#EXTINF:4,\ns.ts\n') : new Response('{"error":"URL não assinada ou vencida"}', { status: 403 });
+  };
+  const plan = await live.planDelivery(src, { pool: ['https://v.vercel.app'], fetchImpl, verify: true });
+  assert.equal(plan.mode, 'vercel');
+  assert.equal(hits.length, 2, 'primeira tentativa 403, segunda com a assinatura embutida');
+  assert.ok(live.diagnostics().eventos.some((e) => e.tipo === 'vercel' && /embutida/.test(e.msg)));
+  hits.length = 0;
+  const again = await live.planDelivery(src, { pool: ['https://v.vercel.app'], fetchImpl, verify: true });
+  assert.equal(again.mode, 'vercel');
+  assert.equal(hits.length, 1, 'já sabe qual assinatura usar');
+  delete process.env.PROXY_SECRET;
+});
+
+test('planDelivery: TS cru vai pela função Node (/live/np) e é conferido lendo o primeiro pacote', async () => {
+  const src = { url: 'http://cdn.example:14438/Espn2', kind: 'ts', https: false, cors: false };
+  const routes = [];
+  const fetchImpl = async (u) => {
+    if (u.includes('?cap=1')) return new Response(JSON.stringify({ live: true }), { status: 200 });
+    routes.push(new URL(u).pathname);
+    return new Response(new ReadableStream({ start(c) { c.enqueue(TS); } }), { status: 200 });
+  };
+  const plan = await live.planDelivery(src, { pool: ['https://v.vercel.app'], fetchImpl, verify: true });
+  assert.equal(plan.mode, 'vercel');
+  assert.match(plan.via, /\/live\/np$/);
+  assert.deepEqual(routes, ['/live/np']);
+  live._reset();
+  const bad = await live.planDelivery({ ...src, url: 'http://cdn.example:80/x' }, {
+    pool: ['https://v.vercel.app'], verify: true,
+    fetchImpl: async (u) => (u.includes('?cap=1') ? new Response(JSON.stringify({ live: true })) : new Response('<html>')) });
+  assert.equal(bad.mode, 'none');
+  assert.match(bad.reason, /MPEG-TS/);
+});
+
+test('resolveChannel: responde assim que a primeira fonte boa aparece, sem esperar as lentas do mesmo lote', async () => {
+  process.env.LIVE_SCAN_CATALOGS = '0';
+  process.env.LIVE_SOURCES_JSON = JSON.stringify({ cultura: ['http://lenta1.example/a.m3u8', 'http://lenta2.example/b.m3u8', 'http://boa.example/c.m3u8'] });
+  const probe = async (url) => {
+    if (url.includes('lenta')) { await new Promise((r) => setTimeout(r, 1500)); return { ok: false, reason: 'tempo esgotado', https: false, port: '80', cors: false, ms: 1500 }; }
+    return { ok: true, kind: 'hls', https: false, port: '80', cors: false, ms: 5 };
+  };
+  const t0 = Date.now();
+  const r = await live.resolveChannel('cultura', { probe });
+  assert.equal(r.ok, true);
+  assert.equal(r.source.url, 'http://boa.example/c.m3u8');
+  assert.ok(Date.now() - t0 < 700, `demorou ${Date.now() - t0} ms`);
+  delete process.env.LIVE_SCAN_CATALOGS;
+  delete process.env.LIVE_SOURCES_JSON;
 });

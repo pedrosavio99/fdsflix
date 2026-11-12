@@ -72,6 +72,26 @@ Para fontes HTTP/sem CORS, o servidor não confia só no `?cap=1`: abre a playli
 exige `200` + `#EXTM3U`. Se a Vercel recusar (por exemplo `403 URL não assinada ou vencida`, host bloqueado, fonte fora do ar para ela),
 o evento `vercel` registra o motivo e o servidor tenta a próxima Vercel (até 3 conferências) antes de dizer "sem sinal".
 
+## MPEG-TS cru (ESPN 2, SporTV 3, Premiere, Combate...)
+
+Fontes que entregam o fluxo MPEG-TS direto (sem playlist) agora tocam: se nenhum HLS funciona, o servidor usa o TS cru vivo como
+último recurso e entrega **sempre pela Vercel** (`/live/np`, função Node; o Edge não serve para stream longo). O navegador carrega o
+`mpegts.js` só nesse momento (CDN jsDelivr com SRI; cópia local de reserva em `public/vendor/mpegts.min.js`, que só pesa no Render se o CDN
+falhar). A Vercel corta streams longos (~5 min): o player reconecta sozinho (até 30 vezes) e a banda é contada no medidor das Vercels.
+
+## Assinatura das Vercels
+
+O link `/live/hls` e `/live/np` é assinado. As Vercels usam o segredo embutido (`adproxy/lib/secret.js`) quando não têm `PROXY_SECRET`;
+se o Render tiver `PROXY_SECRET`/`SESSION_SECRET` diferente, a primeira tentativa dá `403 URL não assinada`. O servidor percebe o 403,
+tenta a assinatura embutida e **lembra qual cada Vercel aceita** (evento `vercel` no log da área nerd, e `assinatura` na lista de rotas).
+Não precisa configurar nada; para trocar o segredo de todas, defina o mesmo `PROXY_SECRET` no Render e nas Vercels.
+
+## Cascata mais rápida
+
+Os testes de fontes rodam em paralelo e a resposta sai assim que o primeiro HLS provado aparece (antes esperava o lote de 5 inteiro, preso
+no timeout de 7 s das fontes mortas: 30 s a frio, agora ~7 s). A varredura das listas `.m3u` não segura mais o primeiro espectador (espera
+no máximo 4 s e termina em segundo plano). O aquecimento testa primeiro as fontes nunca testadas.
+
 ## Publicar
 
 1. Render: é só o deploy normal.
