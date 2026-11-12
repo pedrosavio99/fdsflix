@@ -1,0 +1,322 @@
+{
+ "sportv": {
+  "u": "https://i.postimg.cc/gr9x3z71/Spor-TV-2021.png",
+  "a": [
+   "#dedfe9",
+   "#c2c4d3"
+  ],
+  "d": "#120f20"
+ },
+ "espn": {
+  "u": "https://upload.wikimedia.org/wikipedia/commons/thumb/2/2f/ESPN_wordmark.svg/960px-ESPN_wordmark.svg.png",
+  "a": [
+   "#ece2e8",
+   "#d5c7d2"
+  ],
+  "d": "#37151e"
+ },
+ "espn2": {
+  "u": "https://i.imgur.com/00tsvjE.png",
+  "a": [
+   "#eadfe5",
+   "#d3c3cd"
+  ],
+  "d": "#330e15"
+ },
+ "espn3": {
+  "u": "https://upload.wikimedia.org/wikipedia/commons/thumb/5/51/ESPN3_Logo.png/960px-ESPN3_Logo.png",
+  "a": [
+   "#eae0e5",
+   "#d3c4ce"
+  ],
+  "d": "#331016"
+ },
+ "espn4": {
+  "u": "https://upload.wikimedia.org/wikipedia/commons/thumb/7/78/ESPN_4_logo.svg/960px-ESPN_4_logo.svg.png",
+  "a": [
+   "#ebe1e7",
+   "#d4c6d0"
+  ],
+  "d": "#36131b"
+ },
+ "sportv2": {
+  "u": "https://i.imgur.com/pBiUnb2.png",
+  "a": [
+   "#e3e1e8",
+   "#c8c6d2"
+  ],
+  "d": "#1e131e"
+ },
+ "sportv3": {
+  "u": "https://i.imgur.com/mWOR8pi.png",
+  "a": [
+   "#e3e1e8",
+   "#c8c6d2"
+  ],
+  "d": "#1e131e"
+ },
+ "premiere": {
+  "u": "https://upload.wikimedia.org/wikipedia/commons/thumb/2/20/Premiere_(2017)_logo.png/960px-Premiere_(2017)_logo.png",
+  "a": [
+   "#1c3626",
+   "#0d1714"
+  ],
+  "d": "#192a22"
+ },
+ "combate": {
+  "u": "https://i.imgur.com/ZPYK5jr.png",
+  "a": [
+   "#e9e3e9",
+   "#d1c9d3"
+  ],
+  "d": "#2f1a20"
+ },
+ "foxsports": {
+  "u": "https://upload.wikimedia.org/wikipedia/commons/thumb/0/0c/FOX_Sports_logo.svg/960px-FOX_Sports_logo.svg.png",
+  "a": [
+   "#dee2ec",
+   "#c1c8d7"
+  ],
+  "d": "#0f1729"
+ },
+ "bandsports": {
+  "u": "https://i.imgur.com/EuPvzJe.png",
+  "a": [
+   "#eadfe7",
+   "#d2c4d0"
+  ],
+  "d": "#310f1a"
+ },
+ "telecine": {
+  "u": "https://i.imgur.com/uVFgIr8.png",
+  "a": [
+   "#e6e2e8",
+   "#ccc8d1"
+  ],
+  "d": "#26171d"
+ },
+ "axn": {
+  "u": "https://upload.wikimedia.org/wikipedia/commons/thumb/5/52/AXN_logo_%282015%29.svg/960px-AXN_logo_%282015%29.svg.png",
+  "a": [
+   "#e6e8ef",
+   "#cdcfdb"
+  ],
+  "d": "#262631"
+ },
+ "studiouniversal": {
+  "u": "https://upload.wikimedia.org/wikipedia/commons/thumb/7/74/StudioUniversal2016.png/960px-StudioUniversal2016.png",
+  "a": [
+   "#e6e8ef",
+   "#cdcfdb"
+  ],
+  "d": "#262631"
+ },
+ "tbs": {
+  "u": "https://upload.wikimedia.org/wikipedia/commons/thumb/7/7e/TBS_Network-logo.svg/960px-TBS_Network-logo.svg.png",
+  "a": [
+   "#efe3ed",
+   "#d9c9d9"
+  ],
+  "d": "#40192b"
+ },
+ "space": {
+  "u": "https://upload.wikimedia.org/wikipedia/commons/thumb/1/1a/SpaceLogo.svg/960px-SpaceLogo.svg.png",
+  "a": [
+   "#464013",
+   "#1e1c0d"
+  ],
+  "d": "#343116"
+ },
+ "syfy": {
+  "u": "https://i.imgur.com/4fMWhUE.png",
+  "a": [
+   "#e6e8ef",
+   "#cdcfdb"
+  ],
+  "d": "#262631"
+ },
+ "discoverykids": {
+  "u": "https://thumb.wikimedia.org/wikipedia/commons/thumb/7/7f/Discovery_Kids_2021_2D_sin_wordmark.svg/960px-Discovery_Kids_2021_2D_sin_wordmark.svg.png",
+  "a": [
+   "#e0e6f1",
+   "#c5cddf"
+  ],
+  "d": "#172238"
+ },
+ "cartoon": {
+  "u": "https://upload.wikimedia.org/wikipedia/commons/thumb/8/80/Cartoon_Network_2010_logo.svg/960px-Cartoon_Network_2010_logo.svg.png",
+  "a": [
+   "#e6e8ef",
+   "#cdcfdb"
+  ],
+  "d": "#262631"
+ },
+ "discovery": {
+  "u": "https://upload.wikimedia.org/wikipedia/commons/thumb/f/f1/2019_Discovery_logo.svg/960px-2019_Discovery_logo.svg.png",
+  "a": [
+   "#e6e8ef",
+   "#cdcfdb"
+  ],
+  "d": "#262631"
+ },
+ "globo": {
+  "u": "https://i.imgur.com/OoSUg78.png",
+  "a": [
+   "#e6e8ef",
+   "#cdcfdb"
+  ],
+  "d": "#262631"
+ },
+ "sbt": {
+  "u": "https://i.imgur.com/ECPs1ev.png",
+  "a": [
+   "#31313c",
+   "#15151d"
+  ],
+  "d": "#262631"
+ },
+ "record": {
+  "u": "https://i.imgur.com/sz9gTTr.png",
+  "a": [
+   "#31313c",
+   "#15151d"
+  ],
+  "d": "#262631"
+ },
+ "band": {
+  "u": "https://i.imgur.com/1r5T6Pw.png",
+  "a": [
+   "#31313c",
+   "#15151d"
+  ],
+  "d": "#262631"
+ },
+ "redetv": {
+  "u": "https://yt3.googleusercontent.com/CTFU2P7tW43punwV3olirWyw_I5tKS1YzMe6JfeBmWw09ipCy_6GW2uE9EjX8T63pgLIsiJdBpA=s900-c-k-c0x00ffffff-no-rj",
+  "a": [
+   "#119bb4",
+   "#0f889e"
+  ],
+  "d": "#122d39"
+ },
+ "cultura": {
+  "u": "https://i.ibb.co/nm0jXMM/cultura-3x.png",
+  "a": [
+   "#31313c",
+   "#15151d"
+  ],
+  "d": "#262631"
+ },
+ "tnt": {
+  "u": "https://upload.wikimedia.org/wikipedia/commons/thumb/2/24/TNT_Logo_2016.svg/960px-TNT_Logo_2016.svg.png",
+  "a": [
+   "#e6e8ef",
+   "#cdcfdb"
+  ],
+  "d": "#262631"
+ },
+ "history": {
+  "u": "https://upload.wikimedia.org/wikipedia/commons/thumb/0/01/History_%282021%29.svg/500px-History_%282021%29.svg.png",
+  "a": [
+   "#eae8e8",
+   "#d3d0d2"
+  ],
+  "d": "#33291e"
+ },
+ "tlc": {
+  "u": "https://upload.wikimedia.org/wikipedia/commons/thumb/7/74/TLC_Logo.svg/960px-TLC_Logo.svg.png",
+  "a": [
+   "#ede2e7",
+   "#d7c8d1"
+  ],
+  "d": "#3b181c"
+ },
+ "warner": {
+  "u": "https://upload.wikimedia.org/wikipedia/commons/thumb/b/b0/Warner_Channel_2026.svg/960px-Warner_Channel_2026.svg.png",
+  "a": [
+   "#e6e8ef",
+   "#cdcfdb"
+  ],
+  "d": "#262631"
+ },
+ "tcm": {
+  "u": "https://upload.wikimedia.org/wikipedia/commons/thumb/6/63/TCM_2021.svg/960px-TCM_2021.svg.png",
+  "a": [
+   "#e6e8ef",
+   "#cdcfdb"
+  ],
+  "d": "#262631"
+ },
+ "viva": {
+  "u": "https://i.imgur.com/uNHu40M.png",
+  "a": [
+   "#eee6e9",
+   "#d8cdd4"
+  ],
+  "d": "#3d2222"
+ },
+ "vh1": {
+  "u": "https://upload.wikimedia.org/wikipedia/commons/thumb/9/94/VH1_logonew.svg/960px-VH1_logonew.svg.png",
+  "a": [
+   "#e6e1f1",
+   "#cdc6de"
+  ],
+  "d": "#271337"
+ },
+ "tooncast": {
+  "u": "https://i.imgur.com/3yXRbQy.png",
+  "a": [
+   "#481820",
+   "#1f0c12"
+  ],
+  "d": "#36161e"
+ },
+ "woohoo": {
+  "u": "https://i.imgur.com/me622pa.png",
+  "a": [
+   "#e6e8ef",
+   "#cdcfdb"
+  ],
+  "d": "#262631"
+ },
+ "camara": {
+  "u": "https://i.imgur.com/Sdou1Ab.png",
+  "a": [
+   "#eee6e6",
+   "#d8ccce"
+  ],
+  "d": "#3d2017"
+ },
+ "amazonsat": {
+  "u": "https://i.imgur.com/7rjCS5i.png",
+  "a": [
+   "#013861",
+   "#013156"
+  ],
+  "d": "#101a29"
+ },
+ "mil1noites": {
+  "u": "https://i.imgur.com/dWA9y2J.png",
+  "a": [
+   "#e5e3eb",
+   "#cbc8d6"
+  ],
+  "d": "#231926"
+ },
+ "adesso": {
+  "u": "https://i.imgur.com/KgetM8j.png",
+  "a": [
+   "#e3e6ee",
+   "#c9cdda"
+  ],
+  "d": "#1e232f"
+ },
+ "telabrasil": {
+  "u": "https://i.imgur.com/fbhjltq.png",
+  "a": [
+   "#e6e5f2",
+   "#cdccdf"
+  ],
+  "d": "#281f39"
+ }
+}

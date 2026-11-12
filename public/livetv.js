@@ -93,6 +93,18 @@
     '@media (min-width:1180px){.ltv .track{--per:4.2}}@media (min-width:1640px){.ltv .track{--per:5.2}}',
     '.ltv .poster-wrap{aspect-ratio:16/9;background:var(--g,#1b1b27)}',
     '.ltv .poster-wrap::before{content:"";position:absolute;inset:0;background:radial-gradient(110% 80% at 90% 0,rgba(255,255,255,.16),rgba(255,255,255,0) 60%);z-index:1}',
+    // Mais específico que `.poster-wrap img` do site (que preenche e corta): a logo fica inteira, centralizada, sem zoom.
+    '.ltv .poster-wrap img.ltv-logo,.ltv .rec-poster img.ltv-logo,.ltv-modal .rec-poster img.ltv-logo,.ltv-heroart img.ltv-logo{position:absolute;inset:auto;left:50%;top:40%;transform:translate(-50%,-50%);z-index:2;',
+    '  width:auto;height:auto;max-width:56%;max-height:38%;object-fit:contain;pointer-events:none;user-select:none;transition:transform .35s var(--ease)}',
+    '.ltv .card:hover .poster-wrap img.ltv-logo{transform:translate(-50%,-50%) scale(1.06)}',
+    '.ltv .card .poster-wrap img.ltv-logo{filter:drop-shadow(0 2px 6px rgba(0,0,0,.18))}',
+    '.ltv .rec-poster img.ltv-logo,.ltv-modal .rec-poster img.ltv-logo{top:50%;max-width:62%;max-height:56%}',
+    '.ltv-chname[hidden],.rec-chname[hidden]{display:none}',
+    '@media (max-width:559px){.ltv .poster-wrap{aspect-ratio:3/2}.ltv .poster-wrap img.ltv-logo{top:37%;max-height:34%}}',
+    '.ltv-heroart{position:absolute;z-index:1;right:var(--gutter);bottom:clamp(120px,15vw,210px);width:min(32vw,440px);aspect-ratio:16/9;border-radius:14px;background:var(--g);',
+    '  box-shadow:0 22px 70px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.08)}',
+    '.ltv-heroart[hidden]{display:none}.ltv-heroart img.ltv-logo{top:50%;max-width:62%;max-height:58%}',
+    '@media (max-width:860px){.ltv-heroart{display:none}}',
     '.ltv-chname{position:absolute;left:.9rem;right:.9rem;top:42%;transform:translateY(-50%);z-index:2;font-size:clamp(1.05rem,1.9vw,1.55rem);font-weight:900;',
     '  letter-spacing:-.02em;line-height:1.05;text-transform:uppercase;text-shadow:0 2px 12px rgba(0,0,0,.5);overflow-wrap:anywhere}',
     '.ltv-badge{position:absolute;left:.6rem;top:.6rem;z-index:4;display:inline-flex;align-items:center;gap:.35rem;font-size:.66rem;font-weight:800;letter-spacing:.08em;',
@@ -229,9 +241,11 @@
     els.heroPlay.innerHTML = '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg><span>Assistir agora</span>';
     els.heroSched = el('button', { class: 'hero-list', type: 'button' });
     els.heroSched.innerHTML = '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 2v2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-2V2h-2v2H9V2zm12 8v10H5V10z"/></svg><span>Ver programação</span>';
+    els.heroArt = el('div', { class: 'ltv-heroart', 'aria-hidden': 'true' });
     els.hero = el('section', { class: 'hero', hidden: '', 'aria-label': 'Em destaque na TV' }, [
       el('div', { class: 'hero-slides' }, [el('div', { class: 'hero-slide on' })]),
       el('div', { class: 'hero-fade' }),
+      els.heroArt,
       el('div', { class: 'hero-body' }, [
         els.heroGenres, els.heroTitle, els.heroOverview,
         el('div', { class: 'ltv-hero-meta' }, [els.heroTime, el('div', { class: 'ltv-prog' }, [els.heroBar])]),
@@ -645,7 +659,25 @@
 
   function hhmm(ms) { return new Date(ms).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }); }
   function hueOf(id) { var h = 7; for (var i = 0; i < id.length; i += 1) h = (h * 31 + id.charCodeAt(i)) >>> 0; return h % 360; }
-  function gradFor(id) { var h = hueOf(id); return 'linear-gradient(135deg,hsl(' + h + ' 52% 31%),hsl(' + ((h + 42) % 360) + ' 58% 13%))'; }
+  function chOf(id) { var l = state.data && state.data.channels; if (!l) return null; for (var i = 0; i < l.length; i += 1) if (l[i].id === id) return l[i]; return null; }
+  /** Fundo ESCURO (destaque e modal): toque da cor da marca, ou um cinza discreto quando o canal não tem logo. */
+  function gradFor(id) {
+    var c = chOf(id), h = hueOf(id);
+    return c && c.logo ? 'linear-gradient(135deg,' + c.logo.d + ',#0b0b10 88%)' : 'linear-gradient(135deg,hsl(' + h + ' 16% 17%),#0b0b10 88%)';
+  }
+  /** Fundo do CARTÃO: claro quando a logo é escura e escuro quando é clara (sempre legível); sem logo, cinza sóbrio. */
+  function tileFor(id) {
+    var c = chOf(id), h = hueOf(id);
+    return c && c.logo ? 'linear-gradient(145deg,' + c.logo.a[0] + ',' + c.logo.a[1] + ')' : 'linear-gradient(145deg,hsl(' + h + ' 14% 24%),hsl(' + h + ' 16% 12%))';
+  }
+  /** Logo do canal; se a imagem não carregar (host fora do ar), some e o nome do canal assume. */
+  function logoEl(c, cls, nameEl) {
+    if (!c || !c.logo) return null;
+    var img = el('img', { class: cls, src: c.logo.u, alt: '', loading: 'lazy', decoding: 'async', referrerpolicy: 'no-referrer', draggable: 'false' });
+    img.addEventListener('error', function () { img.remove(); if (nameEl) nameEl.hidden = false; });
+    if (nameEl) nameEl.hidden = true;
+    return img;
+  }
   function pctOf(p) { return Math.max(0, Math.min(100, (Date.now() - p.st) / Math.max(1, p.en - p.st) * 100)); }
 
   /** O que passa agora no canal, mesmo se a resposta do servidor ficou velha por alguns minutos. */
@@ -753,6 +785,11 @@
     if (!pick) return;
     var p = progOf(pick.id);
     els.hero.style.setProperty('--hb', gradFor(pick.id));
+    els.heroArt.textContent = '';
+    els.heroArt.style.setProperty('--g', tileFor(pick.id));
+    var heroLogo = logoEl(pick, 'ltv-logo', null);
+    els.heroArt.hidden = !heroLogo;
+    if (heroLogo) els.heroArt.appendChild(heroLogo);
     els.heroGenres.textContent = '';
     els.heroGenres.appendChild(el('span', { class: 'live', text: 'Ao vivo' }));
     els.heroGenres.appendChild(el('span', { text: pick.name }));
@@ -774,8 +811,9 @@
     els.side.textContent = '';
     items.forEach(function (c) {
       var p = progOf(c.id);
-      var poster = el('div', { class: 'rec-poster' }, [el('span', { class: 'rec-dot ' + c.status }), el('span', { class: 'rec-chname', text: c.name })]);
-      poster.style.setProperty('--g', gradFor(c.id));
+      var sName = el('span', { class: 'rec-chname', text: c.name });
+      var poster = el('div', { class: 'rec-poster' }, [el('span', { class: 'rec-dot ' + c.status }), sName, logoEl(c, 'ltv-logo', sName)]);
+      poster.style.setProperty('--g', tileFor(c.id));
       var item = el('div', { class: 'rec-item' + (c.id === cur ? ' on' : '') + (c.status === 'down' ? ' down' : ''), role: 'button', tabindex: '0', 'data-id': c.id, 'aria-label': c.name + ', ' + LABEL[c.status] }, [
         poster,
         el('div', { class: 'rec-body' }, [
@@ -795,13 +833,15 @@
   function cardEl(c, i) {
     var card = el('div', { class: 'card' + (c.status === 'down' ? ' down' : '') + (state.cur && state.cur.id === c.id ? ' active' : ''), role: 'button', tabindex: '0', 'data-id': c.id, 'aria-label': c.name + ', ' + LABEL[c.status] });
     card.style.animationDelay = Math.min(i, 8) * 0.04 + 's';
+    var cName = el('span', { class: 'ltv-chname', text: c.name });
     var poster = el('div', { class: 'poster-wrap' }, [
       el('span', { class: 'ltv-badge ' + c.status, text: BADGE[c.status] || '' }),
       el('span', { class: 'ltv-age', hidden: '' }),
-      el('span', { class: 'ltv-chname', text: c.name }),
+      cName,
+      logoEl(c, 'ltv-logo', cName),
       el('span', { class: 'ltv-cap', hidden: '' }, [el('span', { class: 'ltv-cap-t' }), el('span', { class: 'ltv-cap-m' }), el('span', { class: 'ltv-prog', style: 'display:block' }, [el('i')])])
     ]);
-    poster.style.setProperty('--g', gradFor(c.id));
+    poster.style.setProperty('--g', tileFor(c.id));
     card.appendChild(poster);
     var go = function () { play(c.id); };
     card.addEventListener('click', go);

@@ -619,3 +619,18 @@ test('epg: refresh usa o primeiro guia que cobre o agora e mantém o que já tin
   assert.match(liveEpg.status().error, /HTTP 503/);
   liveEpg._reset();
 });
+
+test('logos: arquivo gerado é válido, só de canais que existem, https e com cores em hex', () => {
+  const logos = require('../lib/liveLogos.json');
+  const ids = new Set(CHANNELS.map((c) => c.id));
+  assert.ok(Object.keys(logos).length >= 30, 'a maioria dos canais tem logo');
+  for (const [id, l] of Object.entries(logos)) {
+    assert.ok(ids.has(id), `canal desconhecido: ${id}`);
+    assert.match(l.u, /^https:\/\//, `${id}: a logo precisa ser https`);
+    assert.equal(l.a.length, 2);
+    for (const color of [...l.a, l.d]) assert.match(color, /^#[0-9a-f]{6}$/, `${id}: cor inválida ${color}`);
+  }
+  const snap = live.channelsSnapshot();
+  assert.equal(snap.channels.find((c) => c.id === 'globo').logo.u, logos.globo.u, 'a lista de canais leva a logo');
+  assert.equal(snap.channels.find((c) => c.id === 'darkflix').logo, null, 'canal sem logo continua válido');
+});

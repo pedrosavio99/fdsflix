@@ -123,6 +123,11 @@ horário, classificação indicativa e barra de progresso) e, ao assistir, o pro
   Os horários vêm do guia (Brasília) e aparecem no fuso do aparelho. Canais sem programa no guia (Fox Sports, TBS, Syfy, abertas pequenas)
   aparecem só com o nome.
 - **Novo canal:** acrescente o id e os nomes em `NAMES` (nomes em minúsculas, sem acento).
+- **Logos das emissoras:** cada cartão mostra a logo do canal (catálogo público do iptv-org), sobre um fundo claro se a logo é escura e
+  escuro se ela é clara. O navegador baixa a imagem direto do host de origem (imgur, Wikimedia...), então não gasta banda do Render.
+  Elas ficam em `lib/liveLogos.json`, gerado por `node scripts/live-logos.js` (usa ffmpeg para medir a cor; roda na sua máquina, não no
+  servidor). Canal novo: coloque o id do catálogo em `IDS` do script e rode de novo. Canal sem logo (ou imagem que não carregou) mostra o
+  nome sobre um cinza sóbrio.
 - **Visual:** a aba reaproveita as classes globais do site (`.hero`, `.row`, `.card`, `.modal`...), então segue o mesmo estilo dos filmes.
   Clicar num canal abre um modal (como o de filmes) com o player, o programa no ar, a grade completa de 24 h e a lista "Outros canais".
   O destaque e as fileiras vêm do guia; "Assistir agora" e "Ver programação" abrem o modal do canal em destaque. Esc fecha o modal e depois a TV.
