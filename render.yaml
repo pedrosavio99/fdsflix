@@ -60,3 +60,5 @@ services:
         value: "1"
       # Opcional: API_ONLY=1 faz o Render deixar de servir o site (só API). Use se um dia o front for para um host
       # estático (Cloudflare Pages/Netlify); FRONTEND_URL redireciona quem abrir a URL do Render. Adicione à mão.
+      # Opcional, adicione à mão: ALLOW_RENDER_VIDEO=1 libera o vídeo a passar pelo Render (gasta os 5 GB/mês). Sem ela,
+      # fontes que exigiriam isso são puladas. Ver .env.example.

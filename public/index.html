@@ -2595,12 +2595,36 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
       .catch(function () { return null; });
   }
 
-  function subShowWarn(text, kind) {
+  // Rola a área do modal até `el` ficar visível logo abaixo do vídeo. No celular o vídeo fica fixo no topo e
+  // os controles de legenda ficam abaixo da dobra: sem isto o painel/aviso abria fora da tela ("nada acontece").
+  function revealInModal(el) {
+    if (!el || el.hidden) return;
+    var box = el.parentElement;
+    while (box) {
+      var oy = getComputedStyle(box).overflowY;
+      if ((oy === 'auto' || oy === 'scroll') && box.scrollHeight > box.clientHeight) break;
+      box = box.parentElement;
+    }
+    if (!box) return;
+    var wrap = document.querySelector('.modal-main .video-wrap');
+    var stickyH = wrap && getComputedStyle(wrap).position === 'sticky' ? wrap.getBoundingClientRect().height : 0;
+    var boxRect = box.getBoundingClientRect();
+    var r = el.getBoundingClientRect();
+    var visTop = boxRect.top + stickyH + 6;
+    var visBottom = boxRect.bottom - 6;
+    var fits = r.height <= visBottom - visTop;
+    if (r.top >= visTop && (fits ? r.bottom <= visBottom : true)) return;   // já está à vista
+    try { box.scrollTo({ top: Math.max(0, box.scrollTop + (r.top - visTop)), behavior: 'smooth' }); }
+    catch (err) { box.scrollTop = Math.max(0, box.scrollTop + (r.top - visTop)); }
+  }
+
+  function subShowWarn(text, kind, reveal) {
     var box = $('subWarn');
     if (!text) { box.hidden = true; return; }
     box.className = 'sub-warn' + (kind === 'info' ? ' info' : '');
     box.textContent = text;
     box.hidden = false;
+    if (reveal) setTimeout(function () { revealInModal(box); }, 30);
   }
 
   var subQualityTimer = null;
@@ -2674,12 +2698,13 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
     var video = $('nativePlayer');
     var track = syncTrack();
     if (!track || !track.cues || !track.cues.length) {
-      subShowWarn('Ative uma legenda (e espere carregar) antes de sincronizar.', 'warn');
+      subShowWarn('Ative uma legenda (e espere carregar) antes de sincronizar.', 'warn', true);
       return;
     }
     try { video.pause(); } catch (err) { /* ignore */ }
     $('syncPanel').hidden = false;
     syncRender();
+    setTimeout(function () { revealInModal($('syncPanel')); }, 30);
   }
 
   var syncRetryTimer = null;
@@ -2744,19 +2769,19 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
         applySubScale(scale, offset2);
         state.syncAnchor = null;
         $('syncPanel').hidden = true;
-        subShowWarn('Sincronizado em 2 pontos: atraso ' + offset2.toFixed(2) + ' s, escala ×' + scale.toFixed(4) + '. Se ainda houver diferença, ajuste fino com −0,1/+0,1.', 'info');
+        subShowWarn('Sincronizado em 2 pontos: atraso ' + offset2.toFixed(2) + ' s, escala ×' + scale.toFixed(4) + '. Se ainda houver diferença, ajuste fino com −0,1/+0,1.', 'info', true);
         return;
       }
     }
 
     var offset = T - auto - s * state.subScale;
     if (Math.abs(offset) > 600) {
-      subShowWarn('A diferença calculada (' + offset.toFixed(0) + ' s) é grande demais: talvez a legenda seja de outro filme/versão.', 'warn');
+      subShowWarn('A diferença calculada (' + offset.toFixed(0) + ' s) é grande demais: talvez a legenda seja de outro filme/versão.', 'warn', true);
       return;
     }
     state.syncAnchor = { s: s, video: T };
     applySubOffset(offset);
-    subShowWarn('Atraso ajustado para ' + (Math.round(offset * 100) / 100) + ' s. Dê play e confira; se a legenda escorregar no fim do filme, marque um 2º ponto.', 'info');
+    subShowWarn('Atraso ajustado para ' + (Math.round(offset * 100) / 100) + ' s. Dê play e confira; se a legenda escorregar no fim do filme, marque um 2º ponto.', 'info', true);
     syncRender();
   }
 
@@ -3699,6 +3724,7 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
   $('clearBtn').addEventListener('click', clearSearch);
   $('reloadBtn').addEventListener('click', function () {
     // "Recarregar" volta ao ponto atual, não ao início configurado.
+    toast('↻ Recarregando o vídeo…');
     if (state.selected) {
       progRemember(true);
       if (state.lastAbs >= PROG_MIN_SECONDS) $('startInput').value = secondsToStartMinutes(state.lastAbs);

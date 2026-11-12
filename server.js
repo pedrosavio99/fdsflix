@@ -932,6 +932,47 @@ function buildStreamDebug(trace, startedAt) {
   };
 }
 
+/* ------------------------------------------------------------------ */
+/* Trava da banda do Render: o vídeo NÃO sai por aqui (5 GB/mês)       */
+/* ------------------------------------------------------------------ */
+
+// Por padrão o Render nunca entrega vídeo: se a única fonte disponível exigir passar os bytes por ele
+// (/api/proxy, /api/hls-proxy, conversão ffmpeg em /hls), essa fonte é PULADA e a cascata segue para a próxima.
+// Para voltar ao comportamento antigo (aceitar gastar a banda do Render): ALLOW_RENDER_VIDEO=1.
+const ALLOW_RENDER_VIDEO = /^(1|true|yes)$/i.test(String(process.env.ALLOW_RENDER_VIDEO || ''));
+const RENDER_VIDEO_MSG =
+  'Todas as fontes disponíveis agora passariam o vídeo pelo servidor (Render), e isso está bloqueado para poupar a banda ' +
+  'grátis de 5 GB/mês. Tente de novo em instantes (o Vidsrc costuma voltar) ou libere com ALLOW_RENDER_VIDEO=1 no Render.';
+
+/** true se entregar esta fonte ao navegador gastaria banda de saída do Render. */
+async function renderBound(info, { hevcOk, direct }) {
+  if (direct) return false; // extensão fdsFlix Direct: o navegador busca no CDN
+  const isHls = info.provider !== 'VidLink Pro' && (info.isHls || /\.m3u8(\?|$)/i.test(info.url));
+  if (isHls) {
+    const profile = info.viaCinePro ? { kind: 'cinepro' } : (info.bridge || null);
+    if (!profile) return false; // URL direta (ex.: Vercel): o navegador baixa de lá
+    const edgeOk = profile.kind === 'domain' && !profile.allowLocal && edgeEnabled() && canUseEdge(info.url);
+    if (!edgeOk) return true;
+    const probe = await edgeReachable({ url: info.url, headers: profile.headers, root: profile.root });
+    return !probe.ok;
+  }
+  let codec = String(info.codec || '').toLowerCase();
+  if (!codec) {
+    try { codec = String((await probeVideo(info.url)).codec || '').toLowerCase(); } catch (err) { codec = ''; }
+  }
+  if (/hevc|h265|hvc1|hev1/.test(codec) && !hevcOk) return true; // viraria ffmpeg no Render
+  return !(await edgeDecision(info.url)).use;                   // arquivo direto: só a borda poupa o Render
+}
+
+// Rede de segurança: mesmo que alguma rota escape da checagem acima, o Render não serve vídeo a clientes
+// externos. Só aceita chamadas do próprio servidor (o ffmpeg lê de 127.0.0.1).
+function blockRenderVideo(req, res, next) {
+  if (ALLOW_RENDER_VIDEO) return next();
+  const addr = String((req.socket && req.socket.remoteAddress) || '');
+  if (addr === '::1' || addr.startsWith('127.') || addr.startsWith('::ffff:127.')) return next();
+  return res.status(403).json({ error: RENDER_VIDEO_MSG });
+}
+
 app.get('/api/stream', requireApiKey, async (req, res) => {
   const id = String(req.query.id || '');
   const type = String(req.query.type || '');
@@ -962,7 +1003,30 @@ app.get('/api/stream', requireApiKey, async (req, res) => {
     : body);
 
   try {
-    const streamInfo = await getFallbackStream({ id, type, season, episode, title, trace });
+    let streamInfo = null;
+    const skip = [];
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      streamInfo = await getFallbackStream({ id, type, season, episode, title, trace, skip });
+      if (!streamInfo || !streamInfo.url || ALLOW_RENDER_VIDEO) break;
+      let bound = false;
+      try { bound = await renderBound(streamInfo, { hevcOk, direct }); } catch (err) { bound = true; }
+      if (!bound) break;
+      console.log(`[stream] ${streamInfo.provider} passaria o vídeo pelo Render: pulada (ALLOW_RENDER_VIDEO desligado)`);
+      const used = trace.filter((t) => t.provider === streamInfo.provider && t.outcome === 'USADO').pop();
+      if (used) {
+        used.outcome = 'PULADA';
+        used.notes.push('Passaria o vídeo pelo Render e gastaria a banda de 5 GB/mês; seguindo para a próxima fonte.');
+      }
+      // Não repete quem já tentou e não achou nada: a próxima rodada começa depois do provedor pulado.
+      for (const t of trace) if (t.outcome === 'sem resultado' || t.outcome === 'erro') skip.push(t.provider);
+      skip.push(streamInfo.provider);
+      streamInfo = null;
+    }
+
+    if (!streamInfo && skip.length) {
+      console.log('[stream] nenhuma fonte sem gastar o Render: ' + skip.join(', '));
+      return res.status(503).json({ error: RENDER_VIDEO_MSG });
+    }
 
     if (!streamInfo || !streamInfo.url) {
       console.log('[stream] nenhuma fonte encontrou esse título');
@@ -1155,7 +1219,7 @@ app.all('/api/stream/stop', (req, res) => {
 /* Proxy de vídeo / legendas                                           */
 /* ------------------------------------------------------------------ */
 
-app.get('/api/proxy', (req, res) => {
+app.get('/api/proxy', blockRenderVideo, (req, res) => {
   const entry = registry.resolve('video', String(req.query.t || ''));
   if (!entry) {
     return res.status(404).json({ error: 'Sessão de vídeo expirada. Recarregue o player.' });
@@ -1257,7 +1321,7 @@ app.get('/api/debug/hls', requireStatsKey, (req, res) => {
 
 let hlsBridgeLogged = 0;
 
-app.get('/api/hls-proxy', async (req, res) => {
+app.get('/api/hls-proxy', blockRenderVideo, async (req, res) => {
   const entry = registry.resolve('hls', String(req.query.t || ''));
   if (!entry) return res.status(404).json({ error: 'Sessão de vídeo expirada. Recarregue o player.' });
 
@@ -1515,7 +1579,7 @@ app.get('/api/subtitle/info', async (req, res) => {
 /* HLS (ffmpeg)                                                        */
 /* ------------------------------------------------------------------ */
 
-app.get('/hls/:id/:file', (req, res) => {
+app.get('/hls/:id/:file', blockRenderVideo, (req, res) => {
   const { id, file } = req.params;
 
   if (!/^[a-f0-9]{16}$/.test(id)) return res.status(400).end('id inválido');
@@ -1557,6 +1621,7 @@ const server = app.listen(PORT, () => {
   console.log('   Fallbacks: ' + getProviderList().map((p) => p.name).join(' → '));
   const relayCfg = getRelayConfig();
   console.log('   Relay CF : ' + (relayCfg.enabled ? 'ativo (' + relayCfg.url + ')' : 'desativado (requisições diretas)'));
+  console.log('   Vídeo/Render: ' + (ALLOW_RENDER_VIDEO ? 'LIBERADO (ALLOW_RENDER_VIDEO=1): fontes que exigem o Render gastam a banda dele' : 'BLOQUEADO: o vídeo nunca sai pelo Render (fontes que exigiriam isso são puladas)'));
   console.log('   Borda    : ' + (edgeEnabled() ? 'vídeo entregue pelo Worker (não gasta banda do Render)' : 'desligada (vídeo passa pelo Render)'));
   console.log('   Serviços auxiliares (opcionais para catálogo expandido/novelas):');
   console.log('     - CinePro:    ' + (process.env.CINEPRO_API_BASE || 'http://localhost:3001'));
