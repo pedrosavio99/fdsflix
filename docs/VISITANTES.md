@@ -7,9 +7,11 @@ Painel: **`https://SEU-RENDER.onrender.com/visitors.html`** (pede a chave). Most
 
 1. **Criar a tabela no Supabase do fdsFlix** (o mesmo projeto do `SUPABASE_URL` do Render): SQL Editor → cole
    `supabase/visitors-schema.sql` → Run. O servidor também entrega o texto em `/api/visitors/schema`.
-2. **Definir a chave de leitura** no Render, em *Environment*: `STATS_KEY=uma-senha-sua`.
-   Sem `STATS_KEY` (nem `API_KEY`) a rota `/api/visitors` fica **desligada (403)**: IP nunca fica aberto.
-3. Salvar (redeploy) e abrir `/visitors.html`, digitar a chave.
+2. **Senha de leitura:** já vem embutida, **`118111`** (`BUILTIN_STATS_KEY` em `server.js`). Para trocar, defina
+   `STATS_KEY=outra-senha` em *Environment* no Render. Ela vale para tudo da área do administrador: acessos,
+   Configs, consumo das Vercels, diagnóstico (`/api/egress`, `/api/diag/vidsrc`...). Sem a senha essas rotas dão 401.
+3. No site, aperte **Ctrl+Shift+L** (ou abra `https://SEU-RENDER.onrender.com/#admin`) e digite a senha: aparecem os
+   botões **Acessos** (este painel), **Configs**, a barra de banda e o diagnóstico. **Sair** volta ao modo público.
 
 `SUPABASE_URL` e `SUPABASE_SECRET_KEY` já existem por causa do consumo das Vercels; os acessos usam os mesmos.
 Sem Supabase o painel funciona, mas só em memória (zera quando o Render reinicia).

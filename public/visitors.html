@@ -54,7 +54,7 @@
   <header>
     <h1>📊 fdsFlix · Acessos</h1>
     <div class="controls">
-      <input id="key" type="password" placeholder="Chave (STATS_KEY)" autocomplete="off" size="18">
+      <input id="key" type="password" placeholder="Senha de administrador" autocomplete="off" size="18">
       <select id="days">
         <option value="1">Hoje</option>
         <option value="7" selected>7 dias</option>
@@ -95,9 +95,11 @@
     </div>
   </section>
 </main>
+<script src="config.js"></script>
 <script>
 (function () {
   'use strict';
+  var API_BASE = String((window.__FDSFLIX_CONFIG__ || {}).apiBase || '').replace(/\/+$/, '');
   var $ = function (id) { return document.getElementById(id); };
   var last = null;
   var timer = null;
@@ -105,7 +107,11 @@
   try { regionNames = new Intl.DisplayNames(['pt-BR'], { type: 'region' }); } catch (e) { regionNames = null; }
 
   function store(get, v) {
-    try { if (get) return sessionStorage.getItem('fdsflix.statsKey') || ''; sessionStorage.setItem('fdsflix.statsKey', v); } catch (e) { /* sem storage */ }
+    // Mesma senha do site (fdsflix.adminKey): quem destravou o admin já entra aqui sem digitar.
+    try {
+      if (get) return localStorage.getItem('fdsflix.adminKey') || sessionStorage.getItem('fdsflix.statsKey') || '';
+      sessionStorage.setItem('fdsflix.statsKey', v);
+    } catch (e) { /* sem storage */ }
     return '';
   }
   function el(tag, cls, text) {
@@ -244,7 +250,7 @@
     if (!key) { $('msg').textContent = 'Digite a chave.'; return; }
     store(false, key);
     $('msg').textContent = 'Carregando...';
-    fetch('/api/visitors?days=' + encodeURIComponent($('days').value), { headers: { 'x-api-key': key }, cache: 'no-store' })
+    fetch(API_BASE + '/api/visitors?days=' + encodeURIComponent($('days').value), { headers: { 'x-stats-key': key }, cache: 'no-store' })
       .then(function (r) {
         return r.json().catch(function () { return {}; }).then(function (j) { return { ok: r.ok, status: r.status, body: j }; });
       })

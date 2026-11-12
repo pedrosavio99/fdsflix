@@ -19,6 +19,7 @@
     "@usm0n/stream-utils": "^1.0.0",
     "axios": "^1.21.0",
     "cheerio": "^1.2.0",
+    "compression": "^1.8.2",
     "dotenv": "^18.0.9",
     "express": "^4.19.2",
     "tweetnacl": "^1.0.3"

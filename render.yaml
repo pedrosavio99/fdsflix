@@ -58,3 +58,5 @@ services:
         value: "360"
       - key: MAX_SESSIONS
         value: "1"
+      # Opcional: API_ONLY=1 faz o Render deixar de servir o site (só API). Use se um dia o front for para um host
+      # estático (Cloudflare Pages/Netlify); FRONTEND_URL redireciona quem abrir a URL do Render. Adicione à mão.

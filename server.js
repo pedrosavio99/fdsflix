@@ -3,6 +3,7 @@
 require('dotenv').config({ quiet: true });
 
 const express = require('express');
+const compression = require('compression');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
@@ -27,6 +28,7 @@ const { translateVtt } = require('./lib/translate');
 const registry = require('./lib/registry');
 const usageLedger = require('./lib/usageLedger');
 const visitors = require('./lib/visitors');
+const egress = require('./lib/egressMeter');
 const poolKit = require('./lib/poolKit');
 const { relayFetch, getRelayConfig } = require('./lib/relayFetch');
 const { edgeEnabled, canUseEdge, edgeReachable, edgeUrl } = require('./lib/edgeMedia');
@@ -56,13 +58,22 @@ const MAX_TRANSCODE_HEIGHT = Math.max(
 app.disable('x-powered-by');
 // Necessário para req.protocol correto atrás de proxy (Render/Vercel).
 app.set('trust proxy', true);
+// Medidor de banda de saída (o que o Render Free conta). Vem ANTES da compressão para medir o que sai de fato.
+app.use(egress.middleware);
+// Comprime texto (html/js/json/css/wasm/vtt). Vídeo não entra: já é comprimido e passa por pipe.
+app.use(compression({
+  filter: (req, res) => {
+    if (req.path === '/api/proxy' || req.path === '/api/hls-proxy' || req.path.startsWith('/hls/')) return false;
+    return compression.filter(req, res);
+  }
+}));
 app.use(express.json({ limit: '64kb' }));
 
 // CORS: permite que o frontend hospedado na Vercel (outro domínio) consuma a API.
 app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Range, x-api-key');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Range, x-api-key, x-stats-key');
   res.setHeader('Access-Control-Expose-Headers', 'Content-Length, Content-Range, Accept-Ranges');
   if (req.method === 'OPTIONS') return res.status(204).end();
   next();
@@ -77,6 +88,19 @@ app.use((req, res, next) => {
 
 // Config do frontend gerada no Render quando ADSHIELD_BASE_URL está definido.
 // Sem a variável, cai no public/config.js estático.
+// API_ONLY=1: o Render deixa de servir o site (HTML/JS/wasm) e só responde a API. O site passa a vir de um
+// host estático (Cloudflare Pages/Netlify/Vercel), então os ~1 MB por visita não saem mais da banda do Render.
+// FRONTEND_URL (opcional): quem abrir a URL do Render é redirecionado para lá.
+const API_ONLY = /^(1|true|yes)$/i.test(String(process.env.API_ONLY || ''));
+const FRONTEND_URL = String(process.env.FRONTEND_URL || '').trim().replace(/\/+$/, '');
+if (API_ONLY) {
+  app.use((req, res, next) => {
+    if (req.path.startsWith('/api/') || req.path.startsWith('/hls/')) return next();
+    if (FRONTEND_URL && (req.method === 'GET' || req.method === 'HEAD')) return res.redirect(302, FRONTEND_URL + req.originalUrl);
+    return res.status(404).json({ error: 'Este servidor só entrega a API (API_ONLY=1).' });
+  });
+}
+
 app.get('/config.js', (req, res, next) => {
   const adshieldBase = String(process.env.ADSHIELD_BASE_URL || '').trim().replace(/\/+$/, '');
   if (!adshieldBase) return next();
@@ -87,6 +111,10 @@ app.get('/config.js', (req, res, next) => {
   );
 });
 
+// vendor/ quase não muda (7 dias) e cv/ é do app (1 dia): evita rebaixar ~1 MB (hls.js, wasm, mp4box) a cada
+// visita e a cada deploy. O resto (index.html etc.) continua revalidando, então atualizações chegam.
+app.use('/vendor', express.static(path.join(__dirname, 'public', 'vendor'), { maxAge: '7d' }));
+app.use('/cv', express.static(path.join(__dirname, 'public', 'cv'), { maxAge: '1d' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 const TMDB_LANG = 'pt-BR';
@@ -646,6 +674,12 @@ app.get('/api/config', (req, res) => {
   });
 });
 
+// Banda de saída por rota desde que o processo subiu (o que o Render Free conta).
+app.get('/api/egress', requireStatsKey, (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.json(egress.snapshot());
+});
+
 app.get('/api/health', (req, res) => {
   res.json({
     ok: true,
@@ -718,7 +752,7 @@ app.get('/api', (req, res) => {
 });
 
 // Teste ativo do Vidsrc em CADA Vercel da pool, disparado pelo botão do painel.
-app.get('/api/diag/vidsrc', async (req, res) => {
+app.get('/api/diag/vidsrc', requireStatsKey, async (req, res) => {
   const pool = usageLedger.getPool();
   if (!pool.length) return res.json({ ok: false, error: 'Nenhuma Vercel configurada (VIDSRC_PROXY_URL / VIDSRC_PROXY_URLS).' });
   const tmdb = /^\d+$/.test(String(req.query.id || '')) ? String(req.query.id) : '603';
@@ -740,7 +774,7 @@ app.get('/api/diag/vidsrc', async (req, res) => {
 /* Consumo das Vercels (barras do painel)                              */
 /* ------------------------------------------------------------------ */
 
-app.get('/api/usage', (req, res) => {
+app.get('/api/usage', requireStatsKey, (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   res.json(usageLedger.snapshot());
 });
@@ -757,7 +791,7 @@ app.post('/api/usage', (req, res) => {
 });
 
 // Histórico e médias (últimos N dias, só o medido). ?format=csv devolve planilha.
-app.get('/api/usage/stats', (req, res) => {
+app.get('/api/usage/stats', requireStatsKey, (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   const days = Math.max(1, Math.min(120, Number(req.query.days) || 30));
   if (String(req.query.format || '') === 'csv') {
@@ -770,7 +804,7 @@ app.get('/api/usage/stats', (req, res) => {
 
 // "Sincronizar agora": envia o que falta ao Supabase, relê o histórico e devolve o estado.
 let lastUsageSync = 0;
-app.post('/api/usage/sync', async (req, res) => {
+app.post('/api/usage/sync', requireStatsKey, async (req, res) => {
   if (Date.now() - lastUsageSync < 5000) {
     return res.status(429).json({ ok: false, error: 'Espere alguns segundos.', storage: usageLedger.storageStatus() });
   }
@@ -780,7 +814,7 @@ app.post('/api/usage/sync', async (req, res) => {
 });
 
 // SQL das tabelas (para colar no SQL Editor do Supabase).
-app.get('/api/usage/schema', (req, res) => {
+app.get('/api/usage/schema', requireStatsKey, (req, res) => {
   try {
     res.type('text/plain; charset=utf-8').send(
       fs.readFileSync(path.join(__dirname, 'supabase', 'usage-schema.sql'), 'utf8')
@@ -790,10 +824,8 @@ app.get('/api/usage/schema', (req, res) => {
   }
 });
 
-// Acerta o contador com o número do painel da Vercel. Exige API_KEY configurada.
-app.post('/api/usage/calibrate', (req, res) => {
-  if (!API_KEY) return res.status(403).json({ error: 'Defina API_KEY no servidor para usar a calibração.' });
-  if (String(req.get('x-api-key') || '') !== API_KEY) return res.status(401).json({ error: 'API key inválida.' });
+// Acerta o contador com o número do painel da Vercel. Exige a senha de administrador.
+app.post('/api/usage/calibrate', requireStatsKey, (req, res) => {
   const out = usageLedger.calibrate(req.body && req.body.base, req.body && req.body.usedGb);
   res.status(out.ok ? 200 : 400).json(out.ok ? usageLedger.snapshot() : out);
 });
@@ -802,18 +834,30 @@ app.post('/api/usage/calibrate', (req, res) => {
 /* Acessos por IP (painel /visitors.html)                              */
 /* ------------------------------------------------------------------ */
 
-// IP é dado pessoal: a leitura EXIGE chave (STATS_KEY, ou API_KEY se não houver). Sem nenhuma das
-// duas a rota fica desligada (403), nunca aberta.
-function requireStatsKey(req, res, next) {
-  const key = String(process.env.STATS_KEY || API_KEY || '').trim();
-  if (!key) {
-    return res.status(403).json({ error: 'Defina STATS_KEY (ou API_KEY) no servidor para ver os acessos.' });
-  }
-  const provided = Buffer.from(String(req.get('x-api-key') || req.query.key || ''));
-  const expected = Buffer.from(key);
-  if (provided.length === expected.length && crypto.timingSafeEqual(provided, expected)) return next();
-  return res.status(401).json({ error: 'Chave inválida. Envie o header x-api-key.' });
+// Área do administrador (estatísticas, Configs, diagnóstico, acessos por IP/região).
+// Senha embutida de propósito (pedido do dono, só para ter uma barreira mínima): vale 118111 a menos que
+// STATS_KEY esteja definida no ambiente, e aí vale a do ambiente. Aceita header x-stats-key (o site),
+// x-api-key ou ?key=. A checagem é SEMPRE no servidor; esconder botões no front é só cosmético.
+const BUILTIN_STATS_KEY = '118111';
+
+function sameSecret(provided, expected) {
+  const a = crypto.createHash('sha256').update(String(provided)).digest();
+  const b = crypto.createHash('sha256').update(String(expected)).digest();
+  return crypto.timingSafeEqual(a, b);
 }
+
+function requireStatsKey(req, res, next) {
+  const key = String(process.env.STATS_KEY || BUILTIN_STATS_KEY).trim();
+  const provided = String(req.get('x-stats-key') || req.get('x-api-key') || req.query.key || '');
+  if (provided && sameSecret(provided, key)) return next();
+  return res.status(401).json({ error: 'Área restrita: senha de administrador inválida.' });
+}
+
+// O site chama isto ao digitar a senha, só para saber se ela vale.
+app.get('/api/admin/check', requireStatsKey, (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ ok: true });
+});
 
 app.get('/api/visitors', requireStatsKey, async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
@@ -825,7 +869,7 @@ app.get('/api/visitors', requireStatsKey, async (req, res) => {
 });
 
 // SQL da tabela (sem dados, pode ser aberto): para colar no SQL Editor do Supabase.
-app.get('/api/visitors/schema', (req, res) => {
+app.get('/api/visitors/schema', requireStatsKey, (req, res) => {
   try {
     res.type('text/plain; charset=utf-8').send(
       fs.readFileSync(path.join(__dirname, 'supabase', 'visitors-schema.sql'), 'utf8')
@@ -841,7 +885,7 @@ app.get('/api/visitors/schema', (req, res) => {
 
 // GET -> .zip do adproxy pronto para subir noutra conta Vercel. Sem variáveis de ambiente:
 // PROXY_SECRET e TARGET_ORIGIN vêm embutidos em adproxy/lib/config.js. Sem node_modules/.env.
-app.get('/api/pool/kit', requireApiKey, (req, res) => {
+app.get('/api/pool/kit', requireApiKey, requireStatsKey, (req, res) => {
   if (!poolKit.kitAvailable()) {
     return res.status(404).json({ error: 'A pasta adproxy/ não está neste servidor.' });
   }
@@ -858,7 +902,7 @@ app.get('/api/pool/kit', requireApiKey, (req, res) => {
 });
 
 // Para o modal Configs: o kit existe aqui? Quantas Vercels já estão no pool?
-app.get('/api/pool/info', requireApiKey, (req, res) => {
+app.get('/api/pool/info', requireApiKey, requireStatsKey, (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   res.json({
     kit: poolKit.kitAvailable(),
@@ -1206,7 +1250,7 @@ function hlsEvent(event) {
   if (hlsDebug.length > 60) hlsDebug.shift();
 }
 
-app.get('/api/debug/hls', (req, res) => {
+app.get('/api/debug/hls', requireStatsKey, (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   res.json({ cinepro: cineproRunner.getStatus(), ultimaConsulta: getCineProReport(), ultimaConsultaAnime: getAnimeReport(), events: hlsDebug.slice(-40) });
 });
@@ -1502,6 +1546,8 @@ app.get('/hls/:id/:file', (req, res) => {
 /* ------------------------------------------------------------------ */
 /* Start / shutdown                                                    */
 /* ------------------------------------------------------------------ */
+
+egress.startLogging();
 
 const server = app.listen(PORT, () => {
   console.log('');

@@ -702,6 +702,17 @@
     .controls{gap:.35rem}
   }
 </style>
+<script>
+/* Área do administrador: só marca o <html> para mostrar/esconder botões. A senha vale no servidor. */
+(function () { try { if (localStorage.getItem('fdsflix.adminKey')) document.documentElement.classList.add('is-admin'); } catch (e) { /* sem storage */ } })();
+</script>
+<style>
+  html:not(.is-admin) #bwCorner,
+  html:not(.is-admin) #cfgOpen,
+  html:not(.is-admin) #usageBox,
+  html:not(.is-admin) #diagPanel,
+  html:not(.is-admin) .admin-only{display:none !important}
+</style>
 </head>
 <body>
 <div class="container">
@@ -719,6 +730,13 @@
         <span class="bw-top" id="bwTop">📶 Banda das Vercels: carregando…</span>
         <span class="bw-bar"><i id="bwFill" style="width:0"></i></span>
         <span class="bw-sub" id="bwSub"></span>
+      </button>
+      <a id="adminVisitors" class="nav-btn admin-only" href="visitors.html" target="_blank" rel="noopener" title="Acessos por região, cidade, aparelho e IP" aria-label="Acessos">
+        <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20m6.9 6h-2.95a15.7 15.7 0 0 0-1.38-3.56A8.03 8.03 0 0 1 18.9 8M12 4.04c.83 1.2 1.48 2.53 1.91 3.96h-3.82c.43-1.43 1.08-2.76 1.91-3.96M4.26 14a8.2 8.2 0 0 1 0-4h3.38a16.5 16.5 0 0 0 0 4zm.82 2h2.95c.32 1.25.78 2.45 1.38 3.56A7.99 7.99 0 0 1 5.08 16m2.95-8H5.08a7.99 7.99 0 0 1 4.33-3.56A15.7 15.7 0 0 0 8.03 8M12 19.96c-.83-1.2-1.48-2.53-1.91-3.96h3.82c-.43 1.43-1.08 2.76-1.91 3.96M14.34 14H9.66a14.7 14.7 0 0 1 0-4h4.68a14.7 14.7 0 0 1 0 4m.25 5.56c.6-1.11 1.06-2.31 1.38-3.56h2.95a8.03 8.03 0 0 1-4.33 3.56M16.36 14a16.5 16.5 0 0 0 0-4h3.38a8.2 8.2 0 0 1 0 4z"/></svg>
+        <span class="lbl">Acessos</span>
+      </a>
+      <button id="adminLogout" class="nav-btn admin-only" type="button" title="Sair da área do administrador" aria-label="Sair do modo administrador">
+        <span class="lbl">Sair</span><span aria-hidden="true" class="lbl-ic">🔓</span>
       </button>
       <button id="cfgOpen" class="nav-btn" type="button" title="Kit para subir mais uma Vercel no pool" aria-label="Configurações">
         <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M19.14 12.94c.04-.31.06-.63.06-.94s-.02-.63-.07-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.61-.22l-2.39.96a7 7 0 0 0-1.62-.94l-.36-2.54a.49.49 0 0 0-.48-.41h-3.84a.49.49 0 0 0-.48.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.49.49 0 0 0-.61.22L2.74 8.84a.48.48 0 0 0 .12.64l2.03 1.58c-.05.31-.08.63-.08.94s.03.63.08.94l-2.03 1.58a.5.5 0 0 0-.12.64l1.92 3.32c.12.22.37.29.61.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.26.41.48.41h3.84c.24 0 .44-.17.48-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.49 0 .61-.22l1.92-3.32a.5.5 0 0 0-.12-.64zM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2"/></svg>
@@ -1115,7 +1133,9 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
 <div id="toast" class="toast" hidden></div>
 
 <script src="/config.js"></script>
-<script src="/vendor/hls.min.js"></script>
+<!-- hls.js 1.7.4 vem do CDN (jsDelivr): economiza ~190 KB de banda do Render por visita nova. Arquivo idêntico ao
+     de /vendor/hls.min.js (mesmo SHA-384); se o CDN falhar ou o hash não bater, cai na cópia local. -->
+<script src="https://cdn.jsdelivr.net/npm/hls.js@1.7.4/dist/hls.min.js" integrity="sha384-p9vgU/7IYJWd3I4STrtqxqR/2cAQlhIX7D/HrTnIMEjjcUox165b7se7sxmm3zDg" crossorigin="anonymous" onerror="document.write('&lt;script src=&quot;/vendor/hls.min.js&quot;&gt;&lt;\/script&gt;')"></script>
 <script>
 (function () {
   'use strict';
@@ -1165,11 +1185,16 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
     return API_BASE + (path.charAt(0) === '/' ? path : '/' + path);
   }
 
+  // Senha de administrador (guardada só neste navegador).
+  function getAdminKey() { try { return localStorage.getItem('fdsflix.adminKey') || ''; } catch (e) { return ''; } }
+
   // fetch com a API key opcional (header x-api-key).
   function apiFetch(path, options) {
     var opts = options || {};
     var headers = Object.assign({}, opts.headers || {});
     if (CONFIG.apiKey) headers['x-api-key'] = CONFIG.apiKey;
+    var adminKey = getAdminKey();
+    if (adminKey) headers['x-stats-key'] = adminKey;
     opts.headers = headers;
     return fetch(apiUrl(path), opts);
   }
@@ -1942,6 +1967,7 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
   }
 
   function usageRefresh() {
+    if (!getAdminKey()) return Promise.resolve();
     return apiFetch('/api/usage').then(function (r) { return r.ok ? r.json() : null; }).then(function (data) {
       if (data) { usage.data = data; usagePaint(); }
     }).catch(function () { /* servidor dormindo: tenta depois */ });
@@ -4824,6 +4850,47 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
       }
     })
     .catch(function () { /* ignore */ });
+})();
+</script>
+<script>
+/* Área do administrador: a senha é conferida pelo servidor (/api/admin/check). Aqui só guardamos e mostramos. */
+(function () {
+  var KEY = 'fdsflix.adminKey';
+  var CFG = window.__FDSFLIX_CONFIG__ || {};
+  var BASE = String(CFG.apiBase || '').replace(/\/+$/, '');
+  function stored() { try { return localStorage.getItem(KEY) || ''; } catch (e) { return ''; } }
+  function check(key) {
+    return fetch(BASE + '/api/admin/check', { headers: { 'x-stats-key': key }, cache: 'no-store' });
+  }
+  function lock() {
+    try { localStorage.removeItem(KEY); } catch (e) { /* sem storage */ }
+    location.reload();
+  }
+  function unlock() {
+    var key = window.prompt('Senha de administrador:');
+    if (!key) return;
+    check(key.trim()).then(function (r) {
+      if (!r.ok) { window.alert('Senha inválida.'); return; }
+      try { localStorage.setItem(KEY, key.trim()); } catch (e) { window.alert('O navegador bloqueou o armazenamento local.'); return; }
+      location.reload();
+    }).catch(function () {
+      window.alert('Sem resposta do servidor. No plano grátis do Render ele pode levar ~1 min para acordar: tente de novo.');
+    });
+  }
+  var out = document.getElementById('adminLogout');
+  if (out) out.addEventListener('click', lock);
+  // Ctrl+Shift+L, ou abrir o site com #admin no endereço, pede a senha. Sem botão visível para o público.
+  document.addEventListener('keydown', function (e) {
+    if (e.ctrlKey && e.shiftKey && (e.key === 'L' || e.key === 'l')) { e.preventDefault(); unlock(); }
+  });
+  if (location.hash === '#admin') {
+    try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { /* ignora */ }
+    unlock();
+  }
+  // Senha guardada que o servidor não aceita mais (trocaram a STATS_KEY): volta ao modo público.
+  if (stored()) {
+    check(stored()).then(function (r) { if (r.status === 401) lock(); }).catch(function () { /* servidor dormindo: mantém */ });
+  }
 })();
 </script>
 </body>
