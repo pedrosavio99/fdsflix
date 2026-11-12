@@ -81,10 +81,16 @@ falhar). A Vercel corta streams longos (~5 min): o player reconecta sozinho (at�
 
 ## Assinatura das Vercels
 
-O link `/live/hls` e `/live/np` é assinado. As Vercels usam o segredo embutido (`adproxy/lib/secret.js`) quando não têm `PROXY_SECRET`;
-se o Render tiver `PROXY_SECRET`/`SESSION_SECRET` diferente, a primeira tentativa dá `403 URL não assinada`. O servidor percebe o 403,
-tenta a assinatura embutida e **lembra qual cada Vercel aceita** (evento `vercel` no log da área nerd, e `assinatura` na lista de rotas).
-Não precisa configurar nada; para trocar o segredo de todas, defina o mesmo `PROXY_SECRET` no Render e nas Vercels.
+Os links `/live/hls` e `/live/np` são assinados pelo Render e conferidos pela Vercel. O padrão é o segredo embutido (`adproxy/lib/secret.js`);
+se alguma das duas pontas tiver `PROXY_SECRET`/`SESSION_SECRET` próprio, os segredos divergem e a Vercel devolve `403 URL não assinada`
+(o canal aparece "no ar", porque o teste é feito pelo Render, mas nenhuma fonte consegue chegar ao navegador).
+
+- **Vercel:** confere o link com o segredo próprio **e** com o embutido (`getSecrets` em `adproxy/lib/liveHls.mjs`). Precisa de redeploy.
+- **Render:** tenta o segredo dele e, se for diferente do embutido, o embutido; lembra qual cada Vercel aceita.
+- **Vercel que recusa tudo:** sai da entrega por 5 min (evento `vercel` no log) em vez de gastar 12 s por fonte, e o erro mostrado ao usuário
+  passa a ser o motivo real ("Há fonte no ar, mas nenhuma conseguiu chegar ao navegador: ...").
+- Atenção: aceitar o segredo embutido significa que quem lê o repositório consegue gerar links para a rota. Se o repositório for público e isso
+  incomodar, defina o **mesmo** `PROXY_SECRET` no Render e nas Vercels (e a rota deixa de depender do embutido no Render).
 
 ## Cascata mais rápida
 

@@ -346,7 +346,7 @@
     if (e.type === 'tocando') return 'ok';
     if (e.type === 'falhou' || e.type === 'rede') return 'err';
     if (e.type === 'hls') return /^FATAL/.test(m) ? 'err' : 'warn';
-    if (e.type === 'diagnostico') return 'warn';
+    if (e.type === 'diagnostico' || e.type === 'entrega') return 'warn';
     if (e.type === 'servidor') return /sem sinal/.test(m) ? 'err' : 'ok';
     return 'info';
   }
@@ -413,9 +413,14 @@
       });
       if (f.length > 40) L.push(['dim', '  … +' + (f.length - 40) + ' fontes']);
     });
-    L.push(['step', '== EVENTOS DO SERVIDOR (últimos 60) ==']);
-    (d.eventos || []).slice(-60).forEach(function (e) { L.push([srvClass(e.tipo, e.msg), e.hora + ' ' + e.tipo + ' ' + e.msg]); });
-    if (!(d.eventos || []).length) L.push(['dim', '(vazio)']);
+    var evs = d.eventos || [];
+    var main = evs.filter(function (e) { return e.tipo !== 'teste'; }).slice(-70);
+    var tests = evs.filter(function (e) { return e.tipo === 'teste'; }).slice(-15);
+    L.push(['step', '== EVENTOS DO SERVIDOR: cascata, entrega, Vercel (últimos 70) ==']);
+    main.forEach(function (e) { L.push([srvClass(e.tipo, e.msg), e.hora + ' ' + e.tipo + ' ' + e.msg]); });
+    if (!main.length) L.push(['dim', '(vazio)']);
+    L.push(['step', '== ÚLTIMOS TESTES DE FONTE (15) ==']);
+    tests.forEach(function (e) { L.push([srvClass(e.tipo, e.msg), e.hora + ' ' + e.msg]); });
     return L;
   }
 
@@ -611,6 +616,7 @@
       nlog('servidor', res.ok && res.j.ok
         ? res.j.mode + ' via ' + res.j.via + ' · fonte ' + res.j.sid + ' (' + res.j.origin + ') · ' + res.j.kind + ' · testes=' + res.j.tried + ' · puladas=' + ((res.j.skipped || []).length) + ' · ' + shortUrl(res.j.url)
         : 'resposta sem sinal: ' + ((res.j && res.j.error) || 'sem detalhe'));
+      if (res.j && res.j.skipped && res.j.skipped.length) res.j.skipped.forEach(function (k) { nlog('entrega', 'fonte ' + k.sid + ' pulada: ' + k.reason); });
       if (!res.ok || !res.j.ok) {
         setMsg((res.j && res.j.error) || 'Sem sinal agora.', 'err', true);
         refresh();

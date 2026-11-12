@@ -46,6 +46,19 @@ export function getSecret(e) {
   return value || secretModule.BUILTIN_PROXY_SECRET;
 }
 
+/**
+ * Segredos que valem para CONFERIR um link: o próprio da Vercel (PROXY_SECRET/SESSION_SECRET, se houver) e o embutido.
+ * O Render assina com o segredo dele; se a Vercel tiver um segredo próprio diferente, só aceitar o dela daria 403 em tudo.
+ * (Quem tem o segredo embutido, que está no repositório, consegue gerar links desta rota; por isso, com repositório
+ * público, a defesa é cota e validade de 6 h. Os links que ESTA Vercel gera nas playlists usam o segredo principal.)
+ */
+export function getSecrets(e) {
+  const x = env(e);
+  const own = String(x.PROXY_SECRET || x.SESSION_SECRET || '').trim();
+  const builtin = String(secretModule.BUILTIN_PROXY_SECRET).trim();
+  return own && own !== builtin ? [own, builtin] : [builtin];
+}
+
 /* ------------------------------- assinatura -------------------------------- */
 
 function toBase64Url(bytes) {
@@ -78,10 +91,13 @@ export async function signLive(url, exp, secret) {
   return toBase64Url(new Uint8Array(mac)).slice(0, 22);
 }
 
-async function verifyLive(url, exp, signature, secret, now) {
+async function verifyLive(url, exp, signature, secrets, now) {
   const e = Number(exp);
   if (!signature || !Number.isFinite(e) || e < now) return false;
-  return safeEqual(await signLive(url, e, secret), String(signature));
+  for (const secret of Array.isArray(secrets) ? secrets : [secrets]) {
+    if (safeEqual(await signLive(url, e, secret), String(signature))) return true;
+  }
+  return false;
 }
 
 async function livePath(route, url, secret, now) {
@@ -228,7 +244,7 @@ async function serve(request, opts) {
     return jsonResponse({ error: 'URL inválida' }, 400);
   }
   if (upstream.protocol !== 'http:' && upstream.protocol !== 'https:') return jsonResponse({ error: 'protocolo não permitido' }, 400);
-  if (!(await verifyLive(upstream.toString(), url.searchParams.get('e'), url.searchParams.get('s'), secret, now))) {
+  if (!(await verifyLive(upstream.toString(), url.searchParams.get('e'), url.searchParams.get('s'), getSecrets(opts.env), now))) {
     return jsonResponse({ error: 'URL não assinada ou vencida' }, 403);
   }
 

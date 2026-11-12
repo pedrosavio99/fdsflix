@@ -451,3 +451,25 @@ test('resolveChannel: responde assim que a primeira fonte boa aparece, sem esper
   delete process.env.LIVE_SCAN_CATALOGS;
   delete process.env.LIVE_SOURCES_JSON;
 });
+
+test('planDelivery: Vercel que recusa todas as assinaturas sai da entrega por uns minutos (não gasta 12 s por fonte)', async () => {
+  process.env.PROXY_SECRET = 'segredo-so-do-render';
+  const src = (n) => ({ url: `http://cdn.example:8000/play/${n}/index.m3u8`, kind: 'hls', https: false, cors: false });
+  let hits = 0;
+  const fetchImpl = async (u) => {
+    if (u.includes('?cap=1')) return new Response(JSON.stringify({ live: true }), { status: 200 });
+    hits += 1;
+    return new Response('{"error":"URL não assinada ou vencida"}', { status: 403 });
+  };
+  const first = await live.planDelivery(src(1), { pool: ['https://v.vercel.app'], fetchImpl, verify: true });
+  assert.equal(first.mode, 'none');
+  assert.equal(hits, 2, 'tentou a assinatura do Render e a embutida');
+  assert.ok(live.diagnostics().eventos.some((e) => e.tipo === 'vercel' && /recusa a assinatura/.test(e.msg)));
+  const before = hits;
+  const second = await live.planDelivery(src(2), { pool: ['https://v.vercel.app'], fetchImpl, verify: true });
+  assert.equal(second.mode, 'none');
+  assert.equal(hits, before, 'não tenta de novo enquanto está de castigo');
+  assert.match(second.reason, /recusa a assinatura/);
+  assert.equal(live.diagnostics().vercels.length >= 0, true);
+  delete process.env.PROXY_SECRET;
+});

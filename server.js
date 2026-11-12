@@ -1263,7 +1263,8 @@ app.get('/api/live/stream', requireApiKey, async (req, res) => {
     for (let round = 0; round < 4; round += 1) {
       const found = await liveTv.resolveChannel(id, { skip });
       tried += found.tried;
-      if (!found.ok) { lastReason = found.error; break; }
+      // Se já havia fonte boa e foi a ENTREGA que falhou, o motivo útil é o da entrega, não "nenhuma fonte respondeu".
+      if (!found.ok) { if (!skipped.length) lastReason = found.error; break; }
       const plan = await liveTv.planDelivery(found.source, { pool: fallbackPool, verify: true });
       if (plan.mode === 'none') {
         // Esta fonte não tem como chegar ao navegador sem gastar o Render; tenta a próxima.
@@ -1287,7 +1288,10 @@ app.get('/api/live/stream', requireApiKey, async (req, res) => {
         skipped
       });
     }
-    return res.status(503).json({ ok: false, error: lastReason || 'Nenhuma fonte deste canal respondeu agora.', tried, skipped });
+    const why = skipped.length
+      ? `Há fonte no ar, mas nenhuma conseguiu chegar ao navegador: ${lastReason}`
+      : (lastReason || 'Nenhuma fonte deste canal respondeu agora.');
+    return res.status(503).json({ ok: false, error: why, tried, skipped });
   } catch (err) {
     return res.status(502).json({ ok: false, error: 'Falha ao achar o canal: ' + err.message });
   }

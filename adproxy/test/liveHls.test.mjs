@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { CAPABILITY, getSecret, handleLive, isPrivateHost, rewriteLive, signLive } from '../lib/liveHls.mjs';
+import { CAPABILITY, getSecret, getSecrets, handleLive, isPrivateHost, rewriteLive, signLive } from '../lib/liveHls.mjs';
 
 const SECRET = getSecret({});
 const NOW = 1_700_000_000_000;
@@ -143,4 +143,18 @@ test('rewriteLive ignora esquemas que não são http(s)', async () => {
 test('método não permitido e OPTIONS', async () => {
   assert.equal((await handleLive(new Request('https://x/live/hls', { method: 'POST' }))).status, 405);
   assert.equal((await handleLive(new Request('https://x/live/hls', { method: 'OPTIONS' }))).status, 204);
+});
+
+test('com segredo próprio na Vercel, aceita o do Render (embutido) e o próprio; recusa outro', async () => {
+  const env = { PROXY_SECRET: 'segredo-so-da-vercel' };
+  assert.equal(getSecrets(env).length, 2);
+  assert.equal(getSecrets({}).length, 1);
+  const opts = { now: NOW, env, fetch: fetchFrom({ [PLAYLIST_URL]: { body: '#EXTM3U\n#EXTINF:4,\ns.ts\n' } }) };
+  const withSecret = async (secret) => {
+    const sig = await signLive(PLAYLIST_URL, NOW + 60_000, secret);
+    return handleLive(await req(PLAYLIST_URL, { sig }), opts);
+  };
+  assert.equal((await withSecret(getSecret({}))).status, 200, 'embutido (o Render sem env)');
+  assert.equal((await withSecret('segredo-so-da-vercel')).status, 200, 'o próprio da Vercel');
+  assert.equal((await withSecret('qualquer-outro')).status, 403);
 });
