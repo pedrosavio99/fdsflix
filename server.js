@@ -1318,7 +1318,7 @@ app.get('/api/live/stream', requireApiKey, async (req, res) => {
     let lastReason = '';
     const skipped = []; // fontes que tocam, mas que não têm como chegar ao navegador sem gastar o Render
     for (let round = 0; round < 4; round += 1) {
-      const found = await liveTv.resolveChannel(id, { skip });
+      const found = await liveTv.resolveChannel(id, { skip, noTs: String(req.query.nots || '') === '1' });
       tried += found.tried;
       // Se já havia fonte boa e foi a ENTREGA que falhou, o motivo útil é o da entrega, não "nenhuma fonte respondeu".
       if (!found.ok) { if (!skipped.length) lastReason = found.error; break; }

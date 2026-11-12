@@ -18,8 +18,11 @@
   var START_TIMEOUT_MS = 16000;  // sem quadro tocando nesse tempo = fonte ruim
   var STORE_KEY = 'fdsflix.live';
   // MPEG-TS cru (ESPN 2, SporTV 3, Premiere...): tocado por mpegts.js, carregado só quando um canal precisa (CDN; cópia local de reserva).
-  var MPEGTS_CDN = 'https://cdn.jsdelivr.net/npm/mpegts.js@1.7.3/dist/mpegts.js';
-  var MPEGTS_SRI = 'sha384-gWBszQzp4KdKY3PNUrFbTuvAcChcUSMKpSrt/OjDS3qe16Ef4OZSfP5E/+KcPueP';
+  var MPEGTS_CDN = 'https://cdn.jsdelivr.net/npm/mpegts.js@1.8.2/dist/mpegts.js'; // 1.8+ toca no iPhone (iOS 17.1+, ManagedMediaSource)
+  var MPEGTS_SRI = 'sha384-sQp+4cJv0jChNCYvgy6W0RSfQZB/w6d3ZTDoIBlY4Uorfw4PLS56T2yM2z47bSkl';
+  // iPhone/iPad (inclusive iPadOS que se diz Mac): o Safari toca HLS nativo e só tem MSE (ManagedMediaSource) a partir do iOS 17.1.
+  var IS_IOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  var NO_TS = !(window.MediaSource || window.ManagedMediaSource); // sem MSE não há como tocar MPEG-TS cru: o servidor nem oferece
   var MAX_RECONNECTS = 30;       // a Vercel corta streams longos (~5 min); reconecta sozinho
 
   var state = {
@@ -127,6 +130,12 @@
     '.ltv-modal .modal-bg{background-image:var(--g);background-size:cover}',
     '.ltv-modal .video-wrap{aspect-ratio:16/9;background:#000}',
     '.ltv-modal .video-wrap video,.ltv-modal .video-wrap iframe{position:absolute;inset:0;width:100%;height:100%;border:0;background:#000;max-height:none}',
+    '.ltv-tap{position:absolute;inset:0;z-index:5;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.5rem;border:0;color:#fff;font:800 1rem inherit;',
+    '  background:rgba(0,0,0,.45);cursor:pointer;-webkit-tap-highlight-color:transparent}',
+    '.ltv-tap[hidden],.ltv-unmute[hidden]{display:none}',
+    '.ltv-tap svg{width:64px;height:64px;fill:#fff;background:var(--brand);border-radius:50%;padding:16px 14px 16px 18px;box-sizing:border-box}',
+    '.ltv-unmute{position:absolute;left:50%;top:.7rem;transform:translateX(-50%);z-index:5;border:0;border-radius:999px;padding:.5rem .95rem;font:800 .85rem inherit;color:#fff;',
+    '  background:rgba(0,0,0,.72);box-shadow:0 0 0 1px rgba(255,255,255,.25);cursor:pointer;-webkit-tap-highlight-color:transparent}',
     '.ltv-modal .video-wrap video[hidden],.ltv-modal .video-wrap iframe[hidden]{display:none}',
     '.ltv-title-row{display:flex;align-items:center;gap:.7rem;flex-wrap:wrap;padding-right:2.6rem}',
     '.ltv-title-row h2{padding-right:0!important}',
@@ -158,7 +167,67 @@
     '.ltv-srow.now{background:rgba(229,9,20,.12);box-shadow:inset 3px 0 0 var(--brand)}.ltv-srow.now time{color:#fff}',
     '.ltv-srow .ltv-age{position:static;min-width:1.5rem;height:1.5rem;font-size:.72rem}',
     '.ltv-credit{color:var(--muted);font-size:.74rem}',
-    '.ltv-pad{padding:0 var(--gutter)}'
+    '.ltv-pad{padding:0 var(--gutter)}',
+    '/* ---- celular, tablet e iPhone ---- */',
+    '.ltv{padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px)}',
+    '.ltv-chips{display:flex;flex-wrap:wrap;gap:.5rem;flex:1 1 auto;min-width:0}',
+    '.ltv-chip{min-height:40px;cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation}',
+    '.ltv-barrow .switch{min-height:40px}',
+    '.ltv-x{top:calc(var(--nav-h) + .7rem + env(safe-area-inset-top,0px));width:44px;height:44px}',
+    '@media (max-width:640px){',
+    '  .ltv .hero{height:auto;min-height:0;margin-bottom:-36px}',
+    '  .ltv .hero-body{width:100%;padding:calc(var(--nav-h) * .35) var(--gutter) 64px}',
+    '  .ltv .hero-title{font-size:clamp(1.55rem,7.4vw,2.1rem);-webkit-line-clamp:2}',
+    '  .ltv .hero-overview{font-size:.88rem;-webkit-line-clamp:2;margin-bottom:.9rem}',
+    '  .ltv-hero-meta{font-size:.78rem;margin:-.2rem 0 .9rem;max-width:none;flex-direction:column;align-items:stretch;gap:.4rem}',
+    '  .ltv .hero-actions{flex-wrap:nowrap;gap:.55rem}',
+    '  .ltv .hero-actions button{flex:1 1 0;min-width:0;min-height:44px;padding:0 .5rem;font-size:.88rem;white-space:nowrap;gap:.35rem}',
+    '  .ltv .hero-actions svg{width:1.15em;height:1.15em;flex:0 0 auto}',
+    '  .ltv .hero-genres{padding-right:3.2rem}',
+    '  .ltv .hero-actions button span{overflow:hidden;text-overflow:ellipsis}',
+    '  .ltv-barrow{flex-wrap:wrap;gap:.4rem .7rem;margin-bottom:.4rem}',
+    '  .ltv-chips{flex:1 0 100%;flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;margin:0 calc(-1 * var(--gutter));padding:0 var(--gutter) .2rem;',
+    '    -webkit-overflow-scrolling:touch;scrollbar-width:none;scroll-snap-type:x proximity;scroll-padding-inline:var(--gutter);overscroll-behavior-x:contain}',
+    '  .ltv-chips::-webkit-scrollbar{display:none}',
+    '  .ltv-chips::after{content:"";flex:0 0 1px}',
+    '  .ltv-chip{flex:0 0 auto;white-space:nowrap;scroll-snap-align:start}',
+    '  .ltv-barrow .switch{margin-left:0}',
+    '  .ltv-barrow .ltv-sub{margin-left:auto;width:auto;font-size:.78rem;text-align:right}',
+    '  .ltv .row-title{font-size:1.05rem}',
+    '  .ltv-note{font-size:.76rem}',
+    '}',
+    '@media (max-width:430px){.ltv .hero-list svg{display:none}}',
+    '@media (min-width:641px) and (max-width:979px){',
+    '  .ltv .hero{height:clamp(380px,44svh,480px)}',
+    '  .ltv-chips{flex:1 0 100%}',
+    '  .ltv-barrow .switch{margin-left:0}.ltv-barrow .ltv-sub{margin-left:auto}',
+    '}',
+    '/* modal do canal em tela cheia (a estrutura vem do modal de filmes): lista de outros canais vira carrossel de cartões */',
+    '@media (max-width:699px), (max-width:979px) and (min-height:561px){',
+    '  .ltv-modal .rec-item{grid-template-columns:1fr;flex:0 0 150px}',
+    '  .ltv-modal .rec-item .rec-title,.ltv-modal .rec-item .rec-meta,.ltv-modal .rec-item small{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;display:block}',
+    '  .ltv-modal .rec-ov{display:none}',
+    '  .ltv-modal .ltv-msg{padding:.6rem .8rem;gap:.35rem;font-size:.8rem;line-height:1.35}',
+    '  .ltv-modal .ltv-msg .spinner{transform:scale(.6);margin:-.5rem 0}',
+    '  .ltv-modal .ltv-msg .ghost{padding:.35rem .8rem;font-size:.8rem}',
+    '  .ltv-unmute{top:.5rem;padding:.4rem .8rem;font-size:.78rem}',
+    '  .ltv-tap svg{width:52px;height:52px;padding:13px 11px 13px 15px}',
+    '  .ltv-sched{max-height:min(46vh,300px)}',
+    '  .ltv-srow{grid-template-columns:3rem 1fr auto;padding:.55rem .8rem}',
+    '  .ltv-nowbox{padding:.7rem .8rem}',
+    '  .ltv-title-row h2{font-size:1.2rem}',
+    '  .ltv-actions{width:100%}.ltv-actions .ghost{flex:1 1 0;min-height:42px}',
+    '}',
+    '/* celular deitado: vídeo e lista lado a lado; a lista usa cartões compactos */',
+    '@media (max-height:560px){',
+    '  .ltv .hero{height:auto}.ltv .hero-body{padding:calc(var(--nav-h) * .4) var(--gutter) 56px}',
+    '  .ltv-modal .rec-item{grid-template-columns:86px minmax(0,1fr)}',
+    '  .ltv-modal .modal-main,.ltv-modal .modal-side{padding-left:max(.6rem,env(safe-area-inset-left,0px))}',
+    '  .ltv-modal .modal-side{padding-right:max(.6rem,env(safe-area-inset-right,0px))}',
+    '  .ltv-modal .ltv-msg{padding:.5rem;font-size:.78rem}',
+    '  .ltv-modal .ltv-msg .spinner{transform:scale(.55);margin:-.7rem 0}',
+    '}',
+    '.ltv-modal .modal-dialog{overscroll-behavior:contain}'
   ].join('\n');
 
   var css = [
@@ -194,7 +263,6 @@
     '  font-size:.84rem;font-weight:600}',
     '.ltv-chip[aria-pressed="true"]{background:var(--brand);border-color:var(--brand);color:#fff}',
     '.ltv-bar .switch{margin-left:auto}',
-    '  color:var(--text);border-radius:10px;padding:.8rem .9rem;min-height:56px}',
     '.ltv-empty{color:var(--muted);padding:1rem 0}',
     '.ltv-note{color:var(--muted);font-size:.8rem;line-height:1.5}',
     '.ltv-nerd{border:1px dashed var(--line);border-radius:10px;padding:.6rem .8rem;background:var(--panel)}',
@@ -254,6 +322,8 @@
     ]);
 
     els.chips = el('div', { class: 'ltv-bar ltv-barrow', role: 'group', 'aria-label': 'Filtrar por categoria' });
+    els.chipRow = el('div', { class: 'ltv-chips' });
+    els.chips.appendChild(els.chipRow);
     els.onlyLive = el('input', { id: 'ltvOnlyLive', type: 'checkbox' });
     els.chips.appendChild(el('label', { class: 'switch', title: 'Mostra só os canais que têm uma fonte funcionando agora' }, [
       els.onlyLive, el('span', { class: 'slider' }), el('span', { text: 'Só os que estão no ar' })
@@ -269,6 +339,9 @@
       hidden: '', title: 'Transmissão ao vivo (player sem anúncios)', allowfullscreen: '',
       allow: 'autoplay; fullscreen; encrypted-media; picture-in-picture', referrerpolicy: 'origin'
     });
+    els.tap = el('button', { class: 'ltv-tap', type: 'button', hidden: '', 'aria-label': 'Tocar o canal' });
+    els.tap.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg><span>Toque para assistir</span>';
+    els.unmute = el('button', { class: 'ltv-unmute', type: 'button', hidden: '', text: '🔇 Ativar o som' });
     els.msgText = el('div', { text: '' });
     els.spin = el('div', { class: 'spinner' });
     els.retry = el('button', { class: 'ghost', type: 'button', hidden: '', text: 'Tentar outra fonte' });
@@ -300,7 +373,7 @@
     els.mScroll = el('div', { class: 'modal-scroll' }, [
       el('div', { class: 'modal-grid' }, [
         el('div', { class: 'modal-main' }, [
-          el('div', { class: 'video-wrap' }, [els.video, els.frame, els.msg]),
+          el('div', { class: 'video-wrap' }, [els.video, els.frame, els.msg, els.tap, els.unmute]),
           el('div', { class: 'main-pad' }, [
             el('div', { class: 'player-header' }, [
               el('div', { class: 'ph-title' }, [el('div', { class: 'ltv-title-row' }, [els.name, el('span', { class: 'ltv-live', text: 'Ao vivo' })]), els.via]),
@@ -331,6 +404,9 @@
     els.heroPlay.addEventListener('click', function () { if (state.hero) play(state.hero); });
     els.heroSched.addEventListener('click', function () { if (state.hero) play(state.hero); });
     els.video.addEventListener('playing', onPlaying);
+    els.tap.addEventListener('click', function () { els.tap.hidden = true; if (state.cur) state.cur.needTap = false; try { var p = els.video.play(); if (p && p.catch) p.catch(function () { els.tap.hidden = false; }); } catch (e) { /* ignora */ } });
+    els.unmute.addEventListener('click', function () { els.video.muted = false; els.unmute.hidden = true; });
+    els.video.addEventListener('volumechange', function () { if (!els.video.muted) els.unmute.hidden = true; });
     els.video.addEventListener('timeupdate', function () { if (els.video.currentTime > 0 && !els.video.paused) onPlaying(); });
   }
 
@@ -644,12 +720,12 @@
 
   function renderChips() {
     var data = state.data;
-    Array.prototype.slice.call(els.chips.querySelectorAll('.ltv-chip')).forEach(function (n) { n.remove(); });
+    Array.prototype.slice.call(els.chipRow.querySelectorAll('.ltv-chip')).forEach(function (n) { n.remove(); });
     var names = [''].concat(data ? data.groups : []);
     names.forEach(function (name, i) {
       var chip = el('button', { class: 'ltv-chip', type: 'button', 'aria-pressed': String(state.group === name), text: name || 'Todos' });
       chip.addEventListener('click', function () { state.group = name; save({ group: name }); renderChips(); renderList(); });
-      els.chips.insertBefore(chip, els.chips.lastChild);
+      els.chipRow.appendChild(chip);
     });
   }
 
@@ -941,6 +1017,8 @@
 
   function stopPlayer() {
     clearTimeout(state.watch);
+    els.video.onerror = null;
+    els.tap.hidden = true; els.unmute.hidden = true; els.video.muted = false;
     if (state.hls) { try { state.hls.destroy(); } catch (e) { /* ignora */ } state.hls = null; }
     if (state.ts) {
       try { state.ts.pause(); state.ts.unload(); state.ts.detachMediaElement(); state.ts.destroy(); } catch (e) { /* ignora */ }
@@ -984,7 +1062,7 @@
     var token = cur.token;
     setMsg('Procurando a melhor fonte para ' + cur.name + '…', 'work');
     var q = '/api/live/stream?ch=' + encodeURIComponent(cur.id) +
-      (cur.skip.length ? '&skip=' + cur.skip.join(',') : '') + (cur.bad.length ? '&bad=' + cur.bad.join(',') + (cur.badWhy ? '&why=' + cur.badWhy : '') : '');
+      (cur.skip.length ? '&skip=' + cur.skip.join(',') : '') + (NO_TS ? '&nots=1' : '') + (cur.bad.length ? '&bad=' + cur.bad.join(',') + (cur.badWhy ? '&why=' + cur.badWhy : '') : '');
     cur.bad = []; cur.badWhy = ''; // o servidor guarda o aviso; não precisa repetir
     api(q).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); }).then(function (res) {
       if (!state.cur || state.cur.token !== token) return; // trocou de canal no meio
@@ -1029,12 +1107,49 @@
     clearTimeout(state.watch);
     var sid = job.sid;
     state.watch = setTimeout(function () {
+      if (state.cur && state.cur.sid === sid && state.cur.needTap && els.video.paused) return; // o navegador exigiu um toque: espera, a fonte não é culpada
       if (state.cur && state.cur.sid === sid && !(els.video.currentTime > 0 && !els.video.paused)) failSource('não começou a tocar');
     }, START_TIMEOUT_MS);
   }
 
+  /**
+   * play() do Safari/iOS é recusado com som quando vem depois de uma resposta de rede (perde o gesto do toque), e no modo de economia
+   * de bateria até mudo. Tenta com som; se recusar, toca mudo com um botão para ligar o som; se ainda recusar, mostra "Toque para assistir".
+   */
+  function startPlayback() {
+    var v = els.video, cur = state.cur;
+    function needTap() { if (state.cur === cur) { cur.needTap = true; els.tap.hidden = false; } }
+    var p = null;
+    try { p = v.play(); } catch (e) { p = null; }
+    if (!p || !p.catch) return;
+    p.catch(function () {
+      if (state.cur !== cur) return;
+      v.muted = true;
+      var q = null;
+      try { q = v.play(); } catch (e) { q = null; }
+      if (q && q.then) q.then(function () { if (state.cur === cur) els.unmute.hidden = false; }).catch(needTap); else needTap();
+    });
+  }
+
+  /** HLS pelo próprio navegador (Safari/iOS): sem MSE, sem hls.js; o iOS também ignora CORS aqui. */
+  function attachNative(url) {
+    var video = els.video, sid = state.cur.sid;
+    nlog('player', 'HLS nativo do navegador');
+    video.preload = 'auto';
+    video.onerror = function () {
+      var c = state.cur;
+      if (!c || c.sid !== sid) return;
+      var code = video.error && video.error.code;
+      failSource('erro do player nativo' + (code ? ' (' + code + ')' : ''), c.mode === 'direct' && !c.played ? 'direct' : '');
+    };
+    video.src = url;
+    startPlayback();
+  }
+
   function attach(url) {
     var video = els.video;
+    var nativeOk = !!video.canPlayType('application/vnd.apple.mpegurl');
+    if (IS_IOS && nativeOk) { attachNative(url); return; } // iPhone: o HLS nativo é o caminho confiável
     if (window.Hls && Hls.isSupported()) {
       var hls = new Hls({
         enableWorker: true, lowLatencyMode: false, liveSyncDurationCount: 3, liveMaxLatencyDurationCount: 10,
@@ -1051,9 +1166,7 @@
           if (window.FdsUsage && bytes) window.FdsUsage.add(data.frag.url, bytes, data.frag.duration || 0);
         } catch (e) { /* estatística nunca derruba a TV */ }
       });
-      hls.on(Hls.Events.MANIFEST_PARSED, function () {
-        video.play().catch(function () { setMsg('Toque no ▶ para começar.', 'err'); });
-      });
+      hls.on(Hls.Events.MANIFEST_PARSED, startPlayback);
       hls.on(Hls.Events.ERROR, function (event, data) {
         if (data) nlog('hls', (data.fatal ? 'FATAL ' : '') + data.type + '/' + data.details + (data.response && data.response.code ? ' HTTP ' + data.response.code : '') + (data.frag ? ' frag ' + data.frag.sn : ''));
         if (data && data.fatal && data.type === Hls.ErrorTypes.NETWORK_ERROR && /manifest|level/i.test(data.details || '')) explain(data);
@@ -1070,9 +1183,8 @@
       });
       hls.loadSource(url);
       hls.attachMedia(video);
-    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-      video.src = url; // HLS nativo (Safari/iOS antigo)
-      video.play().catch(function () { /* o usuário toca no ▶ */ });
+    } else if (nativeOk) {
+      attachNative(url);
     } else {
       setMsg('Este navegador não tem suporte a HLS.', 'err');
     }
@@ -1188,12 +1300,14 @@
       player.attachMediaElement(els.video);
       player.load();
       var started = player.play();
-      if (started && started.catch) started.catch(function () { setMsg('Toque no ▶ para começar.', 'err'); });
+      if (started && started.catch) started.catch(function () { var c = state.cur; if (c) { c.needTap = true; els.tap.hidden = false; } });
     });
   }
 
   function onPlaying() {
     if (state.cur && !state.cur.played) { state.cur.played = true; nlog('tocando', state.cur.name + ' fonte ' + state.cur.sid + ' · ' + els.video.videoWidth + 'x' + els.video.videoHeight); }
+    els.tap.hidden = true;
+    if (state.cur) state.cur.needTap = false;
     if (!els.msg.hidden && state.cur) setMsg('');
     clearTimeout(state.watch);
     if (state.cur) { state.cur.recovered = false; armVideoCheck(); }

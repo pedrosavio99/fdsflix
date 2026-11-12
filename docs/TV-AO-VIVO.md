@@ -181,3 +181,11 @@ no máximo 4 s e termina em segundo plano). O aquecimento testa primeiro as font
   `.gitignore` deixa de fora. Para editar: `node scripts/live-pack.js --unpack`, altere o JSON e rode
   `node scripts/live-pack.js` de novo.
 - `LIVE_ALLOW_PRIVATE_HOSTS=1` existe só para teste local com fonte em 127.0.0.1. Não ligue em produção.
+
+## iPhone/Safari e celular
+
+- O Safari do iPhone só toca HLS pelo player **nativo** (não tem MSE no iPhone) e só deixa chamar `video.play()` dentro do toque do usuário. Como o fdsFlix pede a fonte ao servidor *depois* do toque, o gesto se perdia e todas as fontes eram dadas como falhas.
+- Agora: no iOS o HLS usa `video.src` nativo (`canPlayType('application/vnd.apple.mpegurl')`); se o navegador barrar o autoplay com som, o player tenta **mudo** e mostra o botão "Ativar o som"; se ainda assim barrar, aparece "Toque para assistir" (não conta como falha de fonte).
+- TS cru (mpegts.js) não existe no iPhone: o cliente manda `nots=1` e o servidor só devolve fontes HLS/MP4 (sem último recurso em TS cru). mpegts.js foi para a 1.8.2.
+- Modo de Pouca Energia do iOS bloqueia autoplay mesmo mudo: nesse caso o toque em "Toque para assistir" é necessário.
+- Layout: herói compacto, chips em uma linha rolável, modal em tela cheia com "Outros canais" em carrossel, respeitando `safe-area-inset-*`.
