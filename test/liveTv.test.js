@@ -91,12 +91,14 @@ test('probe: TS cru é reconhecido como "ts" (não toca ainda); outras respostas
 });
 
 test('probe: página de player em host conhecido vira kind "page"', async () => {
-  const url = 'https://sinalpublico.com/player3/ch.php?canal=X';
+  process.env.LIVE_PAGE_HOSTS = 'player.example';
+  const url = 'https://player.example/live/ch.php?canal=X';
   assert.equal(isPagePlayer(url), true);
   assert.equal(isPagePlayer('https://outro.example/ch.php'), false);
   const r = await probeSource(url, opts({ [url]: { body: '<html><body>' + 'x'.repeat(400) + '</body></html>', headers: { 'content-type': 'text/html' } } }));
   assert.equal(r.ok, true);
   assert.equal(r.kind, 'page');
+  delete process.env.LIVE_PAGE_HOSTS;
 });
 
 test('probe: tempo esgotado e hosts privados', async () => {
@@ -154,16 +156,20 @@ test('hlsVariants: Xtream ganha .m3u8 e /mpegts ganha /index.m3u8; o resto não 
 });
 
 test('candidatesFor: env primeiro, Xtream .m3u8 antes do cru, catálogo por último, sem repetição', () => {
-  process.env.LIVE_SOURCES_JSON = JSON.stringify({ sportv: ['https://env.example/s.m3u8'] });
-  live._catalog.index.set('sportv', ['https://cat.example/s.m3u8', 'http://31.204.128.117:8081/live/sportv/playlist.m3u8']);
+  process.env.LIVE_SOURCES_JSON = JSON.stringify({
+    sportv: ['https://env.example/s.m3u8', 'http://panel.example:25461/1/2/11006']
+  });
+  const seed = CHANNELS.find((c) => c.id === 'sportv').sources[0];
+  live._catalog.index.set('sportv', ['https://cat.example/s.m3u8', seed]);
   const list = live.candidatesFor('sportv');
   delete process.env.LIVE_SOURCES_JSON;
   assert.equal(list[0].origin, 'env');
   const urls = list.map((c) => c.url);
-  const raw = urls.indexOf('http://painel.ebanonet.com.br:25461/254126/254126/11006');
-  assert.equal(urls[raw - 1], 'http://painel.ebanonet.com.br:25461/254126/254126/11006.m3u8');
+  const raw = urls.indexOf('http://panel.example:25461/1/2/11006');
+  assert.equal(urls[raw - 1], 'http://panel.example:25461/1/2/11006.m3u8');
   assert.equal(list[list.length - 1].url, 'https://cat.example/s.m3u8');
   assert.equal(new Set(urls).size, urls.length);
+  assert.ok(urls.includes(seed), 'a semente continua como candidata');
 });
 
 test('catálogo: varre listas .m3u e liga cada nome ao canal certo', async () => {
@@ -210,20 +216,25 @@ test('resolveChannel: pula o que o cliente já tentou e o que falhou', async () 
 
 test('resolveChannel: HLS ganha de página de player e TS cru não conta como tocável', async () => {
   process.env.LIVE_SCAN_CATALOGS = '0';
-  const cands = live.candidatesFor('sportv3');
-  const page = cands.find((c) => /sinalpublico/.test(c.url));
-  const hls = cands.find((c) => /arlivre/.test(c.url));
-  let r = await live.resolveChannel('sportv3', { probe: probeBy({ [page.url]: { ok: true, kind: 'page' }, [hls.url]: { ok: true, kind: 'hls' } }) });
-  assert.equal(r.source.url, hls.url);
+  process.env.LIVE_PAGE_HOSTS = 'player.example';
+  process.env.LIVE_SOURCES_JSON = JSON.stringify({
+    sportv3: ['https://player.example/ch.php?canal=A', 'https://hls.example/s3/index.m3u8']
+  });
+  const page = 'https://player.example/ch.php?canal=A';
+  const hls = 'https://hls.example/s3/index.m3u8';
+  let r = await live.resolveChannel('sportv3', { probe: probeBy({ [page]: { ok: true, kind: 'page' }, [hls]: { ok: true, kind: 'hls' } }) });
+  assert.equal(r.source.url, hls);
   live._reset();
-  r = await live.resolveChannel('sportv3', { probe: probeBy({ [hls.url]: { ok: false, reason: 'x' }, [page.url]: { ok: true, kind: 'page' } }) });
+  r = await live.resolveChannel('sportv3', { probe: probeBy({ [hls]: { ok: false, reason: 'x' }, [page]: { ok: true, kind: 'page' } }) });
   assert.equal(r.source.kind, 'page');
   live._reset();
-  r = await live.resolveChannel('sportv3', { probe: probeBy({ [hls.url]: { ok: true, kind: 'ts' }, [page.url]: { ok: false, reason: 'x' } }) });
+  r = await live.resolveChannel('sportv3', { probe: probeBy({ [hls]: { ok: true, kind: 'ts' }, [page]: { ok: false, reason: 'x' } }) });
   assert.equal(r.ok, false);
   assert.equal(r.rawTs, 1);
   assert.match(r.error, /TS cru/);
   delete process.env.LIVE_SCAN_CATALOGS;
+  delete process.env.LIVE_PAGE_HOSTS;
+  delete process.env.LIVE_SOURCES_JSON;
 });
 
 test('reportBad tira a fonte da rotação por alguns minutos', async () => {
@@ -273,13 +284,13 @@ test('planDelivery: sem Vercel pronta devolve "none" com motivo (nunca cai no Re
 });
 
 test('planDelivery: página de player vai pelo AdShield com token que o adproxy aceita', async () => {
-  const url = 'https://sinalpublico.com/player3/ch.php?canal=COMBATE';
+  const url = 'https://player.example/live/ch.php?canal=COMBATE';
   const plan = await live.planDelivery({ url, kind: 'page' }, { pool: ['https://v1.vercel.app'] });
   assert.equal(plan.mode, 'page');
   const token = plan.url.split('/_adshield/r/')[1];
   const entry = verifyToken(token, loadConfig({}));
   assert.equal(entry.url, url);
-  assert.equal(entry.referer, 'https://sinalpublico.com/');
+  assert.equal(entry.referer, 'https://player.example/');
   assert.equal(verifyToken(token + 'x', loadConfig({})), null);
   const none = await live.planDelivery({ url, kind: 'page' }, { pool: [] });
   assert.equal(none.mode, 'none');
@@ -307,4 +318,43 @@ test('catálogo de canais: ids únicos, toda fonte é http(s) e há aliases', ()
     assert.ok(c.aliases.length > 0, c.id);
     for (const u of c.sources) assert.match(u, /^https?:\/\//, `${c.id} ${u}`);
   }
+});
+
+/* ------------------------------ área nerd (admin) ------------------------------ */
+
+test('maskUrl: tira usuário/senha de painel, tokens e query', () => {
+  assert.equal(live.maskUrl('http://painel.x:25461/meuuser/minhasenha/11006'), 'http://painel.x:25461/…/…/11006');
+  assert.equal(live.maskUrl('http://painel.x:25461/live/meuuser/minhasenha/11006.m3u8'), 'http://painel.x:25461/live/…/…/11006.m3u8');
+  const m = live.maskUrl('https://h.example/live/AbCdEfGhIjKlMnOpQrStUv/index.m3u8?token=SEGREDO&x=1');
+  assert.ok(!/SEGREDO|AbCdEfGhIjKlMnOpQrStUv/.test(m), m);
+  assert.equal(live.maskUrl('https://a.b/live/livestream/chunklist.m3u8'), 'https://a.b/live/livestream/chunklist.m3u8');
+  assert.equal(live.maskUrl('isso nao e url'), 'isso nao e url');
+});
+
+test('diagnostics: mostra teste de cada fonte, mascara URLs por padrão e registra eventos', async () => {
+  process.env.LIVE_SCAN_CATALOGS = '0';
+  process.env.LIVE_SOURCES_JSON = JSON.stringify({ cultura: ['http://painel.example:25461/usuario1/senha1/777'] });
+  const url = 'http://painel.example:25461/usuario1/senha1/777.m3u8';
+  const r = await live.resolveChannel('cultura', { probe: probeBy({ [url]: { ok: true, kind: 'hls', cors: true } }) });
+  assert.equal(r.ok, true);
+  const d = live.diagnostics();
+  const ch = d.channels.find((c) => c.id === 'cultura');
+  const src = ch.fontes.find((s) => s.teste && s.teste.ok);
+  assert.ok(src, 'fonte testada aparece');
+  assert.equal(src.teste.tipo, 'hls');
+  assert.ok(!JSON.stringify(d).includes('senha1'), 'senha não vaza no modo normal');
+  assert.ok(d.eventos.some((e) => e.tipo === 'cascata' && /tocou/.test(e.msg)));
+  assert.ok(d.eventos.every((e) => !e.msg.includes('senha1')));
+  assert.ok(JSON.stringify(live.diagnostics({ full: true })).includes('senha1'), 'full mostra a URL inteira');
+  assert.ok(d.totais.testadas >= 1 && d.config.varrerListas === false);
+  delete process.env.LIVE_SCAN_CATALOGS;
+  delete process.env.LIVE_SOURCES_JSON;
+});
+
+test('canal sem sinal entra no registro de eventos', async () => {
+  process.env.LIVE_SCAN_CATALOGS = '0';
+  const r = await live.resolveChannel('cultura', { probe: probeBy({}) });
+  assert.equal(r.ok, false);
+  assert.ok(live.diagnostics().eventos.some((e) => e.tipo === 'cascata' && /sem sinal/.test(e.msg)));
+  delete process.env.LIVE_SCAN_CATALOGS;
 });

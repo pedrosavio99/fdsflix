@@ -1226,6 +1226,22 @@ app.get('/api/live/channels', requireApiKey, (req, res) => {
   res.json(liveTv.channelsSnapshot());
 });
 
+// Área nerd (administrador): estado interno da TV ao vivo. ?full=1 mostra as URLs inteiras (com credenciais);
+// ?retest=<canal> força novo teste das fontes do canal antes de responder.
+app.get('/api/live/diag', requireStatsKey, async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  try {
+    const retest = String(req.query.retest || '');
+    if (retest && liveTv.CHANNELS.some((c) => c.id === retest)) await liveTv.retest(retest);
+    const out = liveTv.diagnostics({ full: /^(1|true)$/.test(String(req.query.full || '')) });
+    out.pool = usageLedger.getPool();
+    out.servidor = { node: process.version, uptimeMin: Math.round(process.uptime() / 60), memoriaMB: Math.round(process.memoryUsage().rss / 1048576) };
+    res.json(out);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/live/stream', requireApiKey, async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   const id = String(req.query.ch || '');
@@ -1252,10 +1268,12 @@ app.get('/api/live/stream', requireApiKey, async (req, res) => {
       if (plan.mode === 'none') {
         // Esta fonte não tem como chegar ao navegador sem gastar o Render; tenta a próxima.
         lastReason = plan.reason;
+        liveTv.logEvent('entrega', `${channel.name}: fonte ${found.source.sid} pulada: ${plan.reason}`);
         skipped.push({ sid: found.source.sid, reason: plan.reason });
         skip.push(found.source.sid);
         continue;
       }
+      liveTv.logEvent('entrega', `${channel.name}: ${plan.mode} via ${plan.via}${skipped.length ? ` (${skipped.length} fonte(s) puladas)` : ''}`);
       return res.json({
         ok: true,
         channel: { id: channel.id, name: channel.name, group: channel.group },

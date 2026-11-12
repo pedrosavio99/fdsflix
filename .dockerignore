@@ -13,3 +13,4 @@ npm-debug.log
 docs
 Dockerfile
 adproxy/node_modules
+lib/live-sources.plain.json
