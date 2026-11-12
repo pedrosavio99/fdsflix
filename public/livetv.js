@@ -21,7 +21,8 @@
   var state = {
     open: false, data: null, group: '', onlyLive: false,
     cur: null, seq: 0, hls: null, watch: 0, poll: 0, polls: 0,
-    log: [], diag: null, diagAt: 0, diagTimer: 0, diagBusy: false
+    log: [], diag: null, diagAt: 0, diagTimer: 0, diagBusy: false, netTimer: 0,
+    net: { frags: [], samples: [], bytes: 0, count: 0 }
   };
   var els = {};
 
@@ -48,6 +49,7 @@
   function nlog(type, msg) {
     state.log.push({ t: Date.now(), type: type, msg: String(msg).slice(0, 300) });
     if (state.log.length > 200) state.log.shift();
+    if (els.nerd && els.nerd.open) { clearTimeout(state.logPaint); state.logPaint = setTimeout(renderCli, 150); }
   }
   function shortUrl(u) {
     try { var x = new URL(u, location.href); return x.host + x.pathname.replace(/([A-Za-z0-9_-]{20,})/g, function (m) { return m.slice(0, 4) + '…'; }) + (x.search ? '?…' : ''); } catch (e) { return String(u).slice(0, 60); }
@@ -115,6 +117,21 @@
     '.ltv-nerd-bar select{background:var(--panel-2);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:.4rem .6rem;max-width:100%}',
     '.ltv-nerd-bar label{display:inline-flex;align-items:center;gap:.35rem;font-size:.82rem;color:var(--muted)}',
     '.ltv-nerd-warn{color:var(--warn);font-size:.8rem;margin:0 0 .5rem}',
+    '.ltv-nerd h4{margin:.9rem 0 .4rem;font-size:.78rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}',
+    '.ltv-tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:.5rem;margin-bottom:.7rem}',
+    '.ltv-tile{background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:.45rem .6rem;display:flex;flex-direction:column;gap:.15rem;min-width:0}',
+    '.ltv-tile span{font-size:.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}',
+    '.ltv-tile b{font:600 .85rem ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;overflow-wrap:anywhere}',
+    '.ltv-chartbox{background:#07070b;border:1px solid var(--line);border-radius:8px;padding:.4rem .5rem .3rem}',
+    '.ltv-chart{display:block;width:100%;height:130px}',
+    '.ltv-legend{display:flex;gap:1rem;flex-wrap:wrap;font-size:.72rem;margin-top:.2rem}',
+    '.ltv-legend .g{color:#7ee2a8}.ltv-legend .a{color:#ffd479}.ltv-legend .b{color:#7fb2ff}',
+    '.ltv-log{max-height:260px;overflow:auto;background:#07070b;border:1px solid var(--line);border-radius:8px;padding:.5rem .7rem;',
+    '  font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;user-select:text}',
+    '.ltv-log.tall{max-height:60vh}',
+    '.ltv-log div{white-space:pre-wrap;word-break:break-all}',
+    '.ltv-log .step{color:#9fd1ff;font-weight:700;margin-top:.35rem}.ltv-log .ok{color:#7ee2a8}.ltv-log .warn{color:#ffd479}',
+    '.ltv-log .err{color:#ff8f8f}.ltv-log .info{color:#c9d4e3}.ltv-log .dim{color:#7d8597}',
     '.ltv-nerd pre{margin:0;max-height:60vh;overflow:auto;background:#07070b;border:1px solid var(--line);border-radius:8px;padding:.7rem;',
     '  font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:pre-wrap;word-break:break-all;color:#cfd2dc;user-select:text}',
     '@media (max-width:640px){.ltv{padding-top:calc(var(--nav-h) + .6rem)}.ltv-screen{max-height:none}.ltv-sub{margin-left:0;width:100%}}'
@@ -178,56 +195,260 @@
 
   /* ------------------------- área nerd (só administrador) ------------------- */
 
+  function tile(key, label) {
+    var v = el('b', { text: '–' });
+    els.tile[key] = v;
+    return el('div', { class: 'ltv-tile' }, [el('span', { text: label }), v]);
+  }
+
   function buildNerd() {
+    els.tile = {};
     els.nerdSel = el('select', { 'aria-label': 'Detalhar um canal' });
     els.nerdFull = el('input', { type: 'checkbox' });
     els.nerdAuto = el('input', { type: 'checkbox' });
-    els.nerdOut = el('pre', { text: 'Abra esta seção e toque em "Atualizar".' });
     els.nerdWarn = el('p', { class: 'ltv-nerd-warn', hidden: '', text: '⚠ "URLs inteiras" inclui usuário/senha de painéis IPTV. Não cole isso em lugar público.' });
-    var bRefresh = el('button', { class: 'ghost', type: 'button', text: '↻ Atualizar' });
+    var bRefresh = el('button', { class: 'ghost', type: 'button', text: '↻ Atualizar servidor' });
     var bRetest = el('button', { class: 'ghost', type: 'button', text: '🧪 Retestar canal' });
     var bCopy = el('button', { class: 'ghost', type: 'button', text: '📋 Copiar logs' });
+    var bClear = el('button', { class: 'ghost', type: 'button', text: 'Limpar' });
+    els.tiles = el('div', { class: 'ltv-tiles' }, [
+      tile('down', '⬇ Rede (por baixada)'), tile('use', 'Consumo do vídeo'), tile('buf', 'Buffer'), tile('q', 'Qualidade'),
+      tile('drop', 'Quadros perdidos'), tile('lat', 'Atraso ao vivo'), tile('tot', 'Baixado'), tile('net', 'Internet do aparelho')
+    ]);
+    els.chart = el('canvas', { class: 'ltv-chart', height: '130', role: 'img', 'aria-label': 'Gráfico da rede: velocidade de download, consumo do vídeo e buffer nos últimos 90 segundos' });
+    els.chartLegend = el('div', { class: 'ltv-legend' }, [
+      el('span', { class: 'lg g', text: '— velocidade da baixada' }), el('span', { class: 'lg a', text: '--- bitrate do vídeo' }),
+      el('span', { class: 'lg b', text: '▮ buffer (0–30 s)' })
+    ]);
+    els.logCli = el('div', { class: 'ltv-log', 'aria-live': 'polite' });
+    els.logSrv = el('div', { class: 'ltv-log tall' });
     els.nerd = el('details', { class: 'ltv-nerd admin-only' }, [
       el('summary', { text: '🤓 Área para nerds (administrador)' }),
       el('div', { class: 'ltv-nerd-bar' }, [
-        bRefresh, bRetest, bCopy, els.nerdSel,
+        bRefresh, bRetest, bCopy, bClear, els.nerdSel,
         el('label', {}, [els.nerdFull, el('span', { text: 'URLs inteiras' })]),
-        el('label', {}, [els.nerdAuto, el('span', { text: 'Atualizar sozinho (5 s)' })])
+        el('label', {}, [els.nerdAuto, el('span', { text: 'Servidor sozinho (5 s)' })])
       ]),
-      els.nerdWarn, els.nerdOut
+      els.nerdWarn,
+      els.tiles,
+      el('div', { class: 'ltv-chartbox' }, [els.chart, els.chartLegend]),
+      el('h4', { text: 'Navegador (ao vivo)' }), els.logCli,
+      el('h4', { text: 'Servidor' }), els.logSrv
     ]);
     bRefresh.addEventListener('click', function () { loadDiag(); });
     bRetest.addEventListener('click', function () { loadDiag(state.cur ? state.cur.id : (els.nerdSel.value || '')); });
     bCopy.addEventListener('click', function () { copyReport(bCopy); });
-    els.nerdSel.addEventListener('change', renderNerd);
+    bClear.addEventListener('click', function () { state.log = []; renderCli(); });
+    els.nerdSel.addEventListener('change', renderSrv);
     els.nerdFull.addEventListener('change', function () { els.nerdWarn.hidden = !els.nerdFull.checked; loadDiag(); });
     els.nerdAuto.addEventListener('change', function () {
       clearInterval(state.diagTimer);
       if (els.nerdAuto.checked) state.diagTimer = setInterval(function () { if (state.open && els.nerd.open) loadDiag(); }, 5000);
     });
-    els.nerd.addEventListener('toggle', function () { if (els.nerd.open && !state.diag) loadDiag(); });
+    els.nerd.addEventListener('toggle', function () {
+      if (!els.nerd.open) return;
+      renderCli(); renderTiles(); drawChart();
+      if (!state.diag) loadDiag();
+    });
+    window.addEventListener('resize', function () { if (state.open && els.nerd.open) drawChart(); });
+  }
+
+  /* --- métricas de rede do player (só coleta para administrador) --- */
+
+  function netFrag(data) {
+    if (!adminKey() || !data || !data.frag || !data.frag.stats) return;
+    var st = data.frag.stats;
+    var ms = st.loading && st.loading.end && st.loading.start ? st.loading.end - st.loading.start : 0;
+    var bytes = st.total || 0;
+    state.net.frags.push({ t: Date.now(), bytes: bytes, ms: ms, dur: data.frag.duration || 0 });
+    if (state.net.frags.length > 40) state.net.frags.shift();
+    state.net.bytes += bytes; state.net.count += 1;
+  }
+
+  function sampleNet() {
+    if (!state.open || !adminKey()) return;
+    var now = Date.now(), v = els.video, n = state.net, s = { t: now, cap: null, use: null, buf: 0, drop: 0, lat: null, h: 0, kbps: 0 };
+    var recent = n.frags.filter(function (f) { return now - f.t < 20000; });
+    var last = recent[recent.length - 1];
+    if (last && last.ms > 20) s.cap = last.bytes * 8 / last.ms / 1000;                        // Mbps durante a baixada do último pedaço
+    var win = n.frags.filter(function (f) { return now - f.t < 12000; });
+    if (win.length) s.use = win.reduce(function (a, f) { return a + f.bytes; }, 0) * 8 / 12 / 1e6; // Mbps médios consumidos
+    try { if (v.buffered && v.buffered.length) s.buf = Math.max(0, v.buffered.end(v.buffered.length - 1) - v.currentTime); } catch (e) { /* ignora */ }
+    try { var q = v.getVideoPlaybackQuality && v.getVideoPlaybackQuality(); if (q) s.drop = q.droppedVideoFrames; } catch (e) { /* ignora */ }
+    if (state.hls) {
+      try {
+        var lv = state.hls.levels && state.hls.levels[state.hls.currentLevel];
+        if (lv) { s.h = lv.height || 0; s.kbps = Math.round((lv.bitrate || 0) / 1000); }
+        if (typeof state.hls.latency === 'number' && isFinite(state.hls.latency)) s.lat = state.hls.latency;
+      } catch (e) { /* ignora */ }
+    }
+    n.samples.push(s);
+    if (n.samples.length > 90) n.samples.shift();
+    if (els.nerd && els.nerd.open) { renderTiles(); drawChart(); }
+  }
+
+  function fmt(n, d) { return n == null || !isFinite(n) ? '–' : n.toFixed(d == null ? 1 : d); }
+
+  function renderTiles() {
+    var s = state.net.samples[state.net.samples.length - 1] || {}, v = els.video, T = els.tile;
+    T.down.textContent = s.cap == null ? '–' : fmt(s.cap) + ' Mbps';
+    T.use.textContent = s.use == null ? '–' : fmt(s.use, 2) + ' Mbps';
+    T.buf.textContent = s.buf == null ? '–' : fmt(s.buf) + ' s';
+    T.q.textContent = (v && v.videoWidth ? v.videoWidth + 'x' + v.videoHeight : '–') + (s.kbps ? ' · ' + s.kbps + ' kbps' : '');
+    T.drop.textContent = s.drop == null ? '–' : String(s.drop);
+    T.lat.textContent = s.lat == null ? '–' : fmt(s.lat) + ' s';
+    T.tot.textContent = fmt(state.net.bytes / 1048576, 1) + ' MB · ' + state.net.count + ' pedaços';
+    var c = navigator.connection;
+    T.net.textContent = c ? ((c.effectiveType || '?') + (c.downlink ? ' · ↓' + c.downlink + ' Mbps' : '') + (c.rtt ? ' · ' + c.rtt + ' ms' : '')) : 'sem dado do navegador';
+  }
+
+  function drawChart() {
+    var c = els.chart;
+    if (!c || !els.nerd.open) return;
+    var w = c.clientWidth || 600, h = 130, dpr = window.devicePixelRatio || 1;
+    if (c.width !== Math.round(w * dpr)) { c.width = Math.round(w * dpr); c.height = Math.round(h * dpr); }
+    var g = c.getContext('2d');
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.clearRect(0, 0, w, h);
+    var S = state.net.samples, N = 90, step = w / (N - 1);
+    var maxM = 2;
+    S.forEach(function (s) { maxM = Math.max(maxM, s.cap || 0, s.use || 0); });
+    maxM = Math.ceil(maxM * 1.15);
+    g.strokeStyle = 'rgba(255,255,255,.08)'; g.lineWidth = 1; g.fillStyle = '#7d8597'; g.font = '11px ui-monospace,monospace';
+    for (var i = 0; i <= 3; i++) { var gy = Math.round(8 + i * (h - 16) / 3) + .5; g.beginPath(); g.moveTo(0, gy); g.lineTo(w, gy); g.stroke(); }
+    g.fillText(maxM + ' Mbps', 4, 18); g.fillText('0', 4, h - 4);
+    if (!S.length) { g.fillText('Sem dados ainda: toque num canal para começar a medir.', Math.max(8, w / 2 - 150), h / 2); return; }
+    var X = function (idx) { return w - (S.length - 1 - idx) * step; };
+    var Y = function (m) { return h - 8 - Math.min(1, m / maxM) * (h - 16); };
+    g.beginPath(); g.moveTo(X(0), h - 8);
+    S.forEach(function (s, idx) { g.lineTo(X(idx), h - 8 - Math.min(1, s.buf / 30) * (h - 16)); });
+    g.lineTo(X(S.length - 1), h - 8); g.closePath();
+    g.fillStyle = 'rgba(90,160,255,.22)'; g.fill();
+    function line(key, color, dash) {
+      g.beginPath(); g.strokeStyle = color; g.lineWidth = 2; g.setLineDash(dash || []);
+      var started = false;
+      S.forEach(function (s, idx) { if (s[key] == null) return; if (!started) { g.moveTo(X(idx), Y(s[key])); started = true; } else g.lineTo(X(idx), Y(s[key])); });
+      g.stroke(); g.setLineDash([]);
+    }
+    line('cap', '#7ee2a8'); line('use', '#ffd479', [5, 4]);
+  }
+
+  /* --- linhas coloridas (mesmo estilo do diagnóstico dos filmes) --- */
+
+  function cliClass(e) {
+    var m = e.msg;
+    if (e.type === 'abrir') return 'step';
+    if (e.type === 'tocando') return 'ok';
+    if (e.type === 'falhou' || e.type === 'rede') return 'err';
+    if (e.type === 'hls') return /^FATAL/.test(m) ? 'err' : 'warn';
+    if (e.type === 'diagnostico') return 'warn';
+    if (e.type === 'servidor') return /sem sinal/.test(m) ? 'err' : 'ok';
+    return 'info';
+  }
+  function srvClass(tipo, msg) {
+    if (tipo === 'teste') return /^OK/.test(msg) ? 'ok' : 'dim';
+    if (tipo === 'cascata') return /sem sinal/.test(msg) ? 'err' : 'ok';
+    if (tipo === 'entrega') return /pulada/.test(msg) ? 'warn' : 'ok';
+    if (tipo === 'navegador') return 'warn';
+    if (tipo === 'vercel') return 'err';
+    if (tipo === 'retestar') return 'step';
+    return 'info';
+  }
+
+  function two(n) { return n < 10 ? '0' + n : '' + n; }
+  function clock(t) { var d = new Date(t); return two(d.getUTCHours()) + ':' + two(d.getUTCMinutes()) + ':' + two(d.getUTCSeconds()); }
+  function yn(v) { return v === true ? 's' : v === false ? 'n' : '?'; }
+
+  function cliLines() {
+    var cur = state.cur, v = els.video, L = [];
+    L.push(['step', '== NAVEGADOR ==']);
+    L.push(['info', 'agora: ' + new Date().toISOString() + ' (horas em UTC, igual ao servidor)']);
+    L.push(['info', 'navegador: ' + navigator.userAgent]);
+    L.push(['info', 'tela: ' + window.innerWidth + 'x' + window.innerHeight + ' · dpr ' + (window.devicePixelRatio || 1)]);
+    L.push(['info', 'hls.js: ' + (window.Hls ? ('v' + (Hls.version || '?') + (Hls.isSupported() ? ' (MSE ok)' : ' (sem MSE)')) : 'não carregou') +
+      ' · HLS nativo: ' + (v && v.canPlayType('application/vnd.apple.mpegurl') ? 'sim' : 'não')]);
+    L.push(['info', 'api: ' + (API_BASE || location.origin)]);
+    var c = navigator.connection;
+    if (c) L.push(['info', 'internet do aparelho: ' + (c.effectiveType || '?') + ' · ↓' + (c.downlink || '?') + ' Mbps · rtt ' + (c.rtt || '?') + ' ms' + (c.saveData ? ' · economia de dados LIGADA' : '')]);
+    if (cur) {
+      L.push(['info', 'canal atual: ' + cur.name + ' (' + cur.id + ') · fonte ' + (cur.sid || '-') + ' · tentativa ' + cur.attempt + '/' + MAX_ATTEMPTS + ' · puladas: ' + (cur.skip.join(',') || '-')]);
+      L.push(['info', 'video: t=' + (v.currentTime || 0).toFixed(1) + 's · pausado=' + v.paused + ' · readyState=' + v.readyState + ' · ' + (v.videoWidth || 0) + 'x' + (v.videoHeight || 0)]);
+    } else L.push(['dim', 'canal atual: nenhum']);
+    var n = state.net, s = n.samples[n.samples.length - 1];
+    if (s) L.push(['info', 'rede: baixada ' + fmt(s.cap) + ' Mbps · vídeo ' + fmt(s.use, 2) + ' Mbps · buffer ' + fmt(s.buf) + ' s · perdidos ' + s.drop + ' · total ' + fmt(n.bytes / 1048576) + ' MB em ' + n.count + ' pedaços']);
+    L.push(['step', '== EVENTOS DO NAVEGADOR (últimos 80) ==']);
+    state.log.slice(-80).forEach(function (e) { L.push([cliClass(e), clock(e.t) + ' ' + e.type + ' ' + e.msg]); });
+    if (!state.log.length) L.push(['dim', '(vazio)']);
+    return L;
+  }
+
+  function srvLines(only) {
+    var d = state.diag, L = [];
+    if (!d) return [['dim', '== SERVIDOR ==\n(sem dados; toque em "Atualizar servidor")']];
+    L.push(['step', '== SERVIDOR ==']);
+    var sv = d.servidor || {}, t = d.totais || {}, c = d.config || {};
+    L.push(['info', 'hora: ' + d.agora + ' · node ' + sv.node + ' · no ar há ' + sv.uptimeMin + ' min · memória ' + sv.memoriaMB + ' MB']);
+    L.push(['info', 'fontes: ' + t.fontes + ' · testadas ' + t.testadas + ' · HLS ' + t.hls + ' · TS cru ' + t.ts + ' · página ' + t.pagina + ' · mortas ' + t.mortas]);
+    L.push(['info', 'config: varrer listas=' + c.varrerListas + ' · aquecer=' + c.aquecer + ' · listas lidas=' + c.listas + ' · entradas casadas=' + c.entradasCasadas +
+      ' · listas atualizadas há ' + c.listasAtualizadasHaMin + ' min · testes em andamento=' + c.testesEmAndamento + ' · aquecendo=' + c.aquecendo]);
+    L.push(['info', 'vercels (pool): ' + ((d.pool || []).join(', ') || 'nenhuma')]);
+    (d.vercels || []).forEach(function (v) { L.push([v.serveTV ? 'ok' : 'err', '  rota ' + v.rota + ': serve TV=' + v.serveTV + ' (há ' + v.idadeS + 's)']); });
+    L.push(['step', '== CANAIS ==']);
+    (d.channels || []).forEach(function (ch) {
+      var f = ch.fontes || [], ok = 0, dead = 0, untested = 0;
+      f.forEach(function (s) { if (!s.teste) untested += 1; else if (s.teste.ok) ok += 1; else dead += 1; });
+      var head = ch.name + ' [' + ch.id + '] status=' + (ch.status || '?') + ' · fontes ' + f.length + ' (ok ' + ok + ', mortas ' + dead + ', sem teste ' + untested + ')';
+      L.push([ch.status === 'ok' ? 'ok' : (ch.status === 'down' ? 'err' : 'warn'), head]);
+      if (only !== ch.id) return;
+      f.slice(0, 40).forEach(function (s) {
+        var h = s.teste, res = !h ? 'sem teste' : (h.ok ? ('OK ' + h.tipo) : ('FALHA ' + h.motivo));
+        L.push([!h ? 'dim' : (h.ok ? 'ok' : 'dim'), '  ' + s.sid + ' ' + s.origem + (s.pagina ? ' (página)' : '') + ' · ' + res +
+          (h ? ' · ' + h.ms + 'ms · https=' + yn(h.https) + ' porta=' + (h.porta || '-') + ' cors=' + yn(h.cors) + ' · há ' + h.idadeS + 's' + (h.foraDaRotacaoS ? ' · fora ' + h.foraDaRotacaoS + 's' : '') : '')]);
+        L.push(['dim', '      ' + s.url]);
+      });
+      if (f.length > 40) L.push(['dim', '  … +' + (f.length - 40) + ' fontes']);
+    });
+    L.push(['step', '== EVENTOS DO SERVIDOR (últimos 60) ==']);
+    (d.eventos || []).slice(-60).forEach(function (e) { L.push([srvClass(e.tipo, e.msg), e.hora + ' ' + e.tipo + ' ' + e.msg]); });
+    if (!(d.eventos || []).length) L.push(['dim', '(vazio)']);
+    return L;
+  }
+
+  function paint(box, lines, stick) {
+    var keep = !stick ? box.scrollTop : 0;
+    box.textContent = '';
+    lines.forEach(function (ln) { box.appendChild(el('div', { class: ln[0], text: ln[1] })); });
+    box.scrollTop = stick ? box.scrollHeight : keep;
+  }
+
+  function renderCli() { if (els.logCli && els.nerd.open) paint(els.logCli, cliLines(), true); }
+  function renderSrv() { if (els.logSrv) paint(els.logSrv, srvLines(els.nerdSel.value), false); }
+
+  function reportText() {
+    var all = cliLines().concat(srvLines(els.nerdSel.value));
+    return '== fdsFlix · TV ao vivo · relatório ==\n' + all.map(function (l) { return l[1]; }).join('\n') + '\n';
   }
 
   function loadDiag(retest) {
     var key = adminKey();
-    if (!key) { els.nerdOut.textContent = 'Entre no modo administrador (senha) para ver os dados do servidor.\n\n' + clientReport(); return; }
-    if (state.diagBusy) return;
+    if (!key) { paint(els.logSrv, [['warn', 'Entre no modo administrador (senha) para ver os dados do servidor.']], false); return Promise.resolve(); }
+    if (state.diagBusy) return Promise.resolve();
     state.diagBusy = true;
     var q = '/api/live/diag?' + (els.nerdFull.checked ? 'full=1&' : '') + (retest ? 'retest=' + encodeURIComponent(retest) : '');
     var headers = { 'x-stats-key': key };
     if (CONFIG.apiKey) headers['x-api-key'] = CONFIG.apiKey;
-    if (retest) els.nerdOut.textContent = 'Retestando as fontes de ' + retest + '… (pode levar até ~25 s)';
-    fetch(API_BASE + q, { headers: headers, cache: 'no-store' }).then(function (r) {
+    if (retest) paint(els.logSrv, [['warn', 'Retestando as fontes de ' + retest + '… (pode levar até ~25 s)']], false);
+    return fetch(API_BASE + q, { headers: headers, cache: 'no-store' }).then(function (r) {
       return r.json().then(function (j) { return { ok: r.ok, status: r.status, j: j }; });
     }).then(function (res) {
       state.diagBusy = false;
-      if (!res.ok) { state.diag = null; els.nerdOut.textContent = 'O servidor recusou (HTTP ' + res.status + '): ' + ((res.j && res.j.error) || '') + '\n\n' + clientReport(); return; }
+      if (!res.ok) { state.diag = null; paint(els.logSrv, [['err', 'O servidor recusou (HTTP ' + res.status + '): ' + ((res.j && res.j.error) || '')]], false); return; }
       state.diag = res.j; state.diagAt = Date.now();
       fillSelect();
-      renderNerd();
+      renderSrv();
     }).catch(function (e) {
       state.diagBusy = false;
-      els.nerdOut.textContent = 'Falha ao buscar o diagnóstico: ' + e.message + '\n\n' + clientReport();
+      paint(els.logSrv, [['err', 'Falha ao buscar o diagnóstico: ' + e.message + ' (o Render pode estar acordando; tente de novo)']], false);
     });
   }
 
@@ -239,89 +460,21 @@
     els.nerdSel.value = keep;
   }
 
-  function two(n) { return n < 10 ? '0' + n : '' + n; }
-  function clock(t) { var d = new Date(t); return two(d.getUTCHours()) + ':' + two(d.getUTCMinutes()) + ':' + two(d.getUTCSeconds()); }
-
-  function clientReport() {
-    var cur = state.cur;
-    var L = [];
-    L.push('== NAVEGADOR ==');
-    L.push('agora: ' + new Date().toISOString());
-    L.push('navegador: ' + navigator.userAgent);
-    L.push('tela: ' + window.innerWidth + 'x' + window.innerHeight + ' · dpr ' + (window.devicePixelRatio || 1) + ' · rede: ' + ((navigator.connection && navigator.connection.effectiveType) || '?'));
-    L.push('hls.js: ' + (window.Hls ? ('v' + (Hls.version || '?') + (Hls.isSupported() ? ' (MSE ok)' : ' (sem MSE)')) : 'não carregou') +
-      ' · HLS nativo: ' + (els.video && els.video.canPlayType('application/vnd.apple.mpegurl') ? 'sim' : 'não'));
-    L.push('api: ' + (API_BASE || location.origin));
-    if (cur) {
-      var v = els.video;
-      L.push('canal atual: ' + cur.name + ' (' + cur.id + ') · fonte ' + (cur.sid || '-') + ' · tentativa ' + cur.attempt + '/' + MAX_ATTEMPTS +
-        ' · puladas: ' + (cur.skip.join(',') || '-'));
-      L.push('video: t=' + (v.currentTime || 0).toFixed(1) + 's · pausado=' + v.paused + ' · readyState=' + v.readyState + ' · ' + (v.videoWidth || 0) + 'x' + (v.videoHeight || 0));
-    } else L.push('canal atual: nenhum');
-    L.push('');
-    L.push('== EVENTOS DO NAVEGADOR (últimos 80; horas em UTC, igual ao servidor) ==');
-    state.log.slice(-80).forEach(function (e) { L.push(clock(e.t) + ' ' + e.type + ' ' + e.msg); });
-    if (!state.log.length) L.push('(vazio)');
-    return L.join('\n');
-  }
-
-  function yn(v) { return v === true ? 's' : v === false ? 'n' : '?'; }
-
-  function serverReport(only) {
-    var d = state.diag;
-    if (!d) return '== SERVIDOR ==\n(sem dados; toque em Atualizar)';
-    var L = [];
-    L.push('== SERVIDOR ==');
-    var sv = d.servidor || {};
-    L.push('hora: ' + d.agora + ' · node ' + sv.node + ' · no ar há ' + sv.uptimeMin + ' min · memória ' + sv.memoriaMB + ' MB');
-    var t = d.totais || {};
-    L.push('fontes: ' + t.fontes + ' · testadas ' + t.testadas + ' · HLS ' + t.hls + ' · TS cru ' + t.ts + ' · página ' + t.pagina + ' · mortas ' + t.mortas);
-    var c = d.config || {};
-    L.push('config: varrer listas=' + c.varrerListas + ' · aquecer=' + c.aquecer + ' · listas lidas=' + c.listas + ' · entradas casadas=' + c.entradasCasadas +
-      ' · listas atualizadas há ' + c.listasAtualizadasHaMin + ' min · testes em andamento=' + c.testesEmAndamento + ' · aquecendo=' + c.aquecendo);
-    L.push('vercels (pool): ' + ((d.pool || []).join(', ') || 'nenhuma'));
-    (d.vercels || []).forEach(function (v) { L.push('  capacidade ' + v.rota + ': serve TV=' + v.serveTV + ' (há ' + v.idadeS + 's)'); });
-    L.push('');
-    L.push('== CANAIS ==');
-    (d.channels || []).forEach(function (ch) {
-      var f = ch.fontes || [], ok = 0, dead = 0, untested = 0;
-      f.forEach(function (s) { if (!s.teste) untested += 1; else if (s.teste.ok) ok += 1; else dead += 1; });
-      if (only && only !== ch.id) { L.push(ch.name.padEnd(18) + ' status=' + (ch.status || '?') + ' · fontes ' + f.length + ' (ok ' + ok + ', mortas ' + dead + ', sem teste ' + untested + ')'); return; }
-      L.push(ch.name + ' [' + ch.id + '] status=' + (ch.status || '?') + ' · fontes ' + f.length + ' (ok ' + ok + ', mortas ' + dead + ', sem teste ' + untested + ')');
-      f.slice(0, 40).forEach(function (s) {
-        var h = s.teste;
-        var res = !h ? 'sem teste' : (h.ok ? ('OK ' + h.tipo) : ('FALHA ' + h.motivo));
-        L.push('  ' + s.sid + ' ' + s.origem + (s.pagina ? ' (página)' : '') + ' · ' + res + (h ? ' · ' + h.ms + 'ms · https=' + yn(h.https) + ' porta=' + (h.porta || '-') + ' cors=' + yn(h.cors) + ' · há ' + h.idadeS + 's' + (h.foraDaRotacaoS ? ' · fora ' + h.foraDaRotacaoS + 's' : '') : ''));
-        L.push('      ' + s.url);
-      });
-      if (f.length > 40) L.push('  … +' + (f.length - 40) + ' fontes');
-    });
-    L.push('');
-    L.push('== EVENTOS DO SERVIDOR (últimos 60) ==');
-    (d.eventos || []).slice(-60).forEach(function (e) { L.push(e.hora + ' ' + e.tipo + ' ' + e.msg); });
-    if (!(d.eventos || []).length) L.push('(vazio)');
-    return L.join('\n');
-  }
-
-  function fullReport() {
-    return '== fdsFlix · TV ao vivo · relatório ==\n' + clientReport() + '\n\n' + serverReport(els.nerdSel.value) + '\n';
-  }
-
-  function renderNerd() {
-    if (!els.nerdOut) return;
-    els.nerdOut.textContent = fullReport();
-  }
-
   function copyReport(btn) {
-    var text = fullReport();
-    var done = function (ok) { var old = btn.textContent; btn.textContent = ok ? '✔ Copiado' : '✖ Não deu; selecione o texto'; setTimeout(function () { btn.textContent = old; }, 1800); };
-    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(function () { done(true); }, function () { done(false); });
-    else {
-      var ta = el('textarea', { style: 'position:fixed;left:-9999px' });
-      ta.value = text; document.body.appendChild(ta); ta.select();
-      var ok = false; try { ok = document.execCommand('copy'); } catch (e) { /* ignora */ }
-      ta.remove(); done(ok);
-    }
+    var old = btn.textContent;
+    btn.textContent = '… buscando dados frescos';
+    // O relatório sempre sai com o estado atual do servidor, não com o de quando a seção foi aberta.
+    loadDiag().then(function () {
+      var text = reportText();
+      var done = function (ok) { btn.textContent = ok ? '✔ Copiado' : '✖ Não deu; selecione o texto'; setTimeout(function () { btn.textContent = old; }, 1800); };
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(function () { done(true); }, function () { done(false); });
+      else {
+        var ta = el('textarea', { style: 'position:fixed;left:-9999px' });
+        ta.value = text; document.body.appendChild(ta); ta.select();
+        var ok = false; try { ok = document.execCommand('copy'); } catch (e) { /* ignora */ }
+        ta.remove(); done(ok);
+      }
+    });
   }
 
   /* ------------------------------ lista de canais --------------------------- */
@@ -422,6 +575,7 @@
     stopPlayer();
     var ch = state.data && state.data.channels.filter(function (c) { return c.id === id; })[0];
     state.seq += 1;
+    state.net = { frags: [], samples: [], bytes: 0, count: 0 };
     state.cur = { id: id, name: ch ? ch.name : id, sid: '', skip: [], bad: [], attempt: 0, token: state.seq };
     els.stage.hidden = false;
     els.name.textContent = state.cur.name;
@@ -498,6 +652,7 @@
       hls.on(Hls.Events.FRAG_LOADED, function (event, data) {
         // Conta a banda das Vercels (barra do pool); sem isso o uso da TV ao vivo não apareceria.
         try {
+          netFrag(data);
           var bytes = data && data.frag && data.frag.stats && data.frag.stats.total;
           if (window.FdsUsage && bytes) window.FdsUsage.add(data.frag.url, bytes, data.frag.duration || 0);
         } catch (e) { /* estatística nunca derruba a TV */ }
@@ -507,6 +662,7 @@
       });
       hls.on(Hls.Events.ERROR, function (event, data) {
         if (data) nlog('hls', (data.fatal ? 'FATAL ' : '') + data.type + '/' + data.details + (data.response && data.response.code ? ' HTTP ' + data.response.code : '') + (data.frag ? ' frag ' + data.frag.sn : ''));
+        if (data && data.fatal && data.type === Hls.ErrorTypes.NETWORK_ERROR && /manifest|level/i.test(data.details || '')) explain(data);
         if (!data || !data.fatal || !state.cur || state.cur.sid !== sid) return;
         if (data.type === Hls.ErrorTypes.MEDIA_ERROR && !state.cur.recovered) {
           state.cur.recovered = true;
@@ -523,6 +679,15 @@
     } else {
       setMsg('Este navegador não tem suporte a HLS.', 'err');
     }
+  }
+
+  /** Só para o administrador: repete o pedido da playlist que falhou e registra o que o servidor/Vercel respondeu. */
+  function explain(data) {
+    var url = data.url || (data.context && data.context.url);
+    if (!url || !adminKey()) return;
+    fetch(url, { cache: 'no-store' }).then(function (r) {
+      return r.text().then(function (t) { nlog('diagnostico', 'GET ' + shortUrl(url) + ' → HTTP ' + r.status + ' · ' + t.slice(0, 160).replace(/\s+/g, ' ')); });
+    }).catch(function (e) { nlog('diagnostico', 'GET ' + shortUrl(url) + ' falhou: ' + e.message); });
   }
 
   function onPlaying() {
@@ -568,6 +733,8 @@
     try { if (location.hash !== '#tv') history.replaceState(null, '', '#tv'); } catch (e) { /* ignora */ }
     renderChips();
     renderList();
+    clearInterval(state.netTimer);
+    state.netTimer = setInterval(sampleNet, 1000);
     refresh().then(schedulePoll);
   }
 
@@ -576,6 +743,7 @@
     state.open = false;
     clearTimeout(state.poll);
     clearInterval(state.diagTimer);
+    clearInterval(state.netTimer);
     if (els.nerdAuto) els.nerdAuto.checked = false;
     stopPlayer();
     state.cur = null;

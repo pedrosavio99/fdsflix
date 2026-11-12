@@ -49,23 +49,28 @@ normalizado (`ESPN` não casa com `ESPN 2`). Xtream sem extensão (`.../11006`) 
 
 ## Área para nerds (só administrador)
 
-Dentro da aba **TV ao vivo**, no fim da página, aparece **🤓 Área para nerds (administrador)**. Ela só existe no modo admin
-(a mesma senha do painel, guardada em `fdsflix.adminKey`); visitante comum não vê nem o botão.
+No fim da aba **TV ao vivo** aparece **🤓 Área para nerds (administrador)**. Só existe no modo admin (a senha do painel, guardada em
+`fdsflix.adminKey`); visitante comum não vê nem coleta nada disso.
 
-- **Atualizar**: busca `GET /api/live/diag` (protegida pela senha de admin, `x-stats-key`) e monta um relatório em texto.
-- **Retestar canal**: ignora o cache e testa de novo todas as fontes do canal (até 30, ~25 s) e mostra o resultado.
-- **Detalhar: canal**: o resumo mostra uma linha por canal; escolhendo um canal, aparecem todas as fontes dele com tipo,
-  tempo, https/porta/CORS, idade do teste e motivo da falha.
-- **Atualizar sozinho (5 s)**: acompanha ao vivo; desliga ao fechar a TV.
-- **📋 Copiar logs**: copia o relatório inteiro (navegador + servidor) para colar no chat.
+- **Painéis ao vivo (1 s):** velocidade de cada baixada (Mbps), consumo do vídeo, buffer, qualidade (resolução e kbps), quadros
+  perdidos, atraso ao vivo, total baixado e a internet do aparelho (`navigator.connection`).
+- **Gráfico da internet:** últimos 90 s com a velocidade da baixada (verde), o bitrate do vídeo (amarelo tracejado) e o buffer (azul).
+  Baixada abaixo do bitrate, ou buffer caindo a zero, explica o travamento.
+- **Navegador (ao vivo):** log colorido igual ao dos filmes (`abrir`, `servidor`, `hls`, `falhou`, `tocando`, `diagnostico`). Quando a
+  playlist falha, o navegador repete o pedido e anota o HTTP e o texto que a Vercel/fonte devolveu.
+- **Servidor:** vem de `GET /api/live/diag` (senha de admin, `x-stats-key`): totais, config, Vercels do pool, canais e eventos
+  (`teste`, `cascata`, `entrega`, `vercel`, `navegador`, `aquecimento`, `retestar`). **Detalhar: canal** abre todas as fontes dele com
+  tipo, tempo, https/porta/CORS, idade do teste e motivo da falha. **Retestar canal** ignora o cache.
+- **📋 Copiar logs:** busca os dados frescos do servidor e copia tudo (navegador + servidor) para colar no chat. Horas em UTC.
 
-O relatório traz: navegador (UA, tela, suporte a HLS), canal atual (fonte, tentativas, estado do `<video>`), eventos do navegador
-(`abrir`, `servidor`, `hls`, `falhou`, `tocando`), totais de fontes, config, Vercels do pool e capacidade de servir TV, cada canal com suas
-fontes e os eventos do servidor (`teste`, `cascata`, `entrega`, `navegador`, `aquecimento`, `retestar`). Horas em UTC nos dois lados.
+**Segredos:** por padrão as URLs saem mascaradas (usuário/senha de painéis Xtream e tokens viram `…`). **URLs inteiras** mostra tudo,
+inclusive credenciais; não cole em lugar público. Os eventos do servidor ficam só em memória (últimos 300; zeram quando o Render reinicia).
 
-**Segredos:** por padrão as URLs saem mascaradas (usuário/senha de painéis Xtream e tokens viram `…`). A caixa **URLs inteiras**
-mostra tudo, inclusive credenciais; use só se precisar e não cole em lugar público. O registro de eventos fica só em memória
-(últimos 300; zera quando o Render reinicia).
+## Entrega pela Vercel é conferida antes
+
+Para fontes HTTP/sem CORS, o servidor não confia só no `?cap=1`: abre a playlist assinada pela Vercel (poucos KB, não gasta o vídeo do Render) e
+exige `200` + `#EXTM3U`. Se a Vercel recusar (por exemplo `403 URL não assinada ou vencida`, host bloqueado, fonte fora do ar para ela),
+o evento `vercel` registra o motivo e o servidor tenta a próxima Vercel (até 3 conferências) antes de dizer "sem sinal".
 
 ## Publicar
 

@@ -1264,7 +1264,7 @@ app.get('/api/live/stream', requireApiKey, async (req, res) => {
       const found = await liveTv.resolveChannel(id, { skip });
       tried += found.tried;
       if (!found.ok) { lastReason = found.error; break; }
-      const plan = await liveTv.planDelivery(found.source, { pool: fallbackPool });
+      const plan = await liveTv.planDelivery(found.source, { pool: fallbackPool, verify: true });
       if (plan.mode === 'none') {
         // Esta fonte não tem como chegar ao navegador sem gastar o Render; tenta a próxima.
         lastReason = plan.reason;

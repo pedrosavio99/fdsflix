@@ -358,3 +358,22 @@ test('canal sem sinal entra no registro de eventos', async () => {
   assert.ok(live.diagnostics().eventos.some((e) => e.tipo === 'cascata' && /sem sinal/.test(e.msg)));
   delete process.env.LIVE_SCAN_CATALOGS;
 });
+
+test('planDelivery com verify: pula a Vercel que recusa a fonte (403) e usa a próxima', async () => {
+  const src = { url: 'http://cdn.example:8080/live/a.m3u8', kind: 'hls', https: false, cors: false };
+  const calls = [];
+  const fetchImpl = async (u) => {
+    calls.push(u);
+    if (u.includes('?cap=1')) return new Response(JSON.stringify({ live: true }), { status: 200 });
+    if (u.startsWith('https://ruim.vercel.app/')) return new Response('{"error":"URL não assinada ou vencida"}', { status: 403 });
+    return new Response('#EXTM3U\n#EXTINF:4,\ns.ts\n', { status: 200 });
+  };
+  const plan = await live.planDelivery(src, { pool: ['https://ruim.vercel.app', 'https://boa.vercel.app'], fetchImpl, verify: true });
+  assert.equal(plan.mode, 'vercel');
+  assert.match(plan.via, /^boa\.vercel\.app/);
+  assert.ok(live.diagnostics().eventos.some((e) => e.tipo === 'vercel' && /403/.test(e.msg) && /ruim\.vercel\.app/.test(e.msg)));
+  live._reset();
+  const only = await live.planDelivery(src, { pool: ['https://ruim.vercel.app'], fetchImpl, verify: true });
+  assert.equal(only.mode, 'none');
+  assert.match(only.reason, /não conseguiu abrir.*403/);
+});
