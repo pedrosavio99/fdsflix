@@ -222,3 +222,19 @@ test('Supabase: envia em lote, não perde nada se falhar e não suja o estado do
     delete process.env.SUPABASE_SECRET_KEY;
   }
 });
+
+test('TV ao vivo: o canal (e o programa no ar) vira o último título; trocar de fonte não conta como assistir de novo', () => {
+  const liveEpg = require('../lib/liveEpg');
+  const c = visitors.classify;
+  assert.equal(c(req('1.1.1.1', '/api/live/stream', { query: { ch: 'espn2' } })).watch, 'TV · ESPN 2');
+  const now = Date.now();
+  const xml = `<tv><channel id="ESPN 2"><display-name>ESPN 2</display-name></channel>` +
+    `<programme start="${stamp(now - 600000)} +0000" stop="${stamp(now + 600000)} +0000" channel="ESPN 2"><title>Sportscenter</title></programme></tv>`;
+  liveEpg.ingest(xml, 'teste', now);
+  assert.equal(c(req('1.1.1.1', '/api/live/stream', { query: { ch: 'espn2' } })).watch, 'TV · ESPN 2 — Sportscenter');
+  assert.deepEqual(c(req('1.1.1.1', '/api/live/stream', { query: { ch: 'espn2', skip: 'abc' } })), { count: true, watch: '' });
+  assert.deepEqual(c(req('1.1.1.1', '/api/live/stream', { query: { ch: 'canal-que-nao-existe' } })), { count: true, watch: '' });
+  liveEpg._reset();
+
+  function stamp(ms) { return new Date(ms).toISOString().replace(/[-:T]/g, '').slice(0, 14); }
+});
