@@ -109,6 +109,29 @@ produção, que recusa até o segredo embutido), a assinatura do Render dá `403
   Aceitar o embutido significa que quem lê o repositório consegue gerar links para a rota; se isso incomodar, use o mesmo `PROXY_SECRET`
   no Render e nas Vercels.
 
+## Programação (EPG) e visual
+
+A aba mostra o que passa em cada canal, no estilo da área de filmes: destaque "Agora na TV", fileiras com cartões 16:9 (programa atual,
+horário, classificação indicativa e barra de progresso) e, ao assistir, o programa no ar com sinopse, o próximo e a grade das próximas 24 h.
+
+- **Fonte:** guias XMLTV gratuitos da comunidade (`limaalef/BrazilTVEPG` no GitHub: `claro.xml` e `epg.xml`), sem chave e sem env nova.
+  Ficam fixos em `lib/liveEpg.js` (`FEEDS`). O mapeamento canal do fdsFlix -> nome no guia está em `NAMES` do mesmo arquivo.
+- **Custo:** o servidor baixa o guia (cerca de 14 MB) ao subir e a cada 6 h; é tráfego de ENTRADA, não conta nos 5 GB de saída do Render.
+  Guarda só os canais do fdsFlix para as próximas 48 h (alguns KB) e responde ao navegador com JSON pequeno.
+- **Rotas:** `GET /api/live/epg` (agora e próximo de todos os canais) e `GET /api/live/epg?ch=<id>` (grade do canal).
+- **Melhor esforço:** se o guia sair do ar ou ficar velho, a TV funciona igual, só sem os títulos (o último guia baixado é mantido).
+  Os horários vêm do guia (Brasília) e aparecem no fuso do aparelho. Canais sem programa no guia (Fox Sports, TBS, Syfy, abertas pequenas)
+  aparecem só com o nome.
+- **Novo canal:** acrescente o id e os nomes em `NAMES` (nomes em minúsculas, sem acento).
+
+## Imagem e fontes que não tocam
+
+- **Só áudio:** o probe lê a tabela de programas (PMT) do segmento MPEG-TS e as variantes (`CODECS`/`RESOLUTION`) do HLS mestre;
+  fonte sem vídeo é descartada ("só áudio"). Se mesmo assim tocar 9 s sem imagem (`0x0`, como HEVC que o navegador não decodifica),
+  o navegador descarta a fonte e o servidor a tira da rotação por 6 h.
+- **Fonte "direta" que o navegador não abre** (CORS ou bloqueio de rede, `Failed to fetch`): o servidor passa a entregar a MESMA fonte
+  pela Vercel/AdShield por 30 min, em vez de pular de fonte.
+
 ## Cascata mais rápida
 
 Os testes de fontes rodam em paralelo e a resposta sai assim que o primeiro HLS provado aparece (antes esperava o lote de 5 inteiro, preso

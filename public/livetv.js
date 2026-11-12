@@ -24,7 +24,7 @@
 
   var state = {
     open: false, data: null, group: '', onlyLive: false,
-    cur: null, seq: 0, hls: null, ts: null, tsLast: null, watch: 0, poll: 0, polls: 0,
+    epg: null, hero: '', cur: null, seq: 0, hls: null, ts: null, tsLast: null, watch: 0, poll: 0, polls: 0,
     log: [], diag: null, diagAt: 0, diagTimer: 0, diagBusy: false, netTimer: 0,
     net: { frags: [], samples: [], bytes: 0, count: 0, tsMbps: null }
   };
@@ -67,6 +67,85 @@
 
   /* --------------------------------- estilo --------------------------------- */
 
+
+  var UI_CSS = [
+    '.ltv-hero{position:relative;overflow:hidden;border-radius:var(--radius);border:1px solid var(--line);min-height:clamp(230px,34vw,360px);',
+    '  padding:clamp(1rem,3vw,2.1rem);display:flex;flex-direction:column;justify-content:flex-end;gap:.5rem;background:var(--hb,linear-gradient(135deg,#2a1020,#0b0b10))}',
+    '.ltv-hero[hidden]{display:none}',
+    '.ltv-hero::before{content:"";position:absolute;inset:0;background:radial-gradient(120% 90% at 85% 10%,rgba(255,255,255,.14),rgba(255,255,255,0) 55%),',
+    '  linear-gradient(0deg,rgba(11,11,16,.92),rgba(11,11,16,.25) 70%,rgba(11,11,16,.55));z-index:0}',
+    '.ltv-hero>*{position:relative;z-index:1}',
+    '.ltv-hero-tag{display:flex;align-items:center;gap:.6rem;font-size:.78rem;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#f0f0f8}',
+    '.ltv-hero-title{margin:0;font-size:clamp(1.7rem,4.8vw,3.5rem);font-weight:900;line-height:1.02;letter-spacing:-.035em;max-width:22ch;text-wrap:balance;text-shadow:0 2px 18px rgba(0,0,0,.55)}',
+    '.ltv-hero-sub{color:#eaeaf3;font-weight:600;font-size:clamp(.9rem,1.3vw,1.1rem)}',
+    '.ltv-hero-desc{margin:0;max-width:62ch;color:#e4e4ee;line-height:1.5;font-size:clamp(.88rem,1.2vw,1rem);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}',
+    '.ltv-hero-meta{display:flex;align-items:center;gap:.7rem;color:#d9d9e6;font-size:.84rem;font-weight:600;max-width:420px}',
+    '.ltv-hero-meta .ltv-prog{flex:1}',
+    '.ltv-hero-actions{display:flex;gap:.7rem;flex-wrap:wrap;margin-top:.35rem}',
+    '.ltv-btn{display:inline-flex;align-items:center;justify-content:center;gap:.5rem;min-height:46px;padding:0 1.4rem;font-size:1rem;font-weight:800;border-radius:8px;border:0}',
+    '.ltv-btn.play{background:#fff;color:#0b0b10}.ltv-btn.play:hover{background:#e6e6ee;filter:none;transform:scale(1.03)}',
+    '.ltv-btn.sec{background:rgba(120,120,135,.5);color:#fff;-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}.ltv-btn.sec:hover{background:rgba(150,150,165,.55);filter:none}',
+    '.ltv-prog{height:4px;border-radius:99px;background:rgba(255,255,255,.24);overflow:hidden}',
+    '.ltv-prog i{display:block;height:100%;width:0;background:var(--brand);border-radius:inherit;transition:width .6s var(--ease)}',
+    '.ltv-groups{display:flex;flex-direction:column;gap:clamp(.9rem,2vw,1.6rem)}',
+    '.ltv-row{display:flex;flex-direction:column}',
+    '.ltv-row-title{margin:0;font-size:clamp(1.05rem,1.6vw,1.4rem);font-weight:800;letter-spacing:-.02em;display:flex;align-items:baseline;gap:.6rem}',
+    '.ltv-row-title small{font-size:.78rem;font-weight:600;color:var(--muted);letter-spacing:0}',
+    '.ltv-rail{position:relative}',
+    '.ltv-track{--per:1.55;display:flex;gap:var(--gap);overflow-x:auto;overflow-y:hidden;scroll-snap-type:x proximity;scrollbar-width:none;',
+    '  padding:.85rem 4px 1.3rem;margin:0 -4px -.5rem;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch}',
+    '.ltv-track::-webkit-scrollbar{display:none}',
+    '@media (min-width:520px){.ltv-track{--per:2.3}}@media (min-width:820px){.ltv-track{--per:3.3}}',
+    '@media (min-width:1100px){.ltv-track{--per:4.2}}@media (min-width:1500px){.ltv-track{--per:4.9}}',
+    '.ltv-card{flex:0 0 calc((100% - (var(--per) - 1) * var(--gap)) / var(--per));scroll-snap-align:start;min-width:0;padding:0;background:none;border-radius:10px;',
+    '  text-align:left;color:var(--text);position:relative;transition:transform .38s var(--ease),box-shadow .38s var(--ease);animation:ltvIn .6s var(--ease) backwards}',
+    '@keyframes ltvIn{from{opacity:0;transform:translateY(16px) scale(.97)}to{opacity:1;transform:none}}',
+    '.ltv-card:hover{filter:none}.ltv-groups.settled .ltv-card{animation:none}',
+    '.ltv-card[aria-current="true"]{box-shadow:0 0 0 3px #fff}',
+    '.ltv-poster{position:relative;aspect-ratio:16/9;border-radius:10px;overflow:hidden;background:var(--g,#1b1b27);display:block}',
+    '.ltv-poster::after{content:"";position:absolute;inset:0;border-radius:inherit;box-shadow:inset 0 0 0 1px rgba(255,255,255,.08);pointer-events:none;z-index:3}',
+    '.ltv-poster::before{content:"";position:absolute;inset:0;background:radial-gradient(110% 80% at 90% 0,rgba(255,255,255,.16),rgba(255,255,255,0) 60%)}',
+    '.ltv-chname{position:absolute;left:.9rem;right:.9rem;top:44%;transform:translateY(-50%);font-size:clamp(1.05rem,1.9vw,1.55rem);font-weight:900;',
+    '  letter-spacing:-.02em;line-height:1.05;text-transform:uppercase;text-shadow:0 2px 12px rgba(0,0,0,.5);overflow-wrap:anywhere}',
+    '.ltv-badge{position:absolute;left:.6rem;top:.6rem;z-index:3;display:inline-flex;align-items:center;gap:.35rem;font-size:.66rem;font-weight:800;letter-spacing:.08em;',
+    '  text-transform:uppercase;padding:.22rem .5rem;border-radius:6px;background:rgba(0,0,0,.62);color:#fff;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}',
+    '.ltv-badge.ok{background:var(--brand)}.ltv-badge.ok::before{content:"";width:6px;height:6px;border-radius:50%;background:#fff;animation:ltvPulse 1.4s ease-in-out infinite}',
+    '.ltv-badge.unknown{color:var(--warn)}.ltv-badge.down{color:#9a9aae}',
+    '.ltv-age{position:absolute;right:.6rem;top:.6rem;z-index:3;min-width:1.6rem;height:1.6rem;display:grid;place-items:center;border-radius:4px;font-size:.78rem;font-weight:900;color:#fff;background:#2e8b57}',
+    '.ltv-age[hidden]{display:none}',
+    '.ltv-age.a10{background:#0a7cc4}.ltv-age.a12{background:#d8a400;color:#111}.ltv-age.a14{background:#e8731a}.ltv-age.a16{background:#d92f2f}.ltv-age.a18{background:#111;box-shadow:inset 0 0 0 1px #fff4}',
+    '.ltv-cap{position:absolute;left:0;right:0;bottom:0;z-index:2;padding:2.6rem .8rem .65rem;background:linear-gradient(180deg,rgba(0,0,0,0),rgba(0,0,0,.78) 55%,rgba(0,0,0,.94))}',
+    '.ltv-cap[hidden]{display:none}',
+    '.ltv-cap-t{font-weight:800;font-size:.92rem;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+    '.ltv-cap-m{color:#cfcfdc;font-size:.74rem;font-weight:600;margin:.1rem 0 .4rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+    '.ltv-card.down{opacity:.55}.ltv-card.down .ltv-poster{filter:grayscale(.75)}',
+    '@media (hover:hover){.ltv-card:hover,.ltv-card:focus-visible{transform:scale(1.05);z-index:6;box-shadow:0 22px 50px rgba(0,0,0,.65),0 0 0 1px rgba(255,255,255,.14)}}',
+    '@media (hover:none){.ltv-card:active{transform:scale(.98)}}',
+    '.ltv-rbtn{position:absolute;top:.85rem;bottom:1.3rem;width:46px;z-index:5;border:0;border-radius:0;padding:0;display:grid;place-items:center;font-size:2.2rem;font-weight:300;',
+    '  color:#fff;opacity:0;transition:opacity .25s;background:linear-gradient(90deg,rgba(11,11,16,.9),rgba(11,11,16,0))}',
+    '.ltv-rbtn.next{right:0;background:linear-gradient(270deg,rgba(11,11,16,.9),rgba(11,11,16,0))}.ltv-rbtn.prev{left:0}',
+    '.ltv-rail:hover .ltv-rbtn,.ltv-rbtn:focus-visible{opacity:1}@media (hover:none){.ltv-rbtn{display:none}}',
+    '.ltv-nowbox{display:flex;flex-direction:column;gap:.45rem;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:.85rem 1rem}',
+    '.ltv-nowbox[hidden]{display:none}',
+    '.ltv-nowrow{display:flex;gap:.5rem .8rem;align-items:center;flex-wrap:wrap}',
+    '.ltv-nowrow .tag{font-size:.66rem;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:#fff;background:var(--brand);padding:.18rem .45rem;border-radius:5px}',
+    '.ltv-nowtitle{font-weight:800;font-size:1.08rem;letter-spacing:-.01em}',
+    '.ltv-nowmeta{color:var(--muted);font-size:.84rem}',
+    '.ltv-nowdesc{color:#d6d6e4;font-size:.9rem;line-height:1.5;margin:0}',
+    '.ltv-nowbox .ltv-prog{background:rgba(255,255,255,.14)}',
+    '.ltv-nowfoot{display:flex;align-items:center;gap:.7rem;flex-wrap:wrap;color:var(--muted);font-size:.84rem}',
+    '.ltv-nowfoot button{margin-left:auto}',
+    '.ltv-sched{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;background:var(--panel);max-height:46vh;overflow-y:auto}',
+    '.ltv-sched[hidden]{display:none}',
+    '.ltv-srow{display:grid;grid-template-columns:3.6rem 1fr auto;gap:.2rem .8rem;padding:.65rem 1rem;border-top:1px solid var(--line);align-items:baseline}',
+    '.ltv-srow:first-child{border-top:0}',
+    '.ltv-srow time{font-weight:800;font-variant-numeric:tabular-nums;color:var(--muted)}',
+    '.ltv-srow b{font-size:.95rem}.ltv-srow small{display:block;color:var(--muted);font-size:.8rem;font-weight:500;margin-top:.1rem}',
+    '.ltv-srow.now{background:rgba(229,9,20,.12);box-shadow:inset 3px 0 0 var(--brand)}.ltv-srow.now time{color:#fff}',
+    '.ltv-srow .ltv-age{position:static;min-width:1.5rem;height:1.5rem;font-size:.72rem}',
+    '.ltv-credit{color:var(--muted);font-size:.74rem}'
+  ].join('\n');
+
   var css = [
     '.ltv{position:fixed;inset:0;z-index:25;background:var(--bg);overflow-y:auto;overscroll-behavior:contain;',
     '  padding:calc(var(--nav-h) + 1rem) var(--gutter) calc(2rem + env(safe-area-inset-bottom,0px));}',
@@ -100,19 +179,7 @@
     '  font-size:.84rem;font-weight:600}',
     '.ltv-chip[aria-pressed="true"]{background:var(--brand);border-color:var(--brand);color:#fff}',
     '.ltv-bar .switch{margin-left:auto}',
-    '.ltv-group{display:flex;flex-direction:column;gap:.55rem}',
-    '.ltv-group h3{margin:.4rem 0 0;font-size:.82rem;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}',
-    '.ltv-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));gap:var(--gap)}',
-    '.ltv-ch{display:flex;align-items:center;gap:.6rem;text-align:left;background:var(--panel);border:1px solid var(--line);',
     '  color:var(--text);border-radius:10px;padding:.8rem .9rem;min-height:56px}',
-    '.ltv-ch:hover{background:var(--panel-2);border-color:#3a3a4e;filter:none}',
-    '.ltv-ch[aria-current="true"]{border-color:var(--brand);box-shadow:0 0 0 1px var(--brand) inset}',
-    '.ltv-ch .nm{flex:1;min-width:0;font-weight:700;font-size:.92rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
-    '.ltv-ch.down{opacity:.55}',
-    '.ltv-dot{flex:none;width:10px;height:10px;border-radius:50%;background:#5b5b6e}',
-    '.ltv-dot.ok{background:var(--ok);box-shadow:0 0 0 3px rgba(53,208,127,.2)}',
-    '.ltv-dot.unknown{background:var(--warn);animation:ltvPulse 1.2s ease-in-out infinite}',
-    '.ltv-dot.raw{background:#8a7bd9}',
     '.ltv-empty{color:var(--muted);padding:1rem 0}',
     '.ltv-note{color:var(--muted);font-size:.8rem;line-height:1.5}',
     '.ltv-nerd{border:1px dashed var(--line);border-radius:10px;padding:.6rem .8rem;background:var(--panel)}',
@@ -139,7 +206,7 @@
     '.ltv-nerd pre{margin:0;max-height:60vh;overflow:auto;background:#07070b;border:1px solid var(--line);border-radius:8px;padding:.7rem;',
     '  font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:pre-wrap;word-break:break-all;color:#cfd2dc;user-select:text}',
     '@media (max-width:640px){.ltv{padding-top:calc(var(--nav-h) + .6rem)}.ltv-screen{max-height:none}.ltv-sub{margin-left:0;width:100%}}'
-  ].join('\n');
+  ].join('\n') + '\n' + UI_CSS;
   document.head.appendChild(el('style', { text: css }));
 
   /* ---------------------------------- DOM ----------------------------------- */
@@ -169,9 +236,39 @@
     els.via = el('span', { text: '' });
     els.next = el('button', { class: 'ghost', type: 'button', text: '⏭ Outra fonte' });
     els.reload = el('button', { class: 'ghost', type: 'button', text: '↻ Recarregar' });
+    els.nowTitle = el('span', { class: 'ltv-nowtitle', text: '' });
+    els.nowMeta = el('span', { class: 'ltv-nowmeta', text: '' });
+    els.nowAge = el('span', { class: 'ltv-age', hidden: '' });
+    els.nowDesc = el('p', { class: 'ltv-nowdesc', text: '' });
+    els.nowBar = el('i');
+    els.nowNext = el('span', { text: '' });
+    els.schedBtn = el('button', { class: 'ghost', type: 'button', text: '🗓 Programação' });
+    els.nowBox = el('div', { class: 'ltv-nowbox', hidden: '' }, [
+      el('div', { class: 'ltv-nowrow' }, [el('span', { class: 'tag', text: 'No ar' }), els.nowTitle, els.nowAge, els.nowMeta]),
+      els.nowDesc,
+      el('div', { class: 'ltv-prog' }, [els.nowBar]),
+      el('div', { class: 'ltv-nowfoot' }, [els.nowNext, els.schedBtn])
+    ]);
+    els.sched = el('div', { class: 'ltv-sched', hidden: '', role: 'region', 'aria-label': 'Programação do canal' });
     els.stage = el('div', { class: 'ltv-stage', hidden: '' }, [
       el('div', { class: 'ltv-screen' }, [els.video, els.frame, els.msg]),
-      el('div', { class: 'ltv-info' }, [els.name, els.via, el('div', { class: 'ltv-actions' }, [els.next, els.reload])])
+      el('div', { class: 'ltv-info' }, [els.name, els.via, el('div', { class: 'ltv-actions' }, [els.next, els.reload])]),
+      els.nowBox, els.sched
+    ]);
+
+    els.heroTitle = el('h3', { class: 'ltv-hero-title', text: '' });
+    els.heroCh = el('span', { text: '' });
+    els.heroSub = el('div', { class: 'ltv-hero-sub', text: '' });
+    els.heroDesc = el('p', { class: 'ltv-hero-desc', text: '' });
+    els.heroBar = el('i');
+    els.heroTime = el('span', { text: '' });
+    els.heroPlay = el('button', { class: 'ltv-btn play', type: 'button', text: '▶ Assistir agora' });
+    els.heroSched = el('button', { class: 'ltv-btn sec', type: 'button', text: '🗓 Programação' });
+    els.hero = el('section', { class: 'ltv-hero', hidden: '', 'aria-label': 'Em destaque na TV' }, [
+      el('div', { class: 'ltv-hero-tag' }, [el('span', { class: 'ltv-live', text: 'Agora na TV' }), els.heroCh]),
+      els.heroTitle, els.heroSub, els.heroDesc,
+      el('div', { class: 'ltv-hero-meta' }, [els.heroTime, el('div', { class: 'ltv-prog' }, [els.heroBar])]),
+      el('div', { class: 'ltv-hero-actions' }, [els.heroPlay, els.heroSched])
     ]);
 
     els.chips = el('div', { class: 'ltv-bar', role: 'group', 'aria-label': 'Filtrar por categoria' });
@@ -185,7 +282,7 @@
       'fontes que são páginas de player abrem pelo AdShield, que tira os anúncios.' });
 
     buildNerd();
-    els.root.appendChild(el('div', { class: 'ltv-wrap' }, [head, els.stage, els.chips, els.list, els.note, els.nerd]));
+    els.root.appendChild(el('div', { class: 'ltv-wrap' }, [head, els.hero, els.stage, els.chips, els.list, els.note, els.nerd]));
     document.body.appendChild(els.root);
 
     els.close.addEventListener('click', close);
@@ -193,6 +290,9 @@
     els.reload.addEventListener('click', function () { if (state.cur) play(state.cur.id, true); });
     els.retry.addEventListener('click', function () { if (state.cur) { state.cur.attempt = 0; request(); } });
     els.onlyLive.addEventListener('change', function () { state.onlyLive = els.onlyLive.checked; save({ onlyLive: state.onlyLive }); renderList(); });
+    els.heroPlay.addEventListener('click', function () { if (state.hero) play(state.hero); });
+    els.heroSched.addEventListener('click', function () { if (state.hero) { play(state.hero); toggleSched(true); } });
+    els.schedBtn.addEventListener('click', function () { toggleSched(); });
     els.video.addEventListener('playing', onPlaying);
     els.video.addEventListener('timeupdate', function () { if (els.video.currentTime > 0 && !els.video.paused) onPlaying(); });
   }
@@ -506,32 +606,193 @@
     });
   }
 
+  var BADGE = { ok: 'Ao vivo', unknown: 'Testando…', raw: 'TS cru', down: 'Fora do ar' };
+
+  /* --------------------------- programação (EPG) --------------------------- */
+
+  function hhmm(ms) { return new Date(ms).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }); }
+  function hueOf(id) { var h = 7; for (var i = 0; i < id.length; i += 1) h = (h * 31 + id.charCodeAt(i)) >>> 0; return h % 360; }
+  function gradFor(id) { var h = hueOf(id); return 'linear-gradient(135deg,hsl(' + h + ' 52% 31%),hsl(' + ((h + 42) % 360) + ' 58% 13%))'; }
+  function pctOf(p) { return Math.max(0, Math.min(100, (Date.now() - p.st) / Math.max(1, p.en - p.st) * 100)); }
+
+  /** O que passa agora no canal, mesmo se a resposta do servidor ficou velha por alguns minutos. */
+  function progOf(id) {
+    var e = state.epg && state.epg.map[id];
+    if (!e) return null;
+    var t = Date.now();
+    if (e.now && e.now.en > t && e.now.st <= t) return { now: e.now, next: e.next };
+    if (e.next && e.next.st <= t && e.next.en > t) return { now: { t: e.next.t, s: '', d: '', st: e.next.st, en: e.next.en, a: '' }, next: null };
+    return null;
+  }
+
+  function ageClass(a) { return a && a !== 'L' ? ' a' + a : ''; }
+  function setAge(node, a) {
+    node.hidden = !a;
+    node.textContent = a || '';
+    node.className = 'ltv-age' + ageClass(a);
+    node.title = a ? (a === 'L' ? 'Livre para todos os públicos' : 'Não recomendado para menores de ' + a + ' anos') : '';
+  }
+
+  function loadEpg() {
+    return api('/api/live/epg').then(function (r) { return r.json(); }).then(function (j) {
+      if (!j || !j.ok) return;
+      state.epg = { map: j.channels || {}, at: Date.now(), info: j };
+      paintEpg();
+      var empty = !Object.keys(state.epg.map).length;
+      clearTimeout(state.epgRetry);
+      if (empty && state.open && (state.epgTries = (state.epgTries || 0) + 1) < 6) state.epgRetry = setTimeout(loadEpg, 7000);
+    }).catch(function () { /* sem programação a TV continua igual */ });
+  }
+
+  /** Atualiza títulos, horários e barras sem refazer a lista (nem perder a rolagem). */
+  function paintEpg() {
+    if (!els.list) return;
+    Array.prototype.slice.call(els.list.querySelectorAll('.ltv-card')).forEach(function (card) {
+      var id = card.getAttribute('data-id');
+      var p = progOf(id);
+      var cap = card.querySelector('.ltv-cap');
+      var age = card.querySelector('.ltv-age');
+      if (!p) { cap.hidden = true; setAge(age, ''); return; }
+      cap.hidden = false;
+      cap.querySelector('.ltv-cap-t').textContent = p.now.t;
+      cap.querySelector('.ltv-cap-m').textContent = hhmm(p.now.st) + '–' + hhmm(p.now.en) + (p.next ? ' · A seguir: ' + p.next.t : '');
+      cap.querySelector('.ltv-prog i').style.width = pctOf(p.now) + '%';
+      setAge(age, p.now.a);
+    });
+    paintStage();
+    renderHero();
+  }
+
+  function paintStage() {
+    if (!els.nowBox) return;
+    var cur = state.cur, p = cur && progOf(cur.id);
+    els.nowBox.hidden = !p;
+    if (!p) return;
+    els.nowTitle.textContent = p.now.t + (p.now.s ? ' · ' + p.now.s : '');
+    els.nowMeta.textContent = hhmm(p.now.st) + '–' + hhmm(p.now.en);
+    setAge(els.nowAge, p.now.a);
+    els.nowDesc.textContent = p.now.d || '';
+    els.nowDesc.hidden = !p.now.d;
+    els.nowBar.style.width = pctOf(p.now) + '%';
+    els.nowNext.textContent = p.next ? 'A seguir às ' + hhmm(p.next.st) + ': ' + p.next.t : '';
+  }
+
+  function toggleSched(forceOpen) {
+    var show = forceOpen === true ? true : els.sched.hidden;
+    els.sched.hidden = !show;
+    if (!show || !state.cur) return;
+    var id = state.cur.id;
+    els.sched.textContent = '';
+    els.sched.appendChild(el('div', { class: 'ltv-srow', text: 'Carregando a programação…' }));
+    api('/api/live/epg?ch=' + encodeURIComponent(id)).then(function (r) { return r.json(); }).then(function (j) {
+      if (!state.cur || state.cur.id !== id) return;
+      els.sched.textContent = '';
+      var items = (j && j.items) || [];
+      if (!items.length) { els.sched.appendChild(el('div', { class: 'ltv-srow', text: 'Sem programação disponível para este canal agora.' })); return; }
+      var t = Date.now();
+      items.forEach(function (it) {
+        var age = el('span', { class: 'ltv-age', hidden: '' });
+        setAge(age, it.a);
+        els.sched.appendChild(el('div', { class: 'ltv-srow' + (it.st <= t && it.en > t ? ' now' : '') }, [
+          el('time', { text: hhmm(it.st) }),
+          el('div', {}, [el('b', { text: it.t }), it.s || it.d ? el('small', { text: it.s || it.d.slice(0, 140) }) : null]),
+          age
+        ]));
+      });
+      els.sched.appendChild(el('div', { class: 'ltv-srow' }, [el('span'), el('span', { class: 'ltv-credit', text: 'Horários de Brasília · guia mantido pela comunidade (pode haver atrasos ou mudanças).' }), el('span')]));
+    }).catch(function () { els.sched.textContent = ''; els.sched.appendChild(el('div', { class: 'ltv-srow', text: 'Não consegui carregar a programação.' })); });
+  }
+
+  /** Destaque: o último canal assistido (se estiver no ar), senão o primeiro canal no ar com programação, esportes primeiro. */
+  function renderHero() {
+    if (!els.hero) return;
+    var data = state.data, pick = null;
+    if (data && !state.cur) {
+      var live = data.channels.filter(function (c) { return c.status === 'ok'; });
+      var withEpg = live.filter(function (c) { return progOf(c.id); });
+      var last = load().last;
+      pick = withEpg.filter(function (c) { return c.id === last; })[0] ||
+        withEpg.filter(function (c) { return c.group === 'Esportes'; })[0] || withEpg[0] || null;
+    }
+    els.hero.hidden = !pick;
+    state.hero = pick ? pick.id : '';
+    if (!pick) return;
+    var p = progOf(pick.id);
+    els.hero.style.setProperty('--hb', gradFor(pick.id));
+    els.heroCh.textContent = pick.name;
+    els.heroTitle.textContent = p.now.t;
+    els.heroSub.textContent = p.now.s || '';
+    els.heroSub.hidden = !p.now.s;
+    els.heroDesc.textContent = p.now.d || '';
+    els.heroDesc.hidden = !p.now.d;
+    els.heroBar.style.width = pctOf(p.now) + '%';
+    els.heroTime.textContent = hhmm(p.now.st) + '–' + hhmm(p.now.en) + (p.next ? ' · depois: ' + p.next.t : '');
+  }
+
+  /* ------------------------------- fileiras ------------------------------- */
+
+  function cardEl(c, i) {
+    var card = el('button', { class: 'ltv-card' + (c.status === 'down' ? ' down' : ''), type: 'button', 'data-id': c.id, 'aria-label': c.name + ', ' + LABEL[c.status] });
+    card.style.animationDelay = Math.min(i, 8) * 0.04 + 's';
+    var poster = el('span', { class: 'ltv-poster' }, [
+      el('span', { class: 'ltv-badge ' + c.status, text: BADGE[c.status] || '' }),
+      el('span', { class: 'ltv-age', hidden: '' }),
+      el('span', { class: 'ltv-chname', text: c.name }),
+      el('span', { class: 'ltv-cap', hidden: '' }, [
+        el('span', { class: 'ltv-cap-t', style: 'display:block' }),
+        el('span', { class: 'ltv-cap-m', style: 'display:block' }),
+        el('span', { class: 'ltv-prog', style: 'display:block' }, [el('i')])
+      ])
+    ]);
+    poster.style.setProperty('--g', gradFor(c.id));
+    card.appendChild(poster);
+    if (state.cur && state.cur.id === c.id) card.setAttribute('aria-current', 'true');
+    card.addEventListener('click', function () { play(c.id); });
+    return card;
+  }
+
+  function rowEl(title, items, note) {
+    var track = el('div', { class: 'ltv-track' });
+    items.forEach(function (c, i) { track.appendChild(cardEl(c, i)); });
+    var prev = el('button', { class: 'ltv-rbtn prev', type: 'button', 'aria-label': 'Anteriores' }, [el('span', { text: '‹' })]);
+    var next = el('button', { class: 'ltv-rbtn next', type: 'button', 'aria-label': 'Próximos' }, [el('span', { text: '›' })]);
+    prev.addEventListener('click', function () { track.scrollBy({ left: -track.clientWidth * 0.85, behavior: 'smooth' }); });
+    next.addEventListener('click', function () { track.scrollBy({ left: track.clientWidth * 0.85, behavior: 'smooth' }); });
+    return el('section', { class: 'ltv-row' }, [
+      el('h3', { class: 'ltv-row-title' }, [el('span', { text: title }), note ? el('small', { text: note }) : null]),
+      el('div', { class: 'ltv-rail' }, [track, prev, next])
+    ]);
+  }
+
   function renderList() {
     var data = state.data;
+    // A lista é refeita a cada atualização do servidor: guarda a rolagem de cada fileira e só anima na primeira vez.
+    var scrolls = {};
+    Array.prototype.slice.call(els.list.querySelectorAll('.ltv-row')).forEach(function (row) {
+      var t = row.querySelector('.ltv-row-title span');
+      if (t) scrolls[t.textContent] = row.querySelector('.ltv-track').scrollLeft;
+    });
+    els.list.classList.toggle('settled', !!state.rendered);
     els.list.textContent = '';
     if (!data) { els.list.appendChild(el('p', { class: 'ltv-empty', text: 'Carregando os canais…' })); return; }
     var shown = 0;
+    var sorted = function (items) {
+      return items.map(function (c, i) { return { c: c, i: i }; })
+        .sort(function (a, b) { return (ORDER[a.c.status] - ORDER[b.c.status]) || (a.i - b.i); })
+        .map(function (x) { return x.c; });
+    };
+    // Primeira fileira: o que está no ar com programação conhecida (só no "Todos").
+    if (!state.group) {
+      var hot = data.channels.filter(function (c) { return c.status === 'ok' && progOf(c.id); }).slice(0, 12);
+      if (hot.length) els.list.appendChild(rowEl('No ar agora', hot, 'o que está passando'));
+    }
     data.groups.forEach(function (group) {
       if (state.group && state.group !== group) return;
       var items = data.channels.filter(function (c) { return c.group === group && (!state.onlyLive || c.status === 'ok'); });
       if (!items.length) return;
-      items = items.map(function (c, i) { return { c: c, i: i }; })
-        .sort(function (a, b) { return (ORDER[a.c.status] - ORDER[b.c.status]) || (a.i - b.i); })
-        .map(function (x) { return x.c; });
-      var grid = el('div', { class: 'ltv-grid' });
-      items.forEach(function (c) {
-        var btn = el('button', {
-          class: 'ltv-ch' + (c.status === 'down' ? ' down' : ''), type: 'button', 'data-id': c.id,
-          'aria-label': c.name + ', ' + LABEL[c.status] }, [
-          el('span', { class: 'ltv-dot ' + c.status, title: LABEL[c.status] }),
-          el('span', { class: 'nm', text: c.name })
-        ]);
-        if (state.cur && state.cur.id === c.id) btn.setAttribute('aria-current', 'true');
-        btn.addEventListener('click', function () { play(c.id); });
-        grid.appendChild(btn);
-        shown += 1;
-      });
-      els.list.appendChild(el('div', { class: 'ltv-group' }, [el('h3', { text: group }), grid]));
+      var okN = items.filter(function (c) { return c.status === 'ok'; }).length;
+      els.list.appendChild(rowEl(group, sorted(items), okN + ' no ar'));
+      shown += items.length;
     });
     if (!shown) {
       els.list.appendChild(el('p', { class: 'ltv-empty', text: state.onlyLive
@@ -541,6 +802,12 @@
     var live = data.channels.filter(function (c) { return c.status === 'ok'; }).length;
     var unknown = data.channels.filter(function (c) { return c.status === 'unknown'; }).length;
     els.sub.textContent = live + ' no ar de ' + data.channels.length + (unknown ? ' · testando ' + unknown + '…' : '');
+    Array.prototype.slice.call(els.list.querySelectorAll('.ltv-row')).forEach(function (row) {
+      var t = row.querySelector('.ltv-row-title span');
+      if (t && scrolls[t.textContent]) row.querySelector('.ltv-track').scrollLeft = scrolls[t.textContent];
+    });
+    if (data.channels.length) state.rendered = true;
+    paintEpg();
   }
 
   function refresh() {
@@ -596,12 +863,14 @@
     state.net = { frags: [], samples: [], bytes: 0, count: 0, tsMbps: null };
     state.cur = { id: id, name: ch ? ch.name : id, sid: '', skip: [], bad: [], attempt: 0, token: state.seq };
     els.stage.hidden = false;
+    els.sched.hidden = true;
     els.name.textContent = state.cur.name;
     els.via.textContent = '';
     els.video.hidden = false;
     els.frame.hidden = true;
     save({ last: id });
     renderList();
+    paintStage();
     els.stage.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     nlog('abrir', cur0log());
     request();
@@ -882,6 +1151,12 @@
     renderList();
     clearInterval(state.netTimer);
     state.netTimer = setInterval(sampleNet, 1000);
+    state.epgTries = 0;
+    loadEpg();
+    clearInterval(state.epgTimer);
+    state.epgTimer = setInterval(function () { if (state.open) loadEpg(); }, 60000);
+    clearInterval(state.paintTimer);
+    state.paintTimer = setInterval(function () { if (state.open) paintEpg(); }, 20000);
     refresh().then(schedulePoll);
   }
 
@@ -891,6 +1166,9 @@
     clearTimeout(state.poll);
     clearInterval(state.diagTimer);
     clearInterval(state.netTimer);
+    clearInterval(state.epgTimer);
+    clearInterval(state.paintTimer);
+    clearTimeout(state.epgRetry);
     if (els.nerdAuto) els.nerdAuto.checked = false;
     stopPlayer();
     state.cur = null;

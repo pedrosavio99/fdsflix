@@ -31,6 +31,7 @@ const visitors = require('./lib/visitors');
 const egress = require('./lib/egressMeter');
 const poolKit = require('./lib/poolKit');
 const liveTv = require('./lib/liveTv');
+const liveEpg = require('./lib/liveEpg');
 const { relayFetch, getRelayConfig } = require('./lib/relayFetch');
 const { edgeEnabled, canUseEdge, edgeReachable, edgeUrl } = require('./lib/edgeMedia');
 
@@ -1226,6 +1227,20 @@ app.get('/api/live/channels', requireApiKey, (req, res) => {
   res.json(liveTv.channelsSnapshot());
 });
 
+// Programação da TV (guia XMLTV baixado pelo servidor e guardado em memória; só JSON pequeno sai daqui).
+//   /api/live/epg           -> o que passa agora e o próximo de cada canal
+//   /api/live/epg?ch=<id>   -> grade das próximas ~24 h do canal
+app.get('/api/live/epg', requireApiKey, (req, res) => {
+  liveEpg.ensure();
+  res.setHeader('Cache-Control', 'no-store');
+  const ch = String(req.query.ch || '');
+  if (ch) {
+    if (!liveTv.CHANNELS.some((c) => c.id === ch)) return res.status(404).json({ ok: false, error: 'Canal desconhecido.' });
+    return res.json({ ...liveEpg.status(), ok: true, ch, now: Date.now(), items: liveEpg.schedule(ch) });
+  }
+  res.json({ ...liveEpg.status(), ok: true, now: Date.now(), channels: liveEpg.nowNext() });
+});
+
 // Área nerd (administrador): estado interno da TV ao vivo. ?full=1 mostra as URLs inteiras (com credenciais);
 // ?retest=<canal> força novo teste das fontes do canal antes de responder.
 app.get('/api/live/diag', requireStatsKey, async (req, res) => {
@@ -1717,6 +1732,7 @@ app.get('/hls/:id/:file', blockRenderVideo, (req, res) => {
 
 egress.startLogging();
 liveTv.startWarmer();
+liveEpg.ensure(); // já deixa a programação pronta antes do primeiro espectador
 
 const server = app.listen(PORT, () => {
   console.log('');

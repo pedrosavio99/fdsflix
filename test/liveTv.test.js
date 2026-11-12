@@ -571,3 +571,51 @@ test('reportBad direct: a mesma fonte passa a ir pela Vercel; novideo tira a fon
     assert.equal(live.reportBad('cultura', sid, 'novideo'), true);
   });
 });
+
+/* ------------------------------- programação (EPG) ---------------------- */
+
+const liveEpg = require('../lib/liveEpg');
+const XML = `<?xml version="1.0" encoding="utf-8"?>
+<tv>
+  <channel id="SPORTV"><display-name lang="pt">SPORTV</display-name></channel>
+  <channel id="RECORD - Sao Paulo"><display-name lang="pt">RECORD - Sao Paulo</display-name></channel>
+  <channel id="OUTRO"><display-name lang="pt">OUTRO</display-name></channel>
+  <programme start="20261112080000 -0300" stop="20261112090000 -0300" channel="SPORTV">
+    <title lang="pt">Bom Dia &amp; Esporte</title><sub-title lang="pt">Ep. 1</sub-title><desc lang="pt">Resumo &lt;do&gt; dia</desc>
+    <rating system="Brazil"><value>[L]</value></rating>
+  </programme>
+  <programme start="20261112090000 -0300" stop="20261112100000 -0300" channel="SPORTV"><title lang="pt">Jogo</title><rating system="Brazil"><value>[14]</value></rating></programme>
+  <programme start="20261112080000 -0300" stop="20261112100000 -0300" channel="OUTRO"><title lang="pt">Ignorado</title></programme>
+  <programme start="20261101080000 -0300" stop="20261101090000 -0300" channel="SPORTV"><title lang="pt">Velho demais</title></programme>
+</tv>`;
+
+test('epg: lê o XMLTV (fuso, entidades, classificação), ignora canal alheio e programa velho', () => {
+  liveEpg._reset();
+  const now = Date.parse('2026-11-12T11:30:00Z'); // 08:30 em Brasília
+  const filled = liveEpg.ingest(XML, 'teste', now);
+  assert.equal(filled, 1);
+  const nn = liveEpg.nowNext(now);
+  assert.equal(nn.sportv.now.t, 'Bom Dia & Esporte');
+  assert.equal(nn.sportv.now.d, 'Resumo <do> dia');
+  assert.equal(nn.sportv.now.a, 'L');
+  assert.equal(nn.sportv.now.st, Date.parse('2026-11-12T11:00:00Z'));
+  assert.equal(nn.sportv.next.t, 'Jogo');
+  assert.equal(nn.record, undefined, 'canal sem programa na janela não aparece');
+  assert.equal(liveEpg.schedule('sportv', now).length, 2);
+  assert.equal(liveEpg.schedule('sportv', now).some((p) => p.t === 'Velho demais'), false);
+  assert.equal(liveEpg.status(now).channelCount, 1);
+});
+
+test('epg: refresh usa o primeiro guia que cobre o agora e mantém o que já tinha se tudo falhar', async () => {
+  liveEpg._reset();
+  const now = Date.parse('2026-11-12T11:30:00Z');
+  const ok = async () => new Response(XML, { status: 200 });
+  await liveEpg.refresh(ok, now);
+  assert.equal(Object.keys(liveEpg.nowNext(now)).length, 1);
+  assert.ok(liveEpg.status().updatedAt > 0);
+  const broken = async () => new Response('x', { status: 503 });
+  await liveEpg.refresh(broken, now);
+  assert.equal(Object.keys(liveEpg.nowNext(now)).length, 1, 'não perde a programação por causa de uma falha');
+  assert.match(liveEpg.status().error, /HTTP 503/);
+  liveEpg._reset();
+});
