@@ -258,3 +258,86 @@ test('cota por nó (Wasmer): ADSHIELD_FALLBACK_QUOTAS=URL=GB', () => {
     resetEnv();
   }
 });
+
+test('nó de build antigo (404 no /media/prepare) sem Referer é pulado e memorizado', async () => {
+  resetEnv();
+  process.env.ADSHIELD_FALLBACK_URLS = 'https://legacy.example';
+  let calls = 0;
+  const restore = stubFetch(async () => {
+    calls += 1;
+    return new Response('{"ok":false,"error":"MEDIA_PROXY desligado neste nó"}', {
+      status: 404,
+      headers: { 'content-type': 'application/json' }
+    });
+  });
+  try {
+    const first = await fallback.prepare({ url: 'https://cdn.example/a.mp4' });
+    assert.equal(first.ok, false);
+    assert.equal(calls, 1);
+    const second = await fallback.prepare({ url: 'https://cdn.example/b.mp4' });
+    assert.equal(second.ok, false);
+    assert.equal(calls, 1, 'nó antigo não é chamado de novo quando a fonte não tem Referer');
+  } finally {
+    restore();
+    resetEnv();
+  }
+});
+
+test('nó antigo + fonte com Referer: usa o compat (/_adshield/r/<token>) sem tocar no Render', async () => {
+  resetEnv();
+  process.env.ADSHIELD_FALLBACK_URLS = 'https://legacy.example';
+  const seen = [];
+  const restore = stubFetch(async (url, init) => {
+    seen.push({ url: String(url), method: (init && init.method) || 'GET' });
+    if (String(url).includes('/_adshield/media/prepare')) return new Response('{}', { status: 404 });
+    if ((init && init.method) === 'HEAD') {
+      return new Response('', { status: 200, headers: { 'content-type': 'application/vnd.apple.mpegurl' } });
+    }
+    return new Response('', { status: 200 });
+  });
+  try {
+    const out = await fallback.prepare({
+      url: 'https://cdn.example/a.m3u8',
+      headers: { Referer: 'https://site.example/' }
+    });
+    assert.equal(out.ok, true);
+    assert.equal(out.compat, true);
+    assert.equal(out.kind, 'hls');
+    assert.match(out.url, /^https:\/\/legacy\.example\/_adshield\/r\//);
+    assert.ok(seen.some((call) => call.method === 'HEAD'), 'confirmou com HEAD antes de entregar');
+  } finally {
+    restore();
+    resetEnv();
+  }
+});
+
+test('compat exige Referer (fonte sem perfil de ponte não tenta)', async () => {
+  const out = await fallback.compatPrepare('https://legacy.example', { url: 'https://cdn.example/a.m3u8' });
+  assert.equal(out.ok, false);
+  assert.equal(out.compat, true);
+  assert.match(out.error, /Referer/i);
+});
+
+test('nó antigo não consome o limite de tentativas: o nó novo ainda é alcançado', async () => {
+  resetEnv();
+  process.env.ADSHIELD_FALLBACK_URLS = 'https://legacy.example,https://novo.example';
+  process.env.ADSHIELD_FALLBACK_MAX_NODES = '1';
+  const restore = stubFetch(async (url) => {
+    if (String(url).startsWith('https://legacy.example')) {
+      return new Response('{"ok":false,"error":"MEDIA_PROXY desligado neste nó"}', {
+        status: 404,
+        headers: { 'content-type': 'application/json' }
+      });
+    }
+    return okResponse('https://novo.example');
+  });
+  try {
+    const out = await fallback.prepare({ url: 'https://cdn.example/filme.mp4' });
+    assert.equal(out.ok, true);
+    assert.equal(out.node, 'https://novo.example');
+  } finally {
+    restore();
+    delete process.env.ADSHIELD_FALLBACK_MAX_NODES;
+    resetEnv();
+  }
+});

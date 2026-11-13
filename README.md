@@ -104,6 +104,9 @@ ADSHIELD_FALLBACK_KEY=chave-do-kit          # = MEDIA_PROXY_KEY embutida no nó
 - **Reuso da infra:** os próprios nós do pool do Vidsrc podem fazer os dois papéis — reenvie neles o
   kit novo (que liga `MEDIA_PROXY=1`) e cole as mesmas URLs em `ADSHIELD_FALLBACK_URLS`. Um nó, dois
   papéis, a mesma cota; o consumo entra nos dois medidores.
+- **Nós de build antigo** (sem `/_adshield/media`) também são aproveitados: o AdFallback usa o
+  `/_adshield/r/<token>` deles para fontes HLS/mp4 que exigem **Referer** (AnimeFire e afins). Para
+  VidLink (que recusa qualquer Referer) eles são pulados sem custo. Somar as URLs deles não atrapalha.
 - **Kit pronto no site:** Configs → **“2b · AdFallback”** → baixar `.zip`. Ele já vem com
   `MEDIA_PROXY=1` e uma chave única embutidos; o `deploy-fallback.sh` publica na Vercel e o
   `Dockerfile` serve para Wasmer/VPS. Depois é só colar a URL e a chave no Render.
