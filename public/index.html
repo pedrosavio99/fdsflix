@@ -451,6 +451,7 @@
   .cfg-row{display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.7rem}
   .cfg-devbox{margin-top:.9rem;padding:.7rem .85rem;border:1px dashed var(--warn);border-radius:10px;background:rgba(255,200,0,.05)}
   .cfg-health{margin:.5rem 0 0;padding:.55rem .7rem;border:1px solid var(--line);border-radius:8px;background:var(--panel-2);font-size:.78rem;line-height:1.5;white-space:pre-wrap;word-break:break-word;color:var(--muted)}
+  .cfg-inline{flex:1;min-width:220px;padding:.5rem .6rem;border:1px solid var(--line);border-radius:8px;background:var(--panel-2);color:inherit;font-size:.82rem}
   .cfg-devbox p{margin:0 0 .5rem;font-size:.82rem}
   .cfg-devbox .cfg-row{margin-top:.45rem}
   .cfg-note{margin-top:.9rem;padding:.6rem .8rem;border:1px solid var(--line);border-left:3px solid var(--warn);border-radius:8px;background:var(--panel-2);font-size:.8rem;color:var(--muted)}
@@ -869,6 +870,12 @@ ADSHIELD_FALLBACK_KEY=chave-do-leia-me</pre></li>
           <p id="fbUrlMsg" role="status"></p>
           <p id="fbNodes" class="cfg-fb-nodes">…</p>
           <pre id="fbVidsrc" class="cfg-health">…</pre>
+          <p>Testar um <strong>nó candidato</strong> antes de somar ao rodízio (usa uma URL real do VidLink; leva ~10 s):</p>
+          <div class="cfg-row">
+            <input id="fbProbeUrl" class="cfg-inline" type="url" placeholder="https://no-candidato.vercel.app" autocomplete="off">
+            <button id="fbProbeBtn" class="ghost" type="button">Testar nó</button>
+          </div>
+          <p id="fbProbeMsg" role="status"></p>
           <div class="cfg-row cfg-devbox">
             <div>
               <p><strong>🧪 Área dev (teste)</strong> — força <strong>todos os filmes</strong> pelo AdFallback, com a pool do Vidsrc
@@ -5271,6 +5278,27 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
           fbDevPaint(out.body);
         })
         .catch(function (err) { if (msg) msg.textContent = 'Não consegui: ' + err.message; });
+    }
+
+    // Testa um nó candidato (fora do rodízio) antes de somar a URL.
+    if ($('fbProbeBtn')) {
+      $('fbProbeBtn').addEventListener('click', function () {
+        var base = ($('fbProbeUrl').value || '').trim();
+        var msg = $('fbProbeMsg');
+        if (!/^https?:\/\//i.test(base)) { msg.textContent = 'Cole a URL do nó candidato (https://...).'; return; }
+        msg.textContent = 'Testando: extraindo uma URL de teste e pedindo ao candidato…';
+        $('fbProbeBtn').disabled = true;
+        apiFetch('/api/fallback/probe?base=' + encodeURIComponent(base))
+          .then(function (r) { return r.json().catch(function () { return {}; }).then(function (body) { return { ok: r.ok, body: body }; }); })
+          .then(function (out) {
+            var b = out.body || {};
+            msg.textContent = b.ok
+              ? '✅ ' + base.replace(/^https?:\/\//, '') + ' entregou (' + (b.kind || '?') + ' em ' + b.ms + ' ms). ' + (b.hint || '')
+              : '❌ ' + (b.error || 'falhou') + ' — ' + (b.hint || 'não vale somar essa URL.');
+          })
+          .catch(function (err) { msg.textContent = 'Não consegui testar: ' + err.message; })
+          .then(function () { $('fbProbeBtn').disabled = false; });
+      });
     }
 
     if ($('fbForceOn')) $('fbForceOn').addEventListener('click', function () { fbDevSet(15); });

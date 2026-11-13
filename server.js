@@ -957,6 +957,35 @@ app.get('/api/vidsrc/health', requireApiKey, requireStatsKey, (req, res) => {
   res.json(vidsrcHealth());
 });
 
+// Testa um nó CANDIDATO antes de somar ao rodízio: pega uma URL real do VidLink (sem baixar vídeo)
+// e pede ao candidato para preparar. Se o CDN bloqueia aquele IP, aparece aqui em ~10 s.
+app.get('/api/fallback/probe', requireApiKey, requireStatsKey, async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const base = String(req.query.base || '').trim().replace(/\/+$/, '');
+  if (!/^https?:\/\//i.test(base)) return res.status(400).json({ ok: false, error: 'Informe ?base=https://no-candidato' });
+  const id = /^\d+$/.test(String(req.query.id || '')) ? String(req.query.id) : '1368337';
+  try {
+    const sample = await getVidLinkStream({ id, type: 'movie', season: 1, episode: 1 });
+    if (!sample || !sample.url) {
+      return res.status(502).json({ ok: false, error: 'Não consegui uma URL de teste no VidLink agora (tente de novo).' });
+    }
+    const started = Date.now();
+    const result = await adshieldFallback.probe(base, { url: sample.url });
+    return res.status(result.ok ? 200 : 502).json({
+      ...result,
+      base,
+      ms: result.ms || Date.now() - started,
+      hint: result.ok
+        ? 'Pode somar esta URL em ADSHIELD_FALLBACK_URLS (e, se quiser, também em VIDSRC_PROXY_URLS).'
+        : /fetch failed|ECONN|ENOTFOUND|EAI_AGAIN|tempo esgotado|socket/i.test(String(result.error || ''))
+          ? 'O nó não respondeu (fora do ar, DNS ou lento). Confira a URL de produção.'
+          : 'O CDN recusou este IP agora. Não vale somar; tente outro provedor/região.'
+    });
+  } catch (error) {
+    return res.status(502).json({ ok: false, error: error.message });
+  }
+});
+
 // Estado do rodízio: quantos nós, quanto cada um já entregou no ciclo e se está em cooldown.
 app.get('/api/fallback/info', requireApiKey, requireStatsKey, (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
