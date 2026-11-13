@@ -28,6 +28,7 @@ const { translateVtt } = require('./lib/translate');
 const registry = require('./lib/registry');
 const usageLedger = require('./lib/usageLedger');
 const visitors = require('./lib/visitors');
+const watchStats = require('./lib/watchStats');
 const egress = require('./lib/egressMeter');
 const poolKit = require('./lib/poolKit');
 const liveTv = require('./lib/liveTv');
@@ -86,6 +87,7 @@ app.use((req, res, next) => {
 visitors.init();
 app.use((req, res, next) => {
   try { visitors.record(req); } catch (err) { /* estatística nunca derruba o site */ }
+  try { watchStats.record(req); } catch (err) { /* idem: o que o público assiste (lib/watchStats.js) */ }
   next();
 });
 
@@ -877,6 +879,16 @@ function statsKeyOK(req) {
 app.get('/api/admin/check', requireStatsKey, (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   res.json({ ok: true });
+});
+
+// Mais assistidos (filmes, séries, canais de TV) por dia, sem IP. ?days=30&limit=20
+app.get('/api/watch/top', requireStatsKey, async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  try {
+    res.json(await watchStats.top({ days: Number(req.query.days) || 30, limit: Number(req.query.limit) || 20 }));
+  } catch (err) {
+    res.status(500).json({ error: 'Falha ao montar os mais assistidos.' });
+  }
 });
 
 app.get('/api/visitors', requireStatsKey, async (req, res) => {
@@ -2121,7 +2133,7 @@ function gracefulExit() {
   shutdown();
   // Envia os acessos que ainda não subiram ao Supabase antes de sair (o teto de 3 s continua valendo).
   const closing = () => server.close(() => process.exit(0));
-  visitors.flush().then(closing, closing);
+  Promise.allSettled([visitors.flush(), watchStats.flush()]).then(closing, closing);
   setTimeout(() => process.exit(0), 3000).unref();
 }
 

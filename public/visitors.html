@@ -87,6 +87,13 @@
     <div class="panel"><h2>Provedores de internet</h2><div id="isps"></div></div>
   </section>
 
+  <section class="grid">
+    <div class="panel"><h2>🎬 Filmes mais assistidos</h2><div id="topMovie"></div></div>
+    <div class="panel"><h2>📺 Séries mais assistidas</h2><div id="topSeries"></div></div>
+    <div class="panel"><h2>📡 Canais de TV mais vistos</h2><div id="topLive"></div></div>
+  </section>
+  <div class="muted" id="topNote" style="font-size:12px;margin:-6px 0 14px"></div>
+
   <section class="panel">
     <h2>Quem acessou</h2>
     <input id="q" class="search" placeholder="Filtrar por IP, cidade, aparelho, título...">
@@ -163,6 +170,25 @@
       row.appendChild(el('b', '', String(it.visitors)));
       box.appendChild(row);
     });
+  }
+
+  // Mais assistidos (lib/watchStats.js): conta começos de sessão, sem IP. Falha aqui nunca atrapalha o resto da página.
+  function loadTop(key) {
+    fetch(API_BASE + '/api/watch/top?limit=10&days=' + encodeURIComponent($('days').value), { headers: { 'x-stats-key': key }, cache: 'no-store' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) {
+        if (!d) return;
+        [['topMovie', 'movie'], ['topSeries', 'series'], ['topLive', 'live']].forEach(function (p) {
+          bars($(p[0]), (d.top[p[1]] || []).map(function (i) { return { visitors: i.watches, t: i.title, v: i.viewers }; }),
+            function (i) { return i.t + (i.v ? ' · ' + i.v + ' aparelho' + (i.v > 1 ? 's' : '') : ''); });
+        });
+        var st = d.storage || {};
+        $('topNote').textContent = 'Números = começos de sessão (recarregar ou trocar de fonte não conta de novo). ' +
+          (st.tablesMissing ? 'A tabela watch_daily não existe no Supabase: rode supabase/watch-schema.sql; por enquanto só vale desde o último reinício. ' :
+            (st.provider === 'memória' ? 'Sem Supabase: só vale desde o último reinício. ' : '')) +
+          (st.pendingRows ? st.pendingRows + ' linha(s) aguardando envio.' : '');
+      })
+      .catch(function () { /* sem resposta: deixa como está */ });
   }
 
   function card(n, l) {
@@ -277,6 +303,7 @@
           return;
         }
         render(r.body);
+        loadTop(key);
       })
       .catch(function () { $('msg').textContent = 'Sem resposta do servidor.'; });
   }
