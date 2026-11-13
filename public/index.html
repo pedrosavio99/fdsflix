@@ -354,6 +354,27 @@
   }
   .spinner[hidden]{display:none}
   @keyframes spin{to{transform:rotate(360deg)}}
+  /* Carregando filme/série: rolo de filme girando + frases de cinema (só nas etapas de espera; erros e avisos ficam sem brincadeira) */
+  .cine{
+    width:58px;height:58px;border-radius:50%;flex:0 0 auto;
+    background:
+      radial-gradient(circle at 50% 50%,var(--brand) 0 4px,#5b5b78 5px 9px,transparent 10px),
+      radial-gradient(circle at 50% 21%,#07070d 0 6px,transparent 7px),
+      radial-gradient(circle at 76% 36%,#07070d 0 6px,transparent 7px),
+      radial-gradient(circle at 76% 64%,#07070d 0 6px,transparent 7px),
+      radial-gradient(circle at 50% 79%,#07070d 0 6px,transparent 7px),
+      radial-gradient(circle at 24% 64%,#07070d 0 6px,transparent 7px),
+      radial-gradient(circle at 24% 36%,#07070d 0 6px,transparent 7px),
+      #23233a;
+    box-shadow:inset 0 0 0 3px #4a4a68,0 6px 18px rgba(0,0,0,.4);
+    animation:spin 2.6s linear infinite;
+  }
+  .cine[hidden]{display:none}
+  .overlay .msg-sub{max-width:420px;font-size:.84rem;line-height:1.35;color:var(--muted,#aeb4bf);min-height:1.2em}
+  .overlay .msg-sub[hidden]{display:none}
+  .overlay .msg-sub.in{animation:cineIn .35s ease-out}
+  @keyframes cineIn{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
+  @media (prefers-reduced-motion:reduce){.cine{animation:none}.overlay .msg-sub.in{animation:none}}
 
   .usage{margin-top:.8rem;border:1px solid var(--border,#2a2f3a);border-radius:10px;background:rgba(0,0,0,.28);padding:.6rem .8rem;font-size:.8rem;color:var(--muted,#aeb4bf)}
   .usage-head{display:flex;justify-content:space-between;gap:.6rem;flex-wrap:wrap;color:var(--text,#e8eaed);margin-bottom:.4rem}
@@ -1057,7 +1078,9 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
                 allow="autoplay; fullscreen; encrypted-media; picture-in-picture" referrerpolicy="origin"></iframe>
               <div id="overlay" class="overlay">
                 <div id="spinner" class="spinner"></div>
+                <div id="cineAnim" class="cine" aria-hidden="true" hidden></div>
                 <div id="overlayText" class="msg">Carregando…</div>
+                <div id="overlaySub" class="msg-sub" aria-live="off" hidden></div>
                 <button id="overlayRetry" class="ghost" type="button" hidden>Tentar de novo</button>
                 <button id="overlayCancel" class="ghost" type="button" hidden>Cancelar</button>
               </div>
@@ -1997,14 +2020,72 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
   /* Player                                                            */
   /* ---------------------------------------------------------------- */
 
+  // Frases de cinema por etapa da espera. O texto principal continua sendo o status real; a frase é só companhia.
+  var CINE_PHRASES = {
+    boot: ['Ligando o projetor… 📽️', 'Limpando as lentes da tela', 'Ajeitando a poltrona 🛋️', 'Procurando um lugar bom na sala…'],
+    wake: ['Acordando o dono do cinema ☕', 'O servidor tá se espreguiçando 😴', 'Abrindo a bilheteria…', 'Quase lá, o café tá esfriando'],
+    find: ['Procurando o filme certo na prateleira 🎞️', 'Perguntando pro porteiro qual é a sala…', 'Desenrolando a fita… 🎬', 'Conferindo se não é o filme errado 😅'],
+    load: ['Estourando a pipoca 🍿', 'Apagando as luzes da sala…', 'Pedindo silêncio pra galera 🤫', 'Colocando a legenda no lugar'],
+    buffer: ['Enchendo o balde de pipoca 🍿', 'Esticando o rolo da fita…', 'Segura aí, a cena já vem 🎬', 'Dando uma ajeitada no projetor']
+  };
+  var CINE_SERIES = ['Separando o episódio certinho…', 'Preparando a maratona 🛋️', 'Pulando a abertura… só se você quiser 😏'];
+  var CINE_SLOW = 'Tá demorando mais que o normal, mas o projetor continua rodando…';
+  var cineAnim = { timer: 0, stage: '', i: 0, t0: 0 };
+
+  function cineStage(text) {
+    var t = String(text || '');
+    if (/Acordando o servidor/i.test(t)) return 'wake';
+    if (/Preparando o player/i.test(t)) return 'boot';
+    if (/Extraindo/i.test(t)) return 'find';
+    if (/buffer/i.test(t)) return 'buffer';
+    if (/Carregando stream|Convertendo/i.test(t)) return 'load';
+    return ''; // erro, reconexão, próximo episódio...: sem brincadeira
+  }
+
+  function cineSetPhrase(text) {
+    var n = $('overlaySub');
+    n.classList.remove('in');
+    void n.offsetWidth; // reinicia a animação de entrada
+    n.textContent = text;
+    n.classList.add('in');
+  }
+
+  function cineStop() {
+    clearInterval(cineAnim.timer);
+    cineAnim.timer = 0;
+    cineAnim.stage = '';
+  }
+
+  function cineTick() {
+    var stage = cineAnim.stage;
+    if (!stage) return;
+    var pool = CINE_PHRASES[stage].slice();
+    if (state.selected && state.selected.type === 'tv') pool = pool.concat(CINE_SERIES);
+    var slow = Date.now() - cineAnim.t0 > 20000;
+    cineAnim.i += 1;
+    cineSetPhrase(slow && cineAnim.i % 3 === 0 ? CINE_SLOW : pool[cineAnim.i % pool.length]);
+  }
+
   function showOverlay(text, showSpinner) {
     $('overlay').hidden = false;
     $('overlayText').textContent = text || '';
-    $('spinner').hidden = !showSpinner;
+    var stage = showSpinner ? cineStage(text) : '';
+    $('spinner').hidden = !showSpinner || Boolean(stage);
+    $('cineAnim').hidden = !stage;
+    $('overlaySub').hidden = !stage;
+    if (!stage) { cineStop(); return; }
+    if (cineAnim.stage === stage && cineAnim.timer) return; // mesma etapa: não reinicia a frase a cada chamada
+    var first = !cineAnim.timer; // etapa nova dentro da mesma espera mantém o relógio do "tá demorando"
+    cineAnim.stage = stage;
+    if (first) { cineAnim.t0 = Date.now(); cineAnim.i = Math.floor(Math.random() * 4); }
+    var pool = CINE_PHRASES[stage];
+    cineSetPhrase(pool[cineAnim.i % pool.length]);
+    if (!cineAnim.timer) cineAnim.timer = setInterval(cineTick, 3600);
   }
 
   function hideOverlay() {
     $('overlay').hidden = true;
+    cineStop();
   }
 
 
