@@ -2315,10 +2315,14 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
         : 'NENHUMA (defina VIDSRC_PROXY_URL ou VIDSRC_PROXY_URLS)'));
     diag('info', 'ADSHIELD_BASE_URL no servidor: ' + (dbg.adshield || 'não definida') +
       ' · relay Cloudflare: ' + (dbg.relay ? 'sim' : 'não'));
-    var fbPool = dbg.adshieldFallback || [];
-    diag(fbPool.length ? 'ok' : 'info',
-      'AdFallback (rodízio de filmes e séries): ' + (fbPool.length
-        ? fbPool.join(' · ') + (dbg.adshieldFallbackEnabled ? '' : ' (DESLIGADO)')
+    var fbAll = dbg.adshieldFallback || [];
+    var fbPool = dbg.adshieldFallbackOwn || fbAll;
+    var fbShared = fbAll.length - fbPool.length;
+    diag(fbAll.length ? 'ok' : 'info',
+      'AdFallback (rodízio de filmes e séries): ' + (fbAll.length
+        ? (fbPool.length ? fbPool.join(' · ') : 'só os nós do pool') +
+          (fbShared > 0 && fbPool.length ? ' (+ ' + fbShared + ' nó(s) do pool como reserva)' : '') +
+          (dbg.adshieldFallbackEnabled ? '' : ' (DESLIGADO)')
         : 'sem nós (ADSHIELD_FALLBACK_URLS não definida)'));
     diag('info', 'Provedores na ordem: ' + (dbg.providers || []).join(' → '));
     diag('step', 'Cascata (' + dbg.totalMs + ' ms no total):');
@@ -4946,13 +4950,29 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
     function fallbackTotals() {
       var info = fallbackInfoCache;
       if (!info || !info.nodes || !info.nodes.length) return null;
+      var own = fallbackOwnNodes(info);
+      if (!own.length) return null;
       var used = 0;
       var quota = 0;
-      info.nodes.forEach(function (n) {
+      own.forEach(function (n) {
         used += n.usedBytes + fallbackPending(n.base);
         quota += n.quotaBytes || (n.quotaGb * 1073741824);
       });
-      return { used: used, quota: quota, count: info.nodes.length };
+      return { used: used, quota: quota, count: own.length };
+    }
+
+    // Nós que também estão no pool do Vidsrc entram no rodízio como "compat": o consumo deles já está na barra do pool,
+    // então não são listados nem somados de novo aqui.
+    function fallbackOwnNodes(info) {
+      return ((info && info.nodes) || []).filter(function (n) { return !n.shared; });
+    }
+
+    function fallbackSharedNote(info) {
+      var shared = ((info && info.nodes) || []).filter(function (n) { return n.shared; });
+      if (!shared.length) return '';
+      var did = shared.filter(function (n) { return n.delivered; }).length;
+      return shared.length + ' nó(s) do pool também servem de reserva (consumo já contado acima)' +
+        (did ? ' · ' + did + ' já entregou(ram) filme como reserva' : '') + '.';
     }
 
     // O cantinho do cabeçalho é de outro escopo: expõe o total por aqui.
@@ -4964,7 +4984,7 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
       var title = document.createElement('p');
       title.className = 'usage-sub';
       title.textContent = 'AdFallback — entrega fora do Render' +
-        (info && info.count ? ' (' + info.count + ' nó(s) · ' + info.totalQuotaGb + ' GB de cota)' : '');
+        (info && info.ownCount ? ' (' + info.ownCount + ' nó(s) dedicado(s) · ' + info.ownQuotaGb + ' GB de cota)' : '');
       box.appendChild(title);
       if (!info) {
         var wait = document.createElement('p');
@@ -4979,7 +4999,14 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
         return;
       }
       var totals = fallbackTotals();
-      info.nodes.forEach(function (n) {
+      var sharedNote = fallbackSharedNote(info);
+      if (!fallbackOwnNodes(info).length) {
+        var only = document.createElement('p');
+        only.textContent = 'Sem nó dedicado: a reserva usa só os nós do pool.' + (sharedNote ? ' ' + sharedNote : '');
+        box.appendChild(only);
+        return;
+      }
+      fallbackOwnNodes(info).forEach(function (n) {
         var used = n.usedBytes + fallbackPending(n.base);
         var quota = n.quotaBytes || (n.quotaGb * 1073741824) || 1;
         var pct = Math.min(100, used / quota * 100);
@@ -4988,7 +5015,7 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
         var name = document.createElement('div');
         name.className = 'name';
         var a = document.createElement('span');
-        a.textContent = n.host + (n.legacy ? ' (compat)' : '');
+        a.textContent = n.host;
         var b = document.createElement('span');
         b.textContent = 'livres ' + fmtBytes(Math.max(0, quota - used)) + ' de ' + fmtBytes(quota) +
           ' (' + pct.toFixed(1) + '% usado)' + (n.cooling ? ' · falhou há pouco' : '') +
@@ -5006,6 +5033,12 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
         foot.textContent = 'Total AdFallback: ' + fmtBytes(totals.used) + ' de ' + fmtBytes(totals.quota) +
           ' · é o que sai dos nós, não do Render.';
         box.appendChild(foot);
+      }
+      if (sharedNote) {
+        var note = document.createElement('p');
+        note.className = 'usage-sub';
+        note.textContent = sharedNote;
+        box.appendChild(note);
       }
     }
 
@@ -5277,11 +5310,16 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
         el.textContent = 'Nenhum nó no rodízio ainda. Sem ADSHIELD_FALLBACK_URLS o site se comporta como antes (503 quando a pool cai).';
         return;
       }
-      el.textContent = info.count + ' nó(s) no rodízio · ' + fmtBytes(info.totalUsedBytes) + ' de ' +
-        info.totalQuotaGb + ' GB usados: ' + info.nodes.map(function (n) {
-          return n.host + ' (' + fmtBytes(n.usedBytes) + ' · ' + n.usedPct + '%' +
-            (n.cooling ? ' · falhou há pouco' : '') + ')';
-        }).join(' · ') + (info.enabled ? '' : ' — desligado agora.');
+      var own = fallbackOwnNodes(info);
+      var sharedNote = fallbackSharedNote(info);
+      var head = own.length
+        ? own.length + ' nó(s) dedicado(s) · ' + fmtBytes(info.ownUsedBytes || 0) + ' de ' + info.ownQuotaGb + ' GB usados: ' +
+          own.map(function (n) {
+            return n.host + ' (' + fmtBytes(n.usedBytes) + ' · ' + n.usedPct + '%' +
+              (n.cooling ? ' · falhou há pouco' : '') + ')';
+          }).join(' · ')
+        : 'Nenhum nó dedicado (ADSHIELD_FALLBACK_URLS): a reserva usa só os nós do pool.';
+      el.textContent = head + (info.enabled ? '' : ' — desligado agora.') + (sharedNote ? ' · ' + sharedNote : '');
     }
 
     // Saúde da fonte principal: disjuntor e falhas por nó (o aviso que aparece ANTES de quebrar).

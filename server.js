@@ -989,10 +989,22 @@ app.get('/api/fallback/probe', requireApiKey, requireStatsKey, async (req, res) 
 // Estado do rodízio: quantos nós, quanto cada um já entregou no ciclo e se está em cooldown.
 app.get('/api/fallback/info', requireApiKey, requireStatsKey, (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
+  // Nós que também estão no pool do Vidsrc entram no rodízio como "compat", mas o consumo deles já aparece na
+  // barra do pool: marcamos `shared` para o painel não mostrar o mesmo nó (e a mesma banda) duas vezes.
+  const snap = adshieldFallback.snapshot();
+  const pool = new Set(usageLedger.getPool());
+  const nodes = snap.nodes.map((n) => ({ ...n, shared: pool.has(n.base) }));
+  const own = nodes.filter((n) => !n.shared);
+  const ownUsedBytes = own.reduce((sum, n) => sum + n.usedBytes, 0);
   res.json({
     kit: poolKit.kitAvailable(),
     keyConfigured: Boolean(String(process.env.ADSHIELD_FALLBACK_KEY || '').trim()),
-    ...adshieldFallback.snapshot()
+    ...snap,
+    nodes,
+    sharedCount: nodes.length - own.length,
+    ownCount: own.length,
+    ownUsedBytes,
+    ownQuotaGb: own.reduce((sum, n) => sum + n.quotaGb, 0)
   });
 });
 
@@ -1029,6 +1041,10 @@ app.post('/api/dev/adfallback', requireApiKey, requireStatsKey, (req, res) => {
 /* ------------------------------------------------------------------ */
 
 /** Estado do servidor para o painel de diagnóstico (sem segredos: só hosts e flags). */
+function hostOnly(value) {
+  try { return new URL(value).host; } catch (err) { return String(value || ''); }
+}
+
 function buildStreamDebug(trace, startedAt) {
   const hostOf = (value) => {
     try { return value ? new URL(value).origin : null; } catch (err) { return String(value || '') || null; }
@@ -1039,6 +1055,7 @@ function buildStreamDebug(trace, startedAt) {
     vidsrcPool: usageLedger.rankedPool(),
     adshield: hostOf(process.env.ADSHIELD_BASE_URL),
     adshieldFallback: adshieldFallback.hosts(),
+    adshieldFallbackOwn: adshieldFallback.hosts().filter((h) => !usageLedger.getPool().some((b) => hostOnly(b) === h)),
     adshieldFallbackEnabled: adshieldFallback.isEnabled(),
     vidsrcBreaker: breakerState(),
     devForce: devForceSnapshot(),
@@ -1625,7 +1642,13 @@ app.get('/api/live/stream', requireApiKey, async (req, res) => {
 
   try {
     const pool = usageLedger.rankedPool().filter((p) => !p.exhausted).map((p) => p.base);
-    const fallbackPool = pool.length ? pool : usageLedger.getPool();
+    // Os nós do AdFallback (ADSHIELD_FALLBACK_URLS, que já estão configuradas) também entregam a TV: entram DEPOIS do pool,
+    // sem env nova e sem redeploy, porque o kit deles já traz /live e o AdShield. Só os que ainda têm cota.
+    const inPool = new Set(usageLedger.getPool());
+    const extra = adshieldFallback.isEnabled()
+      ? adshieldFallback.nodes().filter((b) => !inPool.has(b) && adshieldFallback.usedBytes(b) < adshieldFallback.quotaGb(b) * 1073741824)
+      : [];
+    const fallbackPool = [...(pool.length ? pool : usageLedger.getPool()), ...extra];
     let tried = 0;
     let lastReason = '';
     const skipped = []; // fontes que tocam, mas que não têm como chegar ao navegador sem gastar o Render
@@ -1634,7 +1657,7 @@ app.get('/api/live/stream', requireApiKey, async (req, res) => {
       tried += found.tried;
       // Se já havia fonte boa e foi a ENTREGA que falhou, o motivo útil é o da entrega, não "nenhuma fonte respondeu".
       if (!found.ok) { if (!skipped.length) lastReason = found.error; break; }
-      const plan = await liveTv.planDelivery(found.source, { pool: fallbackPool, verify: true, origin: publicOrigin(req) });
+      const plan = await liveTv.planDelivery(found.source, { pool: fallbackPool, verify: true, spread: true, origin: publicOrigin(req) });
       if (plan.mode === 'none') {
         // Esta fonte não tem como chegar ao navegador sem gastar o Render; tenta a próxima.
         lastReason = plan.reason;

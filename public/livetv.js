@@ -227,6 +227,35 @@
     '  .ltv-modal .ltv-msg{padding:.5rem;font-size:.78rem}',
     '  .ltv-modal .ltv-msg .spinner{transform:scale(.55);margin:-.7rem 0}',
     '}',
+    '/* ---- sintonizando: TV animada enquanto os canais são testados ---- */',
+    '.ltv-tv{--s:1;--r:-24deg;position:relative;width:calc(64px*var(--s));height:calc(50px*var(--s));flex:0 0 auto;margin-top:calc(16px*var(--s))}',
+    '.ltv-tv::before,.ltv-tv::after{content:"";position:absolute;bottom:calc(100% - 2px);width:calc(2px*var(--s));height:calc(17px*var(--s));background:#c9c9d6;border-radius:2px;transform-origin:50% 100%;',
+    '  transform:rotate(var(--r));animation:ltvAnt 1.7s ease-in-out infinite}',
+    '.ltv-tv::before{left:36%}.ltv-tv::after{left:60%;--r:22deg;animation-delay:.6s;animation-direction:reverse}',
+    '@keyframes ltvAnt{50%{transform:rotate(calc(var(--r)*.3))}}',
+    '.ltv-tv i{position:absolute;inset:0;border-radius:calc(10px*var(--s));background:#2a2a3a;box-shadow:inset 0 0 0 calc(3px*var(--s)) #41415a,0 6px 18px rgba(0,0,0,.35)}',
+    '.ltv-tv i::after{content:"";position:absolute;right:7%;top:20%;width:9%;aspect-ratio:1;border-radius:50%;background:#c9c9d6;box-shadow:0 calc(11px*var(--s)) 0 #8a8aa0}',
+    '.ltv-tv b{position:absolute;left:8%;top:11%;right:24%;bottom:11%;border-radius:calc(5px*var(--s));overflow:hidden;animation:ltvBars .9s steps(2,end) infinite;',
+    '  background:linear-gradient(90deg,#f2f2f2 0 14.3%,#ffd54a 0 28.6%,#35d0d0 0 42.9%,#46d36b 0 57.2%,#e04ad0 0 71.5%,#e5091a 0 85.8%,#3a5bd9 0)}',
+    '.ltv-tv b::after{content:"";position:absolute;inset:-100% 0 0;background:repeating-linear-gradient(0deg,rgba(0,0,0,.2) 0 2px,transparent 2px 4px);animation:ltvRoll 1.1s linear infinite}',
+    '@keyframes ltvBars{50%{filter:saturate(.45) brightness(1.3)}}',
+    '@keyframes ltvRoll{to{transform:translateY(50%)}}',
+    '.ltv-scan{display:flex;align-items:center;gap:1.1rem;margin:.2rem var(--gutter) 1rem;padding:.7rem 1.1rem .7rem .9rem;border-radius:var(--radius);',
+    '  background:var(--panel-2);border:1px solid var(--line);position:relative;z-index:3}',
+    '.ltv-scan[hidden]{display:none}',
+    '.ltv-scan-body{flex:1;min-width:0;display:flex;flex-direction:column;gap:.35rem}',
+    '.ltv-scan-t,.ltv-msg-sub{font-weight:800;line-height:1.3;min-height:1.3em}',
+    '.ltv-scan-t.in,.ltv-msg-sub.in{animation:ltvIn .5s var(--ease) both}',
+    '@keyframes ltvIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}',
+    '.ltv-scan-s{color:var(--muted);font-size:.82rem}',
+    '.ltv-scan .ltv-prog{background:rgba(255,255,255,.14)}',
+    '.ltv-scan.done .ltv-tv b,.ltv-scan.done .ltv-tv b::after,.ltv-scan.done .ltv-tv::before,.ltv-scan.done .ltv-tv::after{animation:none}',
+    '.ltv-scan.done .ltv-tv b{filter:none}',
+    '.ltv-msg .ltv-tv{--s:.75}.ltv-msg .ltv-tv[hidden],.ltv-msg .spinner[hidden],.ltv-msg-sub[hidden]{display:none}',
+    '.ltv-msg-sub{color:var(--muted);font-size:.85rem;font-weight:600;min-height:0}',
+    '.ltv-skelrow .row-title span{display:block;width:9rem;height:1.1rem;border-radius:6px;background:linear-gradient(100deg,#1b1b27 30%,#262636 50%,#1b1b27 70%);background-size:220% 100%;animation:shimmerPoster 1.3s linear infinite}',
+    '@media (max-width:640px){.ltv-scan{gap:.8rem;padding:.6rem .8rem .6rem .7rem}.ltv-tv{--s:.8}.ltv-scan-t{font-size:.92rem}}',
+    '@media (prefers-reduced-motion:reduce){.ltv-tv::before,.ltv-tv::after,.ltv-tv b,.ltv-tv b::after,.ltv-skelrow .row-title span{animation:none}.ltv-scan-t.in,.ltv-msg-sub.in{animation:none}}',
     '.ltv-modal .modal-dialog{overscroll-behavior:contain}'
   ].join('\n');
 
@@ -343,9 +372,11 @@
     els.tap.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg><span>Toque para assistir</span>';
     els.unmute = el('button', { class: 'ltv-unmute', type: 'button', hidden: '', text: '🔇 Ativar o som' });
     els.msgText = el('div', { text: '' });
-    els.spin = el('div', { class: 'spinner' });
+    els.spin = el('div', { class: 'spinner', hidden: '' });
+    els.mtv = tvEl(); els.mtv.hidden = true;
+    els.msgSub = el('div', { class: 'ltv-msg-sub', hidden: '', 'aria-hidden': 'true', text: '' });
     els.retry = el('button', { class: 'ghost', type: 'button', hidden: '', text: 'Tentar outra fonte' });
-    els.msg = el('div', { class: 'ltv-msg', role: 'status', 'aria-live': 'polite', hidden: '' }, [els.spin, els.msgText, els.retry]);
+    els.msg = el('div', { class: 'ltv-msg', role: 'status', 'aria-live': 'polite', hidden: '' }, [els.mtv, els.spin, els.msgText, els.msgSub, els.retry]);
 
     els.name = el('h2', { text: '' });
     els.via = el('div', { class: 'ltv-meta', text: '' });
@@ -389,7 +420,14 @@
     els.mBackdrop = el('div', { class: 'modal-backdrop' });
     els.modal = el('section', { class: 'modal ltv-modal', hidden: '', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Canal ao vivo' }, [els.mBackdrop, els.mDialog]);
 
-    els.root.appendChild(el('div', { class: 'ltv-wrap' }, [els.hero, els.chips, els.list, els.note]));
+    els.scanT = el('div', { class: 'ltv-scan-t', text: '' });
+    els.scanS = el('div', { class: 'ltv-scan-s', text: '' });
+    els.scanBar = el('i');
+    els.scan = el('div', { class: 'ltv-scan', hidden: '', role: 'status', 'aria-label': 'Procurando os canais que estão no ar' }, [
+      tvEl(),
+      el('div', { class: 'ltv-scan-body' }, [els.scanT, els.scanS, el('div', { class: 'ltv-prog' }, [els.scanBar])])
+    ]);
+    els.root.appendChild(el('div', { class: 'ltv-wrap' }, [els.hero, els.chips, els.scan, els.list, els.note]));
     els.root.appendChild(els.close);
     document.body.appendChild(els.root);
     document.body.appendChild(els.modal);
@@ -716,7 +754,7 @@
   /* ------------------------------ lista de canais --------------------------- */
 
   var ORDER = { ok: 0, unknown: 1, raw: 2, down: 3 };
-  var LABEL = { ok: 'no ar', unknown: 'testando', raw: 'só TS cru (sem suporte)', down: 'fora do ar agora' };
+  var LABEL = { ok: 'no ar', unknown: 'sintonizando', raw: 'só TS cru (sem suporte)', down: 'fora do ar agora' };
 
   function renderChips() {
     var data = state.data;
@@ -729,7 +767,7 @@
     });
   }
 
-  var BADGE = { ok: 'Ao vivo', unknown: 'Testando…', raw: 'TS cru', down: 'Fora do ar' };
+  var BADGE = { ok: 'Ao vivo', unknown: 'Sintonizando…', raw: 'TS cru', down: 'Fora do ar' };
 
   /* --------------------------- programação (EPG) --------------------------- */
 
@@ -938,6 +976,15 @@
     ]);
   }
 
+  /** Fileiras de cartões "fantasma" (o mesmo brilho dos filmes) enquanto a lista não chega. */
+  function skeletonRows() {
+    return [0, 1].map(function () {
+      var track = el('div', { class: 'track' });
+      for (var i = 0; i < 6; i += 1) track.appendChild(el('div', { class: 'card skel', 'aria-hidden': 'true' }, [el('div', { class: 'poster-wrap' }), el('div', { class: 'info' })]));
+      return el('section', { class: 'row ltv-skelrow', 'aria-hidden': 'true' }, [el('h3', { class: 'row-title' }, [el('span')]), el('div', { class: 'rail' }, [track])]);
+    });
+  }
+
   function renderList() {
     var data = state.data;
     // A lista é refeita a cada atualização do servidor: guarda a rolagem de cada fileira e só anima na primeira vez.
@@ -948,7 +995,7 @@
     });
     els.list.classList.toggle('settled', !!state.rendered);
     els.list.textContent = '';
-    if (!data) { els.list.appendChild(el('p', { class: 'ltv-empty', text: 'Carregando os canais…' })); return; }
+    if (!data) { skeletonRows().forEach(function (row) { els.list.appendChild(row); }); paintScan(null); return; }
     var shown = 0;
     var sorted = function (items) {
       return items.map(function (c, i) { return { c: c, i: i }; })
@@ -975,7 +1022,8 @@
     }
     var live = data.channels.filter(function (c) { return c.status === 'ok'; }).length;
     var unknown = data.channels.filter(function (c) { return c.status === 'unknown'; }).length;
-    els.sub.textContent = live + ' no ar de ' + data.channels.length + (unknown ? ' · testando ' + unknown + '…' : '');
+    els.sub.textContent = live + ' no ar de ' + data.channels.length;
+    paintScan(data);
     Array.prototype.slice.call(els.list.querySelectorAll('.row')).forEach(function (row) {
       var t = row.querySelector('.row-title span');
       if (t && scrolls[t.textContent]) row.querySelector('.track').scrollLeft = scrolls[t.textContent];
@@ -1007,11 +1055,106 @@
 
   /* -------------------------------- reprodução ------------------------------ */
 
+  /* ------------------ sintonizando: TV animada e frases simpáticas ------------------ */
+
+  var SCAN_PHRASES = [
+    'Ajeitando a antena… 📡', 'Dando um tapinha na TV pra pegar o sinal', 'Esquentando a pipoca 🍿',
+    'Procurando o controle remoto no sofá…', 'Acordando os canais, um por um 😴', 'Perguntando pro vizinho se tá passando',
+    'Trocando a pilha do controle 🔋', 'Chamando o técnico da TV… ele já vem', 'Sintonizando bem devagarinho…',
+    'Soprando o sinal pra ele pegar 😅'
+  ];
+  var MSG_PHRASES = ['Ajeitando a antena… 📡', 'Dando um tapinha no sinal 👋', 'Procurando o melhor sinal…', 'Já já pega, segura aí 🤞', 'Esquentando a transmissão…'];
+  var scan = { timer: 0, i: 0, done: 0 };
+  var msgAnim = { timer: 0, i: 0, t0: 0, last: '' };
+
+  function tvEl(scale) {
+    var t = el('div', { class: 'ltv-tv', 'aria-hidden': 'true' }, [el('i'), el('b')]);
+    if (scale) t.style.setProperty('--s', String(scale));
+    return t;
+  }
+
+  function setPhrase(node, text) {
+    node.classList.remove('in');
+    void node.offsetWidth; // reinicia a animação de entrada
+    node.textContent = text;
+    node.classList.add('in');
+  }
+
+  function stopScan() { clearInterval(scan.timer); scan.timer = 0; }
+
+  function startScan() {
+    if (scan.timer) return;
+    scan.i = Math.floor(Math.random() * SCAN_PHRASES.length);
+    setPhrase(els.scanT, SCAN_PHRASES[scan.i]);
+    scan.timer = setInterval(function () {
+      if (!els.scan || els.scan.hidden || !state.open) { stopScan(); return; }
+      scan.i = (scan.i + 1) % SCAN_PHRASES.length;
+      setPhrase(els.scanT, SCAN_PHRASES[scan.i]);
+    }, 2800);
+  }
+
+  function hideScan() {
+    stopScan();
+    clearTimeout(scan.done);
+    if (els.scan) { els.scan.hidden = true; els.scan.classList.remove('done'); }
+    state.scanShown = false;
+  }
+
+  /** Faixa "sintonizando": aparece enquanto há canal sendo testado e some com um "tudo pronto" curtinho. */
+  function paintScan(data) {
+    if (!els.scan) return;
+    var total = data ? data.channels.length : 0;
+    var unknown = data ? data.channels.filter(function (c) { return c.status === 'unknown'; }).length : 0;
+    var live = data ? data.channels.filter(function (c) { return c.status === 'ok'; }).length : 0;
+    if (!data || (total && unknown)) {
+      clearTimeout(scan.done);
+      els.scan.classList.remove('done');
+      els.scan.hidden = false;
+      state.scanShown = true;
+      startScan();
+      var tested = total - unknown;
+      els.scanS.textContent = data ? tested + ' de ' + total + ' canais testados · ' + live + ' já no ar' : 'Ligando a TV…';
+      els.scanBar.style.width = data ? Math.max(6, Math.round(tested / total * 100)) + '%' : '6%';
+    } else if (state.scanShown && !els.scan.classList.contains('done')) {
+      stopScan();
+      els.scan.classList.add('done');
+      els.scan.hidden = false;
+      setPhrase(els.scanT, live ? 'Tudo pronto! Bom divertimento 🎉' : 'Terminei de procurar 🤷');
+      els.scanS.textContent = live + ' de ' + total + ' canais no ar';
+      els.scanBar.style.width = '100%';
+      scan.done = setTimeout(hideScan, 3000);
+    }
+  }
+
+  function stopMsgAnim() { clearInterval(msgAnim.timer); msgAnim.timer = 0; }
+
+  function paintMsgSub() {
+    var slow = Date.now() - msgAnim.t0 > 12000;
+    setPhrase(els.msgSub, slow ? 'Tá demorando mais que o normal, mas continuo tentando…' : MSG_PHRASES[msgAnim.i % MSG_PHRASES.length]);
+  }
+
+  function startMsgAnim(text) {
+    if (text !== msgAnim.last) { msgAnim.last = text; msgAnim.t0 = Date.now(); }
+    if (msgAnim.timer) return;
+    msgAnim.t0 = Date.now();
+    msgAnim.i = Math.floor(Math.random() * MSG_PHRASES.length);
+    paintMsgSub();
+    msgAnim.timer = setInterval(function () {
+      if (els.msg.hidden || !state.cur) { stopMsgAnim(); return; }
+      msgAnim.i += 1;
+      paintMsgSub();
+    }, 2600);
+  }
+
   function setMsg(text, kind, retry) {
-    if (!text) { els.msg.hidden = true; return; }
+    if (!text) { els.msg.hidden = true; stopMsgAnim(); return; }
     els.msg.hidden = false;
     els.msgText.textContent = text;
-    els.spin.hidden = kind !== 'work';
+    els.spin.hidden = true;
+    var working = kind === 'work';
+    els.mtv.hidden = !working;
+    els.msgSub.hidden = !working;
+    if (working) startMsgAnim(text); else stopMsgAnim();
     els.retry.hidden = !retry;
   }
 
@@ -1386,6 +1529,8 @@
     clearInterval(state.epgTimer);
     clearInterval(state.paintTimer);
     clearTimeout(state.epgRetry);
+    hideScan();
+    stopMsgAnim();
     if (els.nerdAuto) els.nerdAuto.checked = false;
     stopPlayer();
     state.cur = null;

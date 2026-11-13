@@ -290,6 +290,37 @@ test('planDelivery: sem Vercel pronta devolve "none" com motivo (nunca cai no Re
   assert.match(entry.url, /^https:\/\/render\.example\/api\/live\/player\?p=.+&k=hls$/);
 });
 
+test('spreadPool: reveza os primeiros nós saudáveis e manda os em cooldown para o fim', () => {
+  const pool = ['https://a.wasmer.app', 'https://b.wasmer.app', 'https://c.vercel.app', 'https://d.vercel.app', 'https://e.vercel.app'];
+  assert.deepEqual(live.spreadPool(pool, { turn: 0 }), pool);
+  assert.deepEqual(live.spreadPool(pool, { turn: 1 }).slice(0, 4), [pool[1], pool[2], pool[3], pool[0]]);
+  assert.equal(live.spreadPool(pool, { turn: 5 })[4], pool[4]); // do quinto em diante a ordem por cota não muda
+  assert.equal(live.familyOf('https://node-base-x.wasmer.app'), 'wasmer.app');
+});
+
+test('planDelivery (spread): origem que recusa pela mesma rede 2x pula o resto dela e segue para outra rede', async () => {
+  const pool = ['https://a.wasmer.app', 'https://b.wasmer.app', 'https://c.wasmer.app', 'https://d.vercel.app'];
+  const seen = [];
+  const fetchImpl = async (url) => {
+    const host = new URL(url).host;
+    if (url.includes('cap=1')) return new Response('{}', { status: 404 }); // nós antigos: só AdShield
+    seen.push(host);
+    if (host.endsWith('.wasmer.app')) return new Response('forbidden', { status: 403, headers: { 'x-adshield-version': '1' } });
+    return new Response('#EXTM3U\n', { status: 200 });
+  };
+  const source = { url: 'http://x.example/a.m3u8', https: false, cors: false, kind: 'hls' };
+  const plan = await live.planDelivery(source, { pool, fetchImpl, verify: true, spread: true, turn: 0, origin: 'https://render.example' });
+  assert.equal(plan.mode, 'shield');
+  assert.match(plan.url, /^https:\/\/d\.vercel\.app\/_adshield\/r\//);
+  assert.equal(seen.filter((h) => h === 'c.wasmer.app').length, 0); // a terceira da mesma rede nem foi testada
+  // Sem spread o comportamento antigo continua: testa uma a uma, na ordem da pool.
+  live._reset();
+  seen.length = 0;
+  const old = await live.planDelivery(source, { pool, fetchImpl, verify: true, origin: 'https://render.example' });
+  assert.equal(old.mode, 'shield');
+  assert.equal(seen.filter((h) => h === 'c.wasmer.app').length, 1);
+});
+
 test('planDelivery: página de player vai pelo AdShield com token que o adproxy aceita', async () => {
   const url = 'https://player.example/live/ch.php?canal=COMBATE';
   const plan = await live.planDelivery({ url, kind: 'page' }, { pool: ['https://v1.vercel.app'] });
