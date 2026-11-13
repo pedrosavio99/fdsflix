@@ -1017,6 +1017,7 @@
 
   function stopPlayer() {
     clearTimeout(state.watch);
+    if (!els.video) return; // a TV ainda não foi aberta (o pagehide chama isto em qualquer recarga)
     els.video.onerror = null;
     els.tap.hidden = true; els.unmute.hidden = true; els.video.muted = false;
     if (state.hls) { try { state.hls.destroy(); } catch (e) { /* ignora */ } state.hls = null; }

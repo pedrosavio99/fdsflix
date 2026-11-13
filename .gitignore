@@ -14,3 +14,9 @@ modulo-playlist-main/
 
 # TV ao vivo: texto puro das fontes (só o .packed.js vai para o Git; ver scripts/live-pack.js)
 lib/live-sources.plain.json
+
+# contador do AdFallback (gerado em runtime)
+.fallback-usage.json
+
+# kits gerados para download (o site gera na hora; não versionar)
+fdsflix-*-kit.zip

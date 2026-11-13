@@ -208,6 +208,31 @@ Dá para ver o JSON cru em `GET /api/usage`.
 | Barra diverge da Vercel | Estimativa | Calibre (acima) |
 | Uma Vercel nunca é escolhida | Está ≥ 98 % ou falhando | Veja o trace no painel; rode `pool:check` |
 | Todas esgotadas (≥ 98 %) | Cota do mês acabou | O fdsFlix ainda tenta as esgotadas por último (a estimativa pode estar alta: calibre). Se a Vercel realmente recusar/pausar o projeto, a requisição falha e a cascata segue para o VidLink. Espere a renovação ou adicione contas |
+| Site dá 503 com a pool toda fora por ~1 min | Sem fonte entregável fora do Render (VidLink Pro é pulado) | Publique o **AdShield de fallback** (abaixo): o filme toca por um nó separado em vez de dar 503 |
+
+## Quando a pool inteira cai
+
+A pool é o único caminho de vídeo que não gasta a banda do Render. Se **todos** os nós falham ao
+mesmo tempo (Vidsrc instável, 429/403 nos IPs das VMs, deploy no meio), a cascata não tem plano B:
+o VidLink Pro e as outras fontes acham o filme, mas entregá-las passaria os bytes pelo Render, que
+é bloqueado de propósito.
+
+Para esse caso existe um **segundo AdShield** (nó separado, `MEDIA_PROXY=1`) que entrega a mídia
+dessas outras fontes. Ele não entra no rodízio e só é chamado quando todo o resto falhou:
+
+```env
+# Render
+ADSHIELD_FALLBACK_URLS=https://adfallback-a.vercel.app,https://adfallback-b.wasmer.app
+ADSHIELD_FALLBACK_KEY=a-mesma-MEDIA_PROXY_KEY-do-nó
+```
+
+É um **rodízio** próprio: cada nó tem a própria cota (`ADSHIELD_FALLBACK_QUOTA_GB`, padrão 100;
+`ADSHIELD_FALLBACK_QUOTAS=URL=GB` para Wasmer) e o filme inteiro sai de um nó só. O kit `.zip`
+sai pronto no painel Configs → “2b · AdFallback”. Passo a passo e teste:
+[adproxy/VERCEL.md](../adproxy/VERCEL.md#segundo-projeto-adfallback-rodízio-de-nós).
+Ele não substitui a pool (não extrai Vidsrc e não soma cota do pool): é a rede de segurança para
+o site não cair junto com ela.
+
 
 ## Voltar ao que era
 

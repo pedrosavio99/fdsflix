@@ -6,7 +6,7 @@ const { after, before, test } = require('node:test');
 
 const { createApp } = require('../lib/app');
 const { loadConfig } = require('../lib/config');
-const { configureSigning, proxiedPath, rewriteHls } = require('../lib/vidsrc');
+const { configureSigning, proxiedPath, rewriteHls, parseJsonAssignment, findApiToken } = require('../lib/vidsrc');
 
 let server;
 let base;
@@ -78,4 +78,24 @@ test('sem nenhuma variável de ambiente o proxy já sobe configurado (valores em
   const over = loadConfig({ PROXY_SECRET: 'x'.repeat(40), TARGET_ORIGIN: 'https://example.com' });
   assert.equal(over.secret, 'x'.repeat(40));
   assert.equal(over.targetOrigin, 'https://example.com');
+});
+
+
+test('parseJsonAssignment aceita window./const/self. e null quando o JSON está quebrado', () => {
+  const body = 'window.CONFIG = {"apiToken":"abc123","x":1};';
+  assert.equal(parseJsonAssignment(body, 'CONFIG').apiToken, 'abc123');
+  assert.equal(parseJsonAssignment('const CFG = {"playerUrl":"/p"};', 'CFG').playerUrl, '/p');
+  assert.equal(parseJsonAssignment('self.CONFIG = {"a":1};', 'CONFIG').a, 1);
+  assert.equal(parseJsonAssignment('window.CONFIG = {quebrado;', 'CONFIG'), null);
+});
+
+test('findApiToken acha o token mesmo se o objeto CONFIG mudar de nome', () => {
+  assert.equal(findApiToken('foo({"apiToken":"AbC-123_xyz"});'), 'AbC-123_xyz');
+  assert.equal(findApiToken('x={"api_token":"AbC-123_xyz"}'), 'AbC-123_xyz');
+  assert.equal(findApiToken('nada aqui'), null);
+});
+
+test('selftest com id inválido responde 400 (rota existe em qualquer build novo)', async () => {
+  const res = await fetch(`${base}/vidsrc/selftest?tmdb=abc`);
+  assert.equal(res.status, 400);
 });

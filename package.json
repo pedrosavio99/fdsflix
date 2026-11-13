@@ -9,7 +9,8 @@
     "adproxy": "npm --prefix adproxy start",
     "test:adproxy": "npm --prefix adproxy test",
     "pool:check": "node scripts/pool-check.js",
-    "test": "node --test test/"
+    "test": "node --test test/*.test.js",
+    "fallback:check": "node scripts/adshield-check.js"
   },
   "engines": {
     "node": ">=18"

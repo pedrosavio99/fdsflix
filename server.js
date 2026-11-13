@@ -34,6 +34,7 @@ const liveTv = require('./lib/liveTv');
 const liveEpg = require('./lib/liveEpg');
 const { relayFetch, getRelayConfig } = require('./lib/relayFetch');
 const { edgeEnabled, canUseEdge, edgeReachable, edgeUrl } = require('./lib/edgeMedia');
+const adshieldFallback = require('./lib/adshieldFallback');
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
@@ -784,12 +785,16 @@ app.get('/api/usage', requireStatsKey, (req, res) => {
 // O navegador informa quantos bytes/segundos de vídeo recebeu de cada Vercel.
 app.post('/api/usage', (req, res) => {
   const body = req.body && typeof req.body === 'object' ? req.body : {};
-  const items = Array.isArray(body.items) ? body.items.slice(0, 8) : [];
+  const items = Array.isArray(body.items) ? body.items.slice(0, 12) : [];
   let accepted = 0;
+  let fallbackAccepted = 0;
   for (const item of items) {
-    if (item && usageLedger.record(item.base, item.bytes, item.seconds).ok) accepted += 1;
+    if (!item) continue;
+    // Primeiro tenta a pool do Vidsrc; se não é um nó dela, o consumo é do AdFallback (mesmo medidor).
+    if (usageLedger.record(item.base, item.bytes, item.seconds).ok) accepted += 1;
+    else if (adshieldFallback.record(item.base, item.bytes, item.seconds).ok) fallbackAccepted += 1;
   }
-  res.json({ ok: true, accepted });
+  res.json({ ok: true, accepted, fallbackAccepted });
 });
 
 // Histórico e médias (últimos N dias, só o medido). ?format=csv devolve planilha.
@@ -855,6 +860,13 @@ function requireStatsKey(req, res, next) {
   return res.status(401).json({ error: 'Área restrita: senha de administrador inválida.' });
 }
 
+/** Mesma senha do requireStatsKey, mas sem responder: usada para liberar o teste dentro de outra rota. */
+function statsKeyOK(req) {
+  const key = String(process.env.STATS_KEY || BUILTIN_STATS_KEY).trim();
+  const provided = String(req.get('x-stats-key') || req.get('x-api-key') || req.query.key || '');
+  return Boolean(provided) && sameSecret(provided, key);
+}
+
 // O site chama isto ao digitar a senha, só para saber se ela vale.
 app.get('/api/admin/check', requireStatsKey, (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
@@ -913,6 +925,67 @@ app.get('/api/pool/info', requireApiKey, requireStatsKey, (req, res) => {
 });
 
 /* ------------------------------------------------------------------ */
+/* AdFallback (rodízio de nós que entregam a mídia fora do Render)      */
+/* ------------------------------------------------------------------ */
+
+// .zip do nó do AdFallback: mesmo adproxy, com MEDIA_PROXY=1 e a chave de mídia embutidos.
+// A chave sai no cabeçalho X-AdFallback-Key para o painel já mostrar a linha do Render.
+app.get('/api/fallback/kit', requireApiKey, requireStatsKey, (req, res) => {
+  if (!poolKit.kitAvailable()) {
+    return res.status(404).json({ error: 'A pasta adproxy/ não está neste servidor.' });
+  }
+  try {
+    const kit = poolKit.buildKit({ kind: 'fallback' });
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="${kit.filename}"`);
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Content-Length', kit.zip.length);
+    if (kit.mediaKey) res.setHeader('X-AdFallback-Key', kit.mediaKey);
+    res.end(kit.zip);
+  } catch (err) {
+    res.status(500).json({ error: `Não consegui montar o kit do AdFallback: ${err.message}` });
+  }
+});
+
+// Estado do rodízio: quantos nós, quanto cada um já entregou no ciclo e se está em cooldown.
+app.get('/api/fallback/info', requireApiKey, requireStatsKey, (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({
+    kit: poolKit.kitAvailable(),
+    keyConfigured: Boolean(String(process.env.ADSHIELD_FALLBACK_KEY || '').trim()),
+    ...adshieldFallback.snapshot()
+  });
+});
+
+// Área dev (senha de administrador): força os filmes pelo AdFallback por alguns minutos.
+// GET devolve o estado; POST {minutes: 15} liga e {minutes: 0} desliga.
+app.get('/api/dev/adfallback', requireApiKey, requireStatsKey, (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.json(devForceSnapshot());
+});
+
+app.post('/api/dev/adfallback', requireApiKey, requireStatsKey, (req, res) => {
+  const snapshot = devForceSnapshot();
+  if (!snapshot.fallbackConfigured) return res.status(400).json({ ...snapshot, error: snapshot.reason });
+
+  const asked = Math.floor(Number(req.body && req.body.minutes) || 0);
+  const minutes = Math.max(0, Math.min(DEV_FORCE_MAX_MIN, asked));
+  if (!minutes) {
+    devForce.until = 0;
+    devForce.minutes = 0;
+    devForce.startedAt = 0;
+    console.log('[dev] teste do AdFallback desligado');
+  } else {
+    devForce.until = Date.now() + minutes * 60000;
+    devForce.minutes = minutes;
+    devForce.startedAt = Date.now();
+    console.log(`[dev] MODO DEV: forçando AdFallback por ${minutes} min (só filmes)`);
+  }
+  res.setHeader('Cache-Control', 'no-store');
+  res.json(devForceSnapshot());
+});
+
+/* ------------------------------------------------------------------ */
 /* Stream                                                              */
 /* ------------------------------------------------------------------ */
 
@@ -926,6 +999,9 @@ function buildStreamDebug(trace, startedAt) {
     vidsrcProxy: hostOf(usageLedger.getPool()[0]),
     vidsrcPool: usageLedger.rankedPool(),
     adshield: hostOf(process.env.ADSHIELD_BASE_URL),
+    adshieldFallback: adshieldFallback.hosts(),
+    adshieldFallbackEnabled: adshieldFallback.isEnabled(),
+    devForce: devForceSnapshot(),
     relay: Boolean(process.env.VIDEO_RELAY_URL),
     fallbackOrder: process.env.FALLBACK_ORDER || '(padrão)',
     providers: getProviderList().map((p) => p.name),
@@ -946,18 +1022,70 @@ const RENDER_VIDEO_MSG =
   'Todas as fontes disponíveis agora passariam o vídeo pelo servidor (Render), e isso está bloqueado para poupar a banda ' +
   'grátis de 5 GB/mês. Tente de novo em instantes (o Vidsrc costuma voltar) ou libere com ALLOW_RENDER_VIDEO=1 no Render.';
 
+/* ------------------------------------------------------------------ */
+/* Área dev: forçar o AdFallback (teste)                               */
+/* ------------------------------------------------------------------ */
+
+// É a ÁREA DEV do painel Configs (a mesma senha de administrador, 118111 por padrão): nada de variável
+// de ambiente. Serve para ver o caminho novo funcionando no site real: os FILMES passam a sair sempre
+// pelo AdFallback, com a pool do Vidsrc ignorada (é o cenário de apagão, sem esperar por ele).
+// Expira sozinho (padrão 15 min, máx. 60), nunca afeta séries e reiniciar o Render desliga.
+const DEV_FORCE_MAX_MIN = 60;
+const devForce = { until: 0, minutes: 0, startedAt: 0 };
+
+function devToolsEnabled() {
+  return adshieldFallback.isEnabled();
+}
+
+function devForceActive() {
+  return devToolsEnabled() && Date.now() < devForce.until;
+}
+
+/** Estado do teste para o painel (sem segredos). O acesso é protegido pela senha de administrador. */
+function devForceSnapshot() {
+  const remainingSec = Math.max(0, Math.ceil((devForce.until - Date.now()) / 1000));
+  return {
+    fallbackConfigured: adshieldFallback.isEnabled(),
+    active: devForceActive(),
+    until: devForce.until > Date.now() ? new Date(devForce.until).toISOString() : null,
+    remainingSec,
+    maxMinutes: DEV_FORCE_MAX_MIN,
+    reason: adshieldFallback.isEnabled()
+      ? null
+      : 'O AdFallback não está configurado (ADSHIELD_FALLBACK_URLS vazio): não há por onde forçar.'
+  };
+}
+
 /**
  * Mensagem do 503 com o motivo REAL. A trava do Render só entra quando a fonte principal (Vidsrc pelas Vercels) não
  * respondeu e as outras só entregariam pelo Render; dizer só "bloqueado" escondia que o problema era a fonte principal.
+ * Se a pool nem chegou a ser tentada (vazia, exceção), a mensagem antiga virava "culpa da trava": agora o motivo
+ * anotado aparece em vez de sumir.
  */
 function outageMessage(trace) {
   const vp = (trace || []).find((t) => t.provider === 'Vidsrc Proxy');
-  const resumo = vp && vp.notes.map((n) => String(n)).find((n) => n.startsWith('RESUMO:'));
-  if (!resumo) return RENDER_VIDEO_MSG;
-  const skipped = trace.filter((t) => t.outcome === 'PULADA').map((t) => t.provider);
-  return `A fonte principal (Vidsrc, pelas Vercels) não respondeu agora (${resumo.slice(7).trim()}). ` +
-    (skipped.length ? `As outras fontes (${skipped.join(', ')}) só entregariam pelo Render, bloqueado para poupar os 5 GB/mês. ` : '') +
-    'Isso costuma passar em instantes: tente de novo em alguns segundos.';
+  const notes = vp && Array.isArray(vp.notes) ? vp.notes.map((n) => String(n)) : [];
+  const resumo = notes.find((n) => n.startsWith('RESUMO:'));
+  const skipped = (trace || []).filter((t) => t.outcome === 'PULADA').map((t) => t.provider);
+  const skippedText = skipped.length
+    ? `As outras fontes (${skipped.join(', ')}) só entregariam pelo Render, bloqueado para poupar os 5 GB/mês. `
+    : '';
+
+  if (resumo) {
+    return `A fonte principal (Vidsrc, pelas Vercels) não respondeu agora (${resumo.slice(7).trim()}). ` +
+      skippedText +
+      'Isso costuma passar em instantes: tente de novo em alguns segundos.';
+  }
+
+  // Sem RESUMO: a pool não foi percorrida (vazia) ou a consulta deu exceção. Diz o último motivo anotado.
+  const why = notes.filter((n) => !/^pool de /.test(n)).pop();
+  if (why) {
+    const reason = /[.!?]$/.test(why.trim()) ? why.trim() : `${why.trim()}.`;
+    return `A fonte principal (Vidsrc, pelas Vercels) não entregou: ${reason} ` +
+      skippedText +
+      'Se a pool existe, veja o diagnóstico abaixo do player (ou /api/health) e confira VIDSRC_PROXY_URL(S).';
+  }
+  return RENDER_VIDEO_MSG;
 }
 
 /** true se entregar esta fonte ao navegador gastaria banda de saída do Render. */
@@ -974,7 +1102,12 @@ async function renderBound(info, { hevcOk, direct }) {
   }
   let codec = String(info.codec || '').toLowerCase();
   if (!codec) {
-    try { codec = String((await probeVideo(info.url)).codec || '').toLowerCase(); } catch (err) { codec = ''; }
+    try {
+      codec = String((await probeVideo(info.url)).codec || '').toLowerCase();
+      // Guarda o resultado: o resgate do AdFallback reaproveita e não precisa sondar de novo (o ffprobe
+      // baixa alguns bytes do filme no Render).
+      if (codec) info.codec = codec;
+    } catch (err) { codec = ''; }
   }
   if (/hevc|h265|hvc1|hev1/.test(codec) && !hevcOk) return true; // viraria ffmpeg no Render
   return !(await edgeDecision(info.url)).use;                   // arquivo direto: só a borda poupa o Render
@@ -987,6 +1120,96 @@ function blockRenderVideo(req, res, next) {
   const addr = String((req.socket && req.socket.remoteAddress) || '');
   if (addr === '::1' || addr.startsWith('127.') || addr.startsWith('::ffff:127.')) return next();
   return res.status(403).json({ error: RENDER_VIDEO_MSG });
+}
+
+/**
+ * Pista de codec na própria URL do arquivo (…/h265/…, …/hevc/…, …/h264/…). Nunca baixa nada.
+ * Usada para decidir o resgate do AdFallback sem chamar ffprobe no Render (que leria bytes do filme).
+ */
+function codecHint(url) {
+  const value = String(url || '').toLowerCase();
+  if (/\/(?:h265|hevc|hvc1)(?:\/|\b)/.test(value)) return 'hevc';
+  if (/\/(?:h264|avc)(?:\/|\b)/.test(value)) return 'h264';
+  return '';
+}
+
+/**
+ * ÚLTIMO RECURSO DOS FILMES — o AdFallback (rodízio de AdShields).
+ *
+ * A cascata achou uma fonte, mas entregá-la gastaria a banda do Render (VidLink Pro, AnimeFire sem
+ * borda, …). Em vez de responder 503, pedimos a um nó do AdFallback (adproxy com MEDIA_PROXY=1) para
+ * buscar a mídia com o token dele e devolver uma URL assinada que o navegador consome direto.
+ *
+ * Só é chamado depois que a cascata normal terminou sem nada entregável, então não altera em nada o
+ * caminho que já funciona. Desligado por padrão (sem ADSHIELD_FALLBACK_URLS).
+ *
+ * @returns {Promise<boolean>} true se já respondeu ao cliente.
+ */
+async function rescueMovieWithAdShield(req, res, { candidates, trace, hevcOk, forced = false }) {
+  const entry = { provider: 'AdFallback', outcome: 'sem resultado', ms: 0, notes: [] };
+  if (trace) trace.push(entry);
+  const started = Date.now();
+  const poolSize = adshieldFallback.nodes().length;
+  entry.notes.push(`nós: ${adshieldFallback.hosts().join(' · ') || '(ADSHIELD_FALLBACK_URLS não definida)'}`);
+  if (forced) entry.notes.push('MODO DEV: este filme foi forçado pelo AdFallback (teste).');
+
+  const seen = new Set();
+  for (const info of candidates) {
+    if (!info || !info.url || seen.has(info.url)) continue;
+    seen.add(info.url);
+
+    // O CinePro embutido roda em 127.0.0.1 (dentro do Render): um nó externo não alcança.
+    if (info.viaCinePro) {
+      entry.notes.push(`${info.provider}: roda em 127.0.0.1 no Render, fora do alcance do nó`);
+      continue;
+    }
+
+    const headers = (info.bridge && info.bridge.headers) || {};
+    const prepared = await adshieldFallback.prepare({ url: info.url, headers });
+    if (!prepared.ok) {
+      entry.notes.push(`${info.provider}: ${prepared.error}`);
+      continue;
+    }
+
+    // Nada de ffprobe aqui: prober no Render baixaria bytes do filme (é justamente o que não pode).
+    // O codec vem do provedor (o VidLink traz) ou de uma pista na URL; sem isso, entrega como está.
+    let codec = String(info.codec || '').toLowerCase();
+    if (!codec && prepared.kind === 'file') codec = codecHint(info.url);
+    // Arquivo HEVC sem HEVC no navegador exigiria ffmpeg: isso continuaria preso ao Render.
+    if (prepared.kind === 'file' && /hevc|h265|hvc1|hev1/.test(codec) && !hevcOk) {
+      entry.notes.push(`${info.provider}: HEVC e o navegador não decodifica (precisaria do ffmpeg do Render)`);
+      continue;
+    }
+
+    const captions = buildCaptions(info.captions, 0).map((caption) => ({
+      ...caption,
+      url: absoluteUrl(req, caption.url)
+    }));
+
+    entry.outcome = 'USADO';
+    entry.ms = Date.now() - started;
+    entry.notes.push(`${info.provider}: entregue por ${prepared.host || prepared.node} como ${prepared.kind} em ${prepared.ms} ms`);
+    console.log(`[stream] AdFallback: ${info.provider} via ${prepared.host || prepared.node} (${prepared.kind}) · pool com ${poolSize} nó(s)`);
+
+    const fallbackCodec = codec || (prepared.kind === 'hls' ? 'h264' : 'desconhecido');
+    res.json({
+      mode: prepared.kind === 'hls' ? 'hls' : 'direct',
+      via: 'adshield',
+      url: prepared.url,
+      quality: info.quality || 'auto',
+      codec: fallbackCodec,
+      sourceCodec: fallbackCodec,
+      transcoded: false,
+      provider: info.provider,
+      captions,
+      note: `${forced ? '🧪 MODO DEV: ' : ''}Fonte entregue pelo AdFallback (${prepared.host || prepared.node}): o vídeo não passa pelo Render.`
+    });
+    return true;
+  }
+
+  entry.ms = Date.now() - started;
+  console.warn(`[stream] AdFallback não conseguiu: ${entry.notes.join(' · ')}`);
+  return false;
 }
 
 app.get('/api/stream', requireApiKey, async (req, res) => {
@@ -1019,19 +1242,41 @@ app.get('/api/stream', requireApiKey, async (req, res) => {
     : body);
 
   try {
+    // Área dev (senha admin no painel): força os filmes pelo AdFallback, com a pool do Vidsrc
+    // ignorada — é o cenário de apagão, sem depender de ele acontecer. `?force=fallback` faz o mesmo
+    // para um título só (útil no curl). Nada disso existe sem a variável.
+    const forceDev =
+      type === 'movie' &&
+      (devForceActive() || (String(req.query.force || '') === 'fallback' && statsKeyOK(req)));
+
     let streamInfo = null;
-    const skip = [];
+    const skip = forceDev ? ['Vidsrc Proxy'] : [];
+    if (forceDev) {
+      console.log('[stream] MODO DEV: forçando AdFallback (pool do Vidsrc ignorada)');
+      trace.push({
+        provider: 'Vidsrc Proxy',
+        outcome: 'IGNORADA',
+        ms: 0,
+        notes: ['MODO DEV: a fonte principal foi ignorada de propósito para testar o AdFallback.']
+      });
+    }
+    // Fontes que a cascata achou mas que gastariam a banda do Render. Guardadas para o último recurso
+    // (AdShield de fallback), que só roda se nada mais entregar.
+    const boundCandidates = [];
     for (let attempt = 0; attempt < 12; attempt += 1) {
       streamInfo = await getFallbackStream({ id, type, season, episode, title, trace, skip });
       if (!streamInfo || !streamInfo.url || ALLOW_RENDER_VIDEO) break;
       let bound = false;
-      try { bound = await renderBound(streamInfo, { hevcOk, direct }); } catch (err) { bound = true; }
+      try { bound = forceDev ? true : await renderBound(streamInfo, { hevcOk, direct }); } catch (err) { bound = true; }
       if (!bound) break;
-      console.log(`[stream] ${streamInfo.provider} passaria o vídeo pelo Render: pulada (ALLOW_RENDER_VIDEO desligado)`);
+      console.log(`[stream] ${streamInfo.provider} ${forceDev ? 'forçado para o AdFallback (modo dev)' : 'passaria o vídeo pelo Render: pulada (ALLOW_RENDER_VIDEO desligado)'}`);
+      boundCandidates.push(streamInfo);
       const used = trace.filter((t) => t.provider === streamInfo.provider && t.outcome === 'USADO').pop();
       if (used) {
         used.outcome = 'PULADA';
-        used.notes.push('Passaria o vídeo pelo Render e gastaria a banda de 5 GB/mês; seguindo para a próxima fonte.');
+        used.notes.push(forceDev
+          ? 'MODO DEV: forçado para o AdFallback (o caminho normal foi ignorado neste teste).'
+          : 'Passaria o vídeo pelo Render e gastaria a banda de 5 GB/mês; seguindo para a próxima fonte.');
       }
       // Não repete quem já tentou e não achou nada: a próxima rodada começa depois do provedor pulado.
       for (const t of trace) if (t.outcome === 'sem resultado' || t.outcome === 'erro') skip.push(t.provider);
@@ -1039,9 +1284,24 @@ app.get('/api/stream', requireApiKey, async (req, res) => {
       streamInfo = null;
     }
 
+    if (!streamInfo && type === 'movie' && boundCandidates.length && adshieldFallback.isEnabled()) {
+      if (await rescueMovieWithAdShield(req, res, { candidates: boundCandidates, trace, hevcOk, forced: forceDev })) return;
+    }
+
     if (!streamInfo && skip.length) {
       console.log('[stream] nenhuma fonte sem gastar o Render: ' + skip.join(', '));
-      return res.status(503).json({ error: outageMessage(trace), retryable: true });
+      if (forceDev) {
+        return res.status(503).json({
+          error: 'MODO DEV (AdFallback forçado): nenhuma fonte entregou pelo AdFallback. ' +
+            'Veja o diagnóstico e desligue o teste no painel Configs.',
+          retryable: false,
+          devForce: devForceSnapshot()
+        });
+      }
+      const tried = boundCandidates.length && adshieldFallback.isEnabled()
+        ? ' O AdFallback também foi tentado e não entregou (veja o diagnóstico).'
+        : '';
+      return res.status(503).json({ error: outageMessage(trace) + tried, retryable: true });
     }
 
     if (!streamInfo || !streamInfo.url) {

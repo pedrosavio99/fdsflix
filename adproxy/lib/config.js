@@ -12,6 +12,11 @@ const DEFAULT_USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
   '(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
+// Kit "AdFallback": o gerador do .zip (lib/poolKit.js do fdsFlix) troca ESTA linha no arquivo publicado
+// para ligar o proxy de mídia e embutir a chave (zero variável de ambiente no nó). No repositório fica
+// desligado, então nada muda para quem já roda o adproxy.
+const MEDIA_KIT = { enabled: false, key: '' };
+
 // Valores EMBUTIDOS: o kit "Vercel extra" sobe sem configurar nenhuma variável de ambiente.
 // Variável de ambiente (PROXY_SECRET / TARGET_ORIGIN) continua valendo e manda mais que estes.
 // O segredo é público de propósito (decisão do dono): ele só assina as URLs de vídeo que a
@@ -141,6 +146,11 @@ function loadConfig(env = process.env) {
     proxyPlayerIframes: parseBoolean(env.PROXY_PLAYER_IFRAMES, false),
     hardenPlayerIframes: parseBoolean(env.HARDEN_PLAYER_IFRAMES, false),
     rewriteExternalLinks: parseBoolean(env.REWRITE_EXTERNAL_LINKS, false),
+    // Proxy de MÍDIA genérico (só para o nó de FALLBACK dos filmes). Desligado por padrão: os
+    // nós atuais respondem 404 nessas rotas e nada muda. Ver lib/mediaProxy.js.
+    mediaProxy: parseBoolean(env.MEDIA_PROXY, MEDIA_KIT.enabled),
+    mediaProxyKey: String(env.MEDIA_PROXY_KEY || MEDIA_KIT.key).trim(),
+    mediaProxyTtlSec: parseInteger(env.MEDIA_PROXY_TTL_SEC, 6 * 60 * 60, 300, 24 * 60 * 60),
     blockPopups: parseBoolean(env.BLOCK_POPUPS, true),
     injectStubs: parseBoolean(env.INJECT_ADBLOCK_STUBS, true),
     injectHidingCss: parseBoolean(env.INJECT_HIDING_CSS, true),

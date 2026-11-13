@@ -200,6 +200,9 @@ docker run --rm -p 3000:3000 --env-file adproxy/.env adshield
 | `MAX_HTML_BYTES` | `8388608` | Limite de HTML para sanitizar (8 MB). |
 | `MAX_CSS_BYTES` | `4194304` | Limite de CSS/HLS para reescrever (4 MB). |
 | `MAX_REQUEST_BODY_BYTES` | `2097152` | Limite de corpo de POST/PUT (2 MB). |
+| `MEDIA_PROXY` | `0` | `1` liga o proxy de MÍDIA genérico (AdShield de fallback dos filmes). Desligado, as rotas respondem 404. |
+| `MEDIA_PROXY_KEY` | vazio | Chave compartilhada exigida por `/_adshield/media/prepare` (header `x-media-key`). Vazio = aberto. |
+| `MEDIA_PROXY_TTL_SEC` | `21600` | Validade dos tokens de mídia (6 h). |
 | `DEBUG` | `0` | Logs detalhados (não loga tokens). |
 
 ## Rotas internas
@@ -210,6 +213,41 @@ docker run --rm -p 3000:3000 --env-file adproxy/.env adshield
 | `GET /_adshield/info` | Configuração resumida (sem segredo). |
 | `GET /_adshield/r/<token>` | Recurso/página de outro host, assinado por HMAC. |
 | `GET /_adshield/blocked.gif` | GIF transparente 1x1. |
+| `GET /_adshield/media/prepare?u=&r=&o=&a=` | **só com `MEDIA_PROXY=1`**: sonda a mídia (1 KB) e devolve `{ok, kind, url}` assinada. `x-media-key` quando há chave. |
+| `GET /_adshield/media/m/<token>` | **só com `MEDIA_PROXY=1`**: entrega playlist (reescrita), segmento ou arquivo; repassa `Range`. |
+
+## Proxy de mídia genérico (a AdShield de fallback dos filmes)
+
+Serve para o caso em que o fdsFlix no Render acha o filme, mas a fonte só entregaria o vídeo
+pelo próprio Render — o que é proibido para poupar os 5 GB/mês. Em vez de responder 503, o
+Render pede a **este nó** (um projeto separado) uma URL assinada da mídia; o navegador busca
+playlist e segmentos aqui.
+
+Diferenças em relação ao `/_adshield/r/` (proxy do player):
+
+- vale para **qualquer** fonte (VidLink Pro, AnimeFire, CinePro exposto, etc.), não só Vidsrc;
+- respeita `Referer`/`Origin`/`User-Agent` por mídia (alguns CDNs devolvem 428 para UA de navegador);
+- reescreve playlist, chave (`#EXT-X-KEY`), init map e segmentos com novos tokens;
+- repassa `Range` (o player consegue buscar), com CORS liberado;
+- só sobe com `MEDIA_PROXY=1` — nos outros nós nada muda.
+
+Ligar num nó novo (recomendado: conta/projeto separado do pool do Vidsrc):
+
+```env
+TARGET_ORIGIN=https://vidlink.pro
+PROXY_SECRET=uma-chave-fixa-longa
+MEDIA_PROXY=1
+MEDIA_PROXY_KEY=uma-chave-compartilhada
+```
+
+No Render, liste as URLs de produção em `ADSHIELD_FALLBACK_URLS` (vírgula) e ponha a
+`ADSHIELD_FALLBACK_KEY` igual à `MEDIA_PROXY_KEY`. O fdsFlix usa esses nós como **rodízio** e
+só quando a cascata normal termina sem nada entregável. Sem essas variáveis, o fdsFlix continua
+exatamente como é hoje.
+
+O caminho mais simples é baixar o kit pronto no painel **Configs → “2b · AdFallback”**: o `.zip`
+já vem com `MEDIA_PROXY=1` e a chave embutidos em `lib/config.js` (zero variável no host), com
+`deploy-fallback.sh` para Vercel e `Dockerfile` para Wasmer/VPS.
 
 O prefixo `/_adshield` é reservado. Um caminho do site alvo que comece com ele
 é servido por token em vez de caminho local.

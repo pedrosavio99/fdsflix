@@ -83,6 +83,49 @@ várias Vercels e acompanhar o consumo numa barra: [docs/VERCEL-POOL.md](docs/VE
 > tem anúncios no HTML e o vídeo não passa por ele; use o AdShield como proxy
 > do player, não da aplicação toda.
 
+### AdFallback (só filmes, último recurso) — rodízio de nós
+
+O Render Free tem 5 GB/mês de saída, então o `/api/stream` **pula** qualquer fonte cujo vídeo
+teria que passar por ele. Na prática isso deixa o Vidsrc (pelas Vercels/Wasmers da pool) como
+única fonte entregável: se a pool inteira engasga por um minuto, o filme que o VidLink Pro já
+tinha achado não toca e o site responde 503.
+
+O **AdFallback** resolve isso com um **segundo conjunto** de nós do `adproxy` (fora do pool),
+ligados com `MEDIA_PROXY=1`. Eles buscam a playlist/arquivo com o token deles e entregam ao
+navegador; o Render continua só devolvendo ~1 KB de JSON. É o mesmo **rodízio** do pool do
+Vidsrc: vários nós, cada um com a própria cota, o filme inteiro sai de um nó só.
+
+```env
+# No Render
+ADSHIELD_FALLBACK_URLS=https://adfallback-a.vercel.app,https://adfallback-b.wasmer.app
+ADSHIELD_FALLBACK_KEY=chave-do-kit          # = MEDIA_PROXY_KEY embutida no nó
+```
+
+- **Kit pronto no site:** Configs → **“2b · AdFallback”** → baixar `.zip`. Ele já vem com
+  `MEDIA_PROXY=1` e uma chave única embutidos; o `deploy-fallback.sh` publica na Vercel e o
+  `Dockerfile` serve para Wasmer/VPS. Depois é só colar a URL e a chave no Render.
+- **Desligado por padrão:** sem `ADSHIELD_FALLBACK_URLS`, nada muda. `ADSHIELD_FALLBACK=0`
+  desliga sem apagar as URLs.
+- **Só no fim da linha:** é chamado apenas quando a cascata termina sem nada entregável, e só
+  para `type=movie`. O caminho normal (Vidsrc na pool, borda Cloudflare, arquivo direto) continua
+  sendo o primeiro e não muda.
+- **Cobre todas as fontes:** VidLink Pro, AnimeFire, Embed.su etc. — a URL que a cascata achou
+  é reescrita para passar pelo nó (playlist, chave, init map e segmentos, com `Range`).
+- **Rodízio de verdade:** número em `ADSHIELD_FALLBACK_QUOTA_GB` (padrão 100) e, para nó que não
+  é Vercel, `ADSHIELD_FALLBACK_QUOTAS=URL=GB`. O nó com mais folga é escolhido; nó que falhou
+  (rede/5xx/tempo) vai para o fim por 90 s; o navegador informa os bytes de cada nó e alimenta a folga.
+- **Teste controlado (área dev):** no painel Configs → “2b” (mesma senha de administrador, 118111) há o
+  botão **Forçar por 15 min**: os filmes passam a sair sempre pelo AdFallback (a pool do Vidsrc é
+  ignorada), para você ver o caminho no diagnóstico. Expira sozinho, não afeta séries e reiniciar o
+  Render desliga. Para um título só: `?force=fallback` no `/api/stream` junto com `x-stats-key`.
+- **Zero Render:** o vídeo sai do CDN para o nó e do nó para o navegador. Nó apontando para o
+  próprio Render é recusado de propósito.
+- **Não resolve tudo:** o CinePro embutido roda em `127.0.0.1` (fora do alcance do nó) e HEVC
+  sem suporte no navegador ainda exigiria o ffmpeg do Render. Nesses dois casos o 503 continua,
+  agora com o motivo no diagnóstico.
+
+Manual e teste do nó: [adproxy/VERCEL.md](adproxy/VERCEL.md#segundo-projeto-adfallback-rodízio-de-nós).
+
 ## TV ao vivo (aba ao lado da lupa)
 
 Canais de esportes, filmes, infantil e abertos com cascata própria de fontes, testadas de verdade antes de abrir. O
@@ -210,12 +253,16 @@ transcodificação quando necessário.
 | `VIDLINK_API_URL` | Endpoint do provedor | `https://vidlink.pro/api/b` |
 | `PUBLIC_BASE_URL` | URL pública usada nas respostas (URLs absolutas) | derivada do request |
 | `API_KEY` | Chave opcional para proteger a API | desativada |
+| `ADSHIELD_FALLBACK_URLS` | Nós do AdFallback (adproxy com `MEDIA_PROXY=1`), separados por vírgula — rodízio do último recurso dos filmes | desligado |
+| `ADSHIELD_FALLBACK_KEY` | Chave compartilhada com os nós (`MEDIA_PROXY_KEY` do kit) | vazia |
+| `ADSHIELD_FALLBACK_QUOTA_GB` / `ADSHIELD_FALLBACK_QUOTAS` | Cota mensal de cada nó / cota por nó (`URL=GB`, tipo `VIDSRC_PROXY_QUOTAS`) | 100 GB |
 
 ## Estrutura
 
 ```
 server.js              Express: rotas, montagem das respostas
 lib/fallbackCascade.js Cascata de fallback multi-fonte (CinePro, CineWinx, Consumet, VidLink, Vidsrc, etc.)
+lib/adshieldFallback.js AdFallback: rodízio de nós que entregam a mídia quando tudo mais falha
 lib/streamExtractor.js Token cifrado + extração de qualidades e legendas
 lib/proxy.js           Proxy de vídeo com Range e renovação da assinatura
 lib/transcoder.js      Sessões HLS do ffmpeg (HEVC -> H.264) com limpeza automática

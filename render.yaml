@@ -60,5 +60,13 @@ services:
         value: "1"
       # Opcional: API_ONLY=1 faz o Render deixar de servir o site (só API). Use se um dia o front for para um host
       # estático (Cloudflare Pages/Netlify); FRONTEND_URL redireciona quem abrir a URL do Render. Adicione à mão.
+      # AdFallback (só filmes): rodízio de nós adproxy com MEDIA_PROXY=1 que entregam a mídia quando a cascata
+      # inteira fica sem fonte que não gaste o Render. Só age no fim, só em filmes. Pode deixar em branco.
+      # Kit pronto em Configs > "2b · AdFallback" (o zip já traz MEDIA_PROXY=1 e a chave).
+      - key: ADSHIELD_FALLBACK_URLS
+        sync: false
+      - key: ADSHIELD_FALLBACK_KEY
+        sync: false
+      # O teste "Forçar AdFallback" fica no painel Configs (senha de administrador) e não usa variável.
       # Opcional, adicione à mão: ALLOW_RENDER_VIDEO=1 libera o vídeo a passar pelo Render (gasta os 5 GB/mês). Sem ela,
       # fontes que exigiriam isso são puladas. Ver .env.example.

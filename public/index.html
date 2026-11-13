@@ -449,6 +449,9 @@
   .cfg-calib{display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin:.5rem 0}
   .cfg-calib select,.cfg-calib input{padding:.45rem .6rem;font-size:.82rem}
   .cfg-row{display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.7rem}
+  .cfg-devbox{margin-top:.9rem;padding:.7rem .85rem;border:1px dashed var(--warn);border-radius:10px;background:rgba(255,200,0,.05)}
+  .cfg-devbox p{margin:0 0 .5rem;font-size:.82rem}
+  .cfg-devbox .cfg-row{margin-top:.45rem}
   .cfg-note{margin-top:.9rem;padding:.6rem .8rem;border:1px solid var(--line);border-left:3px solid var(--warn);border-radius:8px;background:var(--panel-2);font-size:.8rem;color:var(--muted)}
   .server-notice{
     display:flex;align-items:center;gap:.55rem;margin:.7rem 0 0;
@@ -829,6 +832,54 @@ npx vercel login</pre></li>
           </ol>
           <p>Sem o script: dentro da pasta, <code>npx vercel link --yes</code> e <code>npx vercel deploy --prod --yes</code>.
             A ligação GitHub↔Vercel costuma aceitar uma conta só; por isso o caminho é pela linha de comando.</p>
+        </div>
+      </details>
+
+      <details class="cfg-sec" id="fbSec">
+        <summary>2b · AdFallback (só filmes): nó extra que entrega o vídeo quando a pool inteira cai</summary>
+        <div>
+          <p><strong>Para que serve:</strong> o Render tem só 5 GB/mês e não pode servir vídeo. Quem entrega é o pool de Vercels acima;
+            quando ele inteiro engasga por um minuto, o fdsFlix <em>pula</em> o VidLink Pro (gastaria a banda do Render) e responde 503 —
+            mesmo com o filme achado. O AdFallback é um <strong>segundo conjunto de nós</strong>, fora do pool, que busca a playlist/arquivo
+            dessas outras fontes com o token dele: <strong>zero bytes de vídeo no Render</strong>.</p>
+          <p>É um <strong>rodízio</strong> igual ao de cima: cada nó tem a própria cota; o fdsFlix escolhe o de mais folga, manda o filme
+            inteiro por ele e o próximo para outro. Ele só entra <strong>no fim</strong> (e só em filmes): o caminho normal — pool do Vidsrc,
+            borda Cloudflare, arquivo direto — continua exatamente igual.</p>
+          <div class="cfg-row"><button id="fbDownload" type="button">⬇ Baixar AdFallback (.zip)</button></div>
+          <p id="fbStatus" role="status"></p>
+          <ol>
+            <li>Descompacte (o zip já vem com <code>MEDIA_PROXY=1</code> e uma chave de mídia única):
+              <pre>unzip fdsflix-adfallback-kit.zip
+cd adfallback-kit</pre></li>
+            <li><strong>Vercel:</strong> <code>npx vercel logout</code> (se preciso), <code>npx vercel login</code> e <code>bash deploy-fallback.sh</code>.
+              <strong>Wasmer/VPS:</strong> é o mesmo app; use o <code>Dockerfile</code> que vem no zip (porta 3000).</li>
+            <li>Anote a <strong>URL curta de produção</strong> e a chave que o script e o <code>LEIA-ME.txt</code> mostram.</li>
+            <li>Cole no Render → <em>Environment</em>, salve e espere o redeploy:
+              <pre>ADSHIELD_FALLBACK_URLS=https://SEU-NO.vercel.app
+ADSHIELD_FALLBACK_KEY=chave-do-leia-me</pre></li>
+            <li>Para somar outro nó no rodízio (outra conta), repita e separe as URLs por vírgula na mesma variável.</li>
+          </ol>
+          <p>Cole as URLs abaixo (uma por linha) para montar a linha pronta:</p>
+          <textarea id="fbUrls" rows="3" spellcheck="false" placeholder="https://adfallback-kit.vercel.app&#10;https://adfallback-2.vercel.app"></textarea>
+          <pre id="fbEnvLine">ADSHIELD_FALLBACK_URLS=</pre>
+          <div class="cfg-row"><button id="fbCopyLine" class="ghost" type="button">Copiar a linha</button></div>
+          <p id="fbUrlMsg" role="status"></p>
+          <p id="fbNodes" class="cfg-fb-nodes">…</p>
+          <div class="cfg-row cfg-devbox">
+            <div>
+              <p><strong>🧪 Área dev (teste)</strong> — força <strong>todos os filmes</strong> pelo AdFallback, com a pool do Vidsrc
+                ignorada, para ver o caminho novo no diagnóstico. É a mesma senha de administrador deste painel (118111),
+                expira sozinho, não afeta séries e reiniciar o Render desliga.</p>
+              <div class="cfg-row">
+                <button id="fbForceOn" class="ghost" type="button">Forçar por 15 min</button>
+                <button id="fbForceOff" class="ghost" type="button">Desligar o teste</button>
+              </div>
+              <p id="fbDevMsg" role="status">…</p>
+            </div>
+          </div>
+          <p>Cotas: <code>ADSHIELD_FALLBACK_QUOTA_GB=100</code> é a cota de cada nó; nó que não é Vercel (Wasmer) entra em
+            <code>ADSHIELD_FALLBACK_QUOTAS=URL=GB</code>. O consumo por nó aparece aqui em cima assim que alguém assistir por ele.
+            Teste no seu PC: <code>npm run fallback:check -- &lt;url-do-nó&gt; &lt;url-de-mídia&gt; &lt;chave&gt;</code>.</p>
         </div>
       </details>
 
@@ -1959,8 +2010,10 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
   }
 
   // Só conta o que passa pelo proxy Vidsrc da Vercel (é o que gasta a cota dela).
+  // Conta o que passa por um nó (pool do Vidsrc ou AdFallback). Os dois usam o mesmo medidor;
+  // o servidor decide de quem é o consumo.
   function usageBaseOf(url) {
-    if (!/\/(?:vidsrc\/hls\?|live\/(?:hls|np)\?|_adshield\/r\/)/.test(String(url || ''))) return null;
+    if (!/\/(?:vidsrc\/hls\?|live\/(?:hls|np)\?|_adshield\/r\/|_adshield\/media\/m\/)/.test(String(url || ''))) return null;
     try { return new URL(url, location.href).origin; } catch (err) { return null; }
   }
 
@@ -1999,8 +2052,14 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
     }).catch(function () { /* servidor dormindo: tenta depois */ });
   }
 
+  // Só o que é das Vercels do pool: o AdFallback tem contador próprio e não pode inflar a barra.
   function pendingBytes() {
-    return Object.keys(usage.pending).reduce(function (a, k) { return a + usage.pending[k].bytes; }, 0);
+    var d = usage.data;
+    var known = d && d.pool ? d.pool.map(function (p) { return p.base; }) : null;
+    return Object.keys(usage.pending).reduce(function (a, k) {
+      if (known && known.indexOf(k) === -1) return a;
+      return a + usage.pending[k].bytes;
+    }, 0);
   }
 
   // Cantinho do cabeçalho: banda livre somada de TODAS as Vercels (estimativa).
@@ -2187,6 +2246,11 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
       return;
     }
     diag('info', 'Servidor: build ' + dbg.build + ' · ordem da cascata: ' + dbg.fallbackOrder);
+    if (dbg.devForce && dbg.devForce.active) {
+      diag('warn', '🧪 MODO DEV ATIVO: os filmes estão sendo forçados pelo AdFallback' +
+        (dbg.devForce.until ? ' até ' + new Date(dbg.devForce.until).toLocaleTimeString() : '') +
+        '. A pool do Vidsrc está sendo ignorada de propósito (teste).');
+    }
     var pool = dbg.vidsrcPool || [];
     diag(pool.length ? 'ok' : 'err',
       'Vercels na pool: ' + (pool.length
@@ -2194,6 +2258,11 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
         : 'NENHUMA (defina VIDSRC_PROXY_URL ou VIDSRC_PROXY_URLS)'));
     diag('info', 'ADSHIELD_BASE_URL no servidor: ' + (dbg.adshield || 'não definida') +
       ' · relay Cloudflare: ' + (dbg.relay ? 'sim' : 'não'));
+    var fbPool = dbg.adshieldFallback || [];
+    diag(fbPool.length ? 'ok' : 'info',
+      'AdFallback (rodízio dos filmes): ' + (fbPool.length
+        ? fbPool.join(' · ') + (dbg.adshieldFallbackEnabled ? '' : ' (DESLIGADO)')
+        : 'sem nós (ADSHIELD_FALLBACK_URLS não definida)'));
     diag('info', 'Provedores na ordem: ' + (dbg.providers || []).join(' → '));
     diag('step', 'Cascata (' + dbg.totalMs + ' ms no total):');
     (dbg.trace || []).forEach(function (entry) {
@@ -3342,6 +3411,8 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
           lines.push('📡 O vídeo vai direto do provedor para o navegador (extensão) — 0 bytes no Render.');
         } else if (data.via === 'edge') {
           lines.push('📡 O vídeo chega por um relay externo (Cloudflare ou sua VM) — não gasta a banda do Render.');
+        } else if (data.via === 'adshield') {
+          lines.push('📡 O vídeo chega pela AdShield de fallback (um nó separado do Render) — não gasta os 5 GB/mês.');
         } else if (data.via === 'direct') {
           lines.push('📡 O vídeo vai direto do provedor para o seu navegador — não gasta a banda do Render.');
         } else if (data.via === 'origin' || data.transcoded) {
@@ -4798,6 +4869,7 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
           else { $('cfgDownload').disabled = false; }
         })
         .catch(function () { /* servidor dormindo: o botão tenta mesmo assim */ });
+      fbRefresh();
       if (!$('cfgDialog').open) $('cfgDialog').showModal();
     }
     $('cfgOpen').addEventListener('click', openCfg);
@@ -5043,6 +5115,147 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
         })
         .catch(function (err) { msg.textContent = 'Não consegui buscar o SQL: ' + err.message; });
     });
+
+    // ---- AdFallback: kit .zip, linha do Render e estado do rodízio ----
+    function fbStatus(text) { var el = $('fbStatus'); if (el) el.textContent = text || ''; }
+
+    function fbLine() {
+      var raw = ($('fbUrls') && $('fbUrls').value) || '';
+      var urls = raw.split(/[\s,;]+/).map(function (v) { return v.trim().replace(/\/+$/, ''); })
+        .filter(function (v) { return /^https?:\/\//i.test(v); });
+      var line = 'ADSHIELD_FALLBACK_URLS=' + urls.join(',');
+      if ($('fbEnvLine')) $('fbEnvLine').textContent = line;
+      return line;
+    }
+
+    function fbPaint(info) {
+      var el = $('fbNodes');
+      if (!el) return;
+      if (!info) { el.textContent = 'Sem resposta do servidor.'; return; }
+      if (!info.count) {
+        el.textContent = 'Nenhum nó no rodízio ainda. Sem ADSHIELD_FALLBACK_URLS o site se comporta como antes (503 quando a pool cai).';
+        return;
+      }
+      el.textContent = info.count + ' nó(s) no rodízio · ' + fmtBytes(info.totalUsedBytes) + ' de ' +
+        info.totalQuotaGb + ' GB usados: ' + info.nodes.map(function (n) {
+          return n.host + ' (' + fmtBytes(n.usedBytes) + ' · ' + n.usedPct + '%' +
+            (n.cooling ? ' · falhou há pouco' : '') + ')';
+        }).join(' · ') + (info.enabled ? '' : ' — desligado agora.');
+    }
+
+    function fbRefresh() {
+      if ($('fbDevMsg')) fbDevRefresh();
+      apiFetch('/api/fallback/info')
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (info) {
+          if (!info) return;
+          if ($('fbDownload')) $('fbDownload').disabled = !info.kit;
+          fbPaint(info);
+        })
+        .catch(function () { /* servidor dormindo: tenta na próxima abertura */ });
+    }
+
+    if ($('fbUrls')) $('fbUrls').addEventListener('input', fbLine);
+    if ($('fbCopyLine')) {
+      $('fbCopyLine').addEventListener('click', function () {
+        var line = fbLine();
+        var msg = $('fbUrlMsg');
+        if (line === 'ADSHIELD_FALLBACK_URLS=') { msg.textContent = 'Cole pelo menos uma URL.'; return; }
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(line).then(
+            function () { msg.textContent = 'Linha copiada.'; },
+            function () { window.prompt('Copie:', line); }
+          );
+        } else { window.prompt('Copie:', line); }
+      });
+    }
+    // Estado do teste (área dev): só o servidor liga, e só com a senha de administrador.
+    function fbDevPaint(info) {
+      var msg = $('fbDevMsg');
+      if (!msg) return;
+      var on = $('fbForceOn');
+      var off = $('fbForceOff');
+      if (!info) { msg.textContent = 'Sem resposta do servidor.'; if (on) on.disabled = true; if (off) off.disabled = true; return; }
+      if (info.locked) {
+        msg.textContent = 'Área restrita: digite a senha de administrador para usar o teste.';
+        if (on) on.disabled = true;
+        if (off) off.disabled = true;
+        return;
+      }
+      if (!info.fallbackConfigured) {
+        msg.textContent = info.reason || 'Teste indisponível.';
+        if (on) on.disabled = true;
+        if (off) off.disabled = true;
+        return;
+      }
+      if (on) on.disabled = false;
+      if (off) off.disabled = !info.active;
+      msg.textContent = info.active
+        ? '🧪 ATIVO: filmes forçados pelo AdFallback' +
+          (info.until ? ' até ' + new Date(info.until).toLocaleTimeString() : '') +
+          '. Abra um filme e veja o diagnóstico — depois desligue aqui.'
+        : 'Desligado. Nada muda no caminho normal.';
+    }
+
+    function fbDevRefresh() {
+      apiFetch('/api/dev/adfallback')
+        .then(function (r) {
+          if (r.status === 401) return { locked: true };
+          return r.ok ? r.json() : null;
+        })
+        .then(fbDevPaint)
+        .catch(function () { /* servidor dormindo */ });
+    }
+
+    function fbDevSet(minutes) {
+      var msg = $('fbDevMsg');
+      if (msg) msg.textContent = minutes ? 'Ligando o teste…' : 'Desligando…';
+      apiFetch('/api/dev/adfallback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ minutes: minutes })
+      })
+        .then(function (r) { return r.json().catch(function () { return {}; }).then(function (body) { return { ok: r.ok, body: body }; }); })
+        .then(function (out) {
+          if (!out.ok) {
+            if (out.body && out.body.error) throw new Error(out.body.error);
+            throw new Error('precisa da senha de administrador');
+          }
+          fbDevPaint(out.body);
+        })
+        .catch(function (err) { if (msg) msg.textContent = 'Não consegui: ' + err.message; });
+    }
+
+    if ($('fbForceOn')) $('fbForceOn').addEventListener('click', function () { fbDevSet(15); });
+    if ($('fbForceOff')) $('fbForceOff').addEventListener('click', function () { fbDevSet(0); });
+
+    if ($('fbDownload')) {
+      $('fbDownload').addEventListener('click', function () {
+        var btn = $('fbDownload');
+        btn.disabled = true;
+        fbStatus('Montando o kit…');
+        apiFetch('/api/fallback/kit')
+          .then(function (r) {
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            var key = r.headers.get('x-adfallback-key') || '';
+            return r.blob().then(function (blob) { return { blob: blob, key: key }; });
+          })
+          .then(function (out) {
+            var url = URL.createObjectURL(out.blob);
+            var a = document.createElement('a');
+            a.href = url;
+            a.download = 'fdsflix-adfallback-kit.zip';
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            setTimeout(function () { URL.revokeObjectURL(url); }, 10000);
+            fbStatus('Kit baixado (' + Math.round(out.blob.size / 1024) + ' KB).' +
+              (out.key ? ' Chave do AdFallback (a mesma em todos os nós): ' + out.key + ' — também está no LEIA-ME.txt.' : ''));
+          })
+          .catch(function (err) { fbStatus('Não consegui baixar o kit: ' + err.message); })
+          .then(function () { btn.disabled = false; });
+      });
+    }
 
     $('cfgDownload').addEventListener('click', function () {
       var btn = $('cfgDownload');

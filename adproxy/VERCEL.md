@@ -45,6 +45,48 @@ os outros provedores, o “Modo seguro” continua igual.
 Sem `ADSHIELD_BASE_URL`, nada muda: o embed VidLink continua indo direto para
 `vidlink.pro`.
 
+## Segundo projeto: AdFallback (rodízio de nós)
+
+O mesmo código pode subir **de novo**, em projetos separados, só como relay de mídia para os
+filmes do fdsFlix. A diferença é uma variável: `MEDIA_PROXY=1`.
+
+O caminho mais simples é pelo próprio site: **Configs → “2b · AdFallback” → baixar `.zip`**.
+O kit já vem com `MEDIA_PROXY=1` e uma chave de mídia única embutidos em `lib/config.js`
+(zero variável no host), mais o `deploy-fallback.sh` (Vercel) e o `Dockerfile` (Wasmer/VPS).
+
+Manual, se preferir subir do repositório:
+
+```env
+TARGET_ORIGIN=https://vidlink.pro
+PROXY_SECRET=uma-chave-fixa-longa
+MEDIA_PROXY=1
+MEDIA_PROXY_KEY=uma-chave-compartilhada
+```
+
+No Render do fdsFlix:
+
+```env
+ADSHIELD_FALLBACK_URLS=https://SEU-NO-A.vercel.app,https://SEU-NO-B.wasmer.app
+ADSHIELD_FALLBACK_KEY=uma-chave-compartilhada
+```
+
+Pronto: quando a cascata termina sem nenhuma fonte que não gaste o Render (o caso clássico é a
+pool do Vidsrc inteira falhando), o filme que o VidLink Pro — ou outra fonte — achou passa a
+tocar por um destes nós, em vez de o site responder 503.
+
+- **Rodízio:** repita o nó em outra conta e separe as URLs por vírgula. O nó com mais folga é
+  escolhido; nó que falhou vai para o fim por 90 s. Cota por nó: `ADSHIELD_FALLBACK_QUOTA_GB`
+  (padrão 100) e `ADSHIELD_FALLBACK_QUOTAS=URL=GB` para quem não é Vercel.
+- **Sticky:** o filme inteiro sai de um nó só (é ele que assina a playlist e os segmentos).
+- **Zero Render:** o nó busca e entrega; o Render só devolve ~1 KB de JSON.
+- **Sem a variável, nada muda.** Mesmo com ela, o caminho normal continua sendo o primeiro.
+
+Valide o nó antes de ligar no Render:
+
+```bash
+npm run fallback:check -- https://SEU-NO https://exemplo.com/master.m3u8 SUA-CHAVE
+```
+
 ## Limites
 
 - A Vercel serve o HTML/JS/API do player; o vídeo em si continua vindo do CDN

@@ -6,7 +6,8 @@ const { Readable } = require('stream');
 const { removedSummary, sanitizeHtml } = require('./htmlRewrite');
 const { rewriteCss } = require('./cssRewrite');
 const { rewriteHls, isHlsContentType } = require('./hlsRewrite');
-const { resolveVidsrcCached, proxyVidsrcHls, probeVidsrc, setCors, proxiedPath } = require('./vidsrc');
+const { resolveVidsrcCached, proxyVidsrcHls, probeVidsrc, selfTestVidsrc, setCors, proxiedPath } = require('./vidsrc');
+const { prepareMedia, serveMedia } = require('./mediaProxy');
 const { isAdHost, isAdUrl, isPlayerHost } = require('./adRules');
 const {
   assertSafeDestination,
@@ -311,6 +312,26 @@ function createApp(config) {
     res.end(TRANSPARENT_GIF);
   });
 
+  // Proxy de MÍDIA genérico — a "AdShield de fallback" do módulo de filmes. Só responde
+  // quando o nó sobe com MEDIA_PROXY=1 (ver lib/mediaProxy.js). Nós antigos: 404, nada muda.
+  app.options('/_adshield/media/*', (req, res) => {
+    setCors(res);
+    res.status(204).end();
+  });
+
+  app.get('/_adshield/media/prepare', (req, res) => {
+    prepareMedia(req, res, config).catch((error) => {
+      if (!res.headersSent) res.status(502).json({ ok: false, error: error.message });
+    });
+  });
+
+  app.all('/_adshield/media/m/:token', (req, res) => {
+    if (req.method !== 'GET' && req.method !== 'HEAD') return res.status(405).end();
+    serveMedia(req, res, config).catch((error) => {
+      if (!res.headersSent) res.status(502).type('text').send(`Falha no proxy de mídia: ${error.message}`);
+    });
+  });
+
   app.all('/_adshield/r/:token', async (req, res) => {
     if (!config.targetOrigin) return res.status(503).type('text').send('TARGET_ORIGIN não configurado');
     if (req.method === 'CONNECT' || req.method === 'TRACE') return res.status(405).end();
@@ -404,6 +425,22 @@ function createApp(config) {
     } catch (error) {
       res.status(502).json({ ok: false, error: error.message });
     }
+  });
+
+  // Diagnóstico da cadeia do Vidsrc passo a passo (sem segredo): mostra onde parou e o que veio
+  // em cada página. É a primeira coisa a abrir quando "CONFIG/apiToken ausente" aparecer.
+  app.get('/vidsrc/selftest', async (req, res) => {
+    setCors(res);
+    res.setHeader('Cache-Control', 'no-store');
+    const id = String(req.query.tmdb || req.query.id || '603').trim();
+    if (!/^\d+$/.test(id)) return res.status(400).json({ ok: false, error: 'tmdb/id inválido' });
+    const out = await selfTestVidsrc({
+      id,
+      type: String(req.query.type || 'movie') === 'tv' ? 'tv' : 'movie',
+      season: Math.max(1, Number(req.query.s) || 1),
+      episode: Math.max(1, Number(req.query.e) || 1)
+    });
+    res.status(out.ok ? 200 : 502).json(out);
   });
 
   app.get('/vidsrc/probe', async (req, res) => {

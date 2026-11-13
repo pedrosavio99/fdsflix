@@ -45,22 +45,51 @@ function withTimeout(controller, ms) {
   return setTimeout(() => controller.abort(), ms);
 }
 
-async function fetchText(url, headers = {}, timeoutMs = 20000) {
+/** Cookie jar mínimo: alguns passos devolvem cookie e o passo seguinte espera recebê-lo. */
+function createJar() {
+  const jar = new Map();
+  return {
+    header() {
+      return [...jar.entries()].map(([name, value]) => `${name}=${value}`).join('; ');
+    },
+    absorb(response) {
+      try {
+        const list = typeof response.headers.getSetCookie === 'function' ? response.headers.getSetCookie() : [];
+        for (const raw of list) {
+          const pair = String(raw).split(';')[0];
+          const eq = pair.indexOf('=');
+          if (eq > 0) jar.set(pair.slice(0, eq).trim(), pair.slice(eq + 1).trim());
+        }
+      } catch (error) {
+        /* sem cookies */
+      }
+    },
+    size() {
+      return jar.size;
+    }
+  };
+}
+
+async function fetchText(url, headers = {}, timeoutMs = 20000, jar = null) {
   const controller = new AbortController();
   const timer = withTimeout(controller, timeoutMs);
+  const started = Date.now();
   try {
+    const cookies = jar ? jar.header() : '';
     const response = await fetch(url, {
       headers: {
         'User-Agent': UA,
         Accept: 'text/html,application/json,*/*',
         'Accept-Language': 'en-US,en;q=0.9',
         'Accept-Encoding': 'identity',
+        ...(cookies ? { Cookie: cookies } : {}),
         ...headers
       },
       redirect: 'follow',
       signal: controller.signal
     });
-    return { response, text: await response.text() };
+    if (jar) jar.absorb(response);
+    return { response, text: await response.text(), ms: Date.now() - started };
   } finally {
     clearTimeout(timer);
   }
@@ -74,7 +103,7 @@ function decodeEntities(value) {
 }
 
 function parseJsonAssignment(text, name) {
-  const re = new RegExp(`(?:window\\.)?${name}\\s*=\\s*(\\{[\\s\\S]*?\\});`);
+  const re = new RegExp(`(?:window\\.|self\\.|globalThis\\.)?${name}\\s*=\\s*(\\{[\\s\\S]*?\\});`);
   const match = String(text || '').match(re);
   if (!match) return null;
   try {
@@ -82,6 +111,52 @@ function parseJsonAssignment(text, name) {
   } catch (error) {
     return null;
   }
+}
+
+/**
+ * Último recurso: o token pode aparecer em outro objeto da página (o Vidsrc já trocou o nome do
+ * objeto algumas vezes). Em vez de falhar, procuramos a string `apiToken` em qualquer lugar.
+ */
+function findApiToken(text) {
+  const source = String(text || '');
+  const quoted = source.match(/"api_?token"\s*:\s*"([A-Za-z0-9._~\-]{8,})"/i);
+  if (quoted) return quoted[1];
+  const loose = source.match(/api_?token\s*[=:]\s*["']?([A-Za-z0-9._~\-]{16,})/i);
+  return loose ? loose[1] : null;
+}
+
+function pageTitle(text) {
+  const match = String(text || '').match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  return match ? match[1].replace(/\s+/g, ' ').trim().slice(0, 60) : '';
+}
+
+/** O que veio numa página (para o diagnóstico e para as mensagens de erro). */
+function pageInfo(result) {
+  if (!result) return { status: 0, bytes: 0, title: '', finalHost: null };
+  let finalHost = null;
+  try {
+    finalHost = result.response && result.response.url ? new URL(result.response.url).host : null;
+  } catch (error) {
+    finalHost = null;
+  }
+  return {
+    status: result.response ? result.response.status : 0,
+    bytes: String(result.text || '').length,
+    title: pageTitle(result.text),
+    finalHost
+  };
+}
+
+/** Resumo de uma página para a mensagem de erro: o que veio, em vez de só "não achei". */
+function pageSummary(result) {
+  if (!result) return 'sem resposta';
+  const info = pageInfo(result);
+  return [
+    `HTTP ${info.status}`,
+    `${info.bytes} bytes`,
+    info.title ? `título "${info.title}"` : 'sem título',
+    info.finalHost ? `final ${info.finalHost}` : ''
+  ].filter(Boolean).join(', ');
 }
 
 async function decryptStreamUrls(streamUrls, vs) {
@@ -114,91 +189,165 @@ async function decryptStreamUrls(streamUrls, vs) {
 }
 
 /**
- * Extrai as playlists HLS do Vidsrc atual (vidsrc.sh -> stellar -> API + WASM).
- * Retorna URLs de master.m3u8 já com o token JWT do generate.php.
+ * Uma passada da cadeia do Vidsrc. `onStep` recebe o que aconteceu em cada passo (para o /vidsrc/selftest).
+ * O jar leva cookies de um passo para o outro e é refeito a cada tentativa.
  */
-async function resolveVidsrc(options) {
+async function resolveVidsrcOnce(options, jar, onStep = () => {}) {
   const { id, type = 'movie', season = 1, episode = 1 } = options;
   const isTv = type === 'tv';
   const embed = isTv
     ? `https://vidsrc.sh/embed/tv/${encodeURIComponent(id)}/${Number(season) || 1}/${Number(episode) || 1}/`
     : `https://vidsrc.sh/embed/movie/${encodeURIComponent(id)}/`;
 
-  const page = await fetchText(embed, { Referer: 'https://vidsrc.sh/' });
+  const page = await fetchText(embed, { Referer: 'https://vidsrc.sh/' }, 20000, jar);
+  onStep({ name: 'embed', ...pageInfo(page), ms: page.ms, hasDataApi: /data-api=/i.test(page.text) });
   if (!page.response.ok) throw new Error(`embed HTTP ${page.response.status}`);
   const apiPathMatch = page.text.match(/data-api="([^"]+)"/i);
-  if (!apiPathMatch) throw new Error('data-api não encontrado');
+  if (!apiPathMatch) throw new Error(`data-api não encontrado (${pageSummary(page)})`);
   const apiPath = decodeEntities(apiPathMatch[1]);
 
-  const srcResponse = await fetchText(new URL(apiPath, embed).toString(), {
-    Referer: embed
-  });
+  const srcResponse = await fetchText(new URL(apiPath, embed).toString(), { Referer: embed }, 20000, jar);
+  onStep({ name: 'vs_src', ...pageInfo(srcResponse), ms: srcResponse.ms, body: String(srcResponse.text || '').slice(0, 120) });
   if (!srcResponse.response.ok) throw new Error(`vs_src HTTP ${srcResponse.response.status}`);
   let srcJson;
   try {
     srcJson = JSON.parse(srcResponse.text);
   } catch (error) {
-    throw new Error('vs_src não é JSON');
+    throw new Error(`vs_src não é JSON (${String(srcResponse.text || '').slice(0, 80)})`);
   }
   if (!srcJson || !srcJson.src) throw new Error('vs_src sem src');
 
   const stellarUrl = new URL(srcJson.src, 'https://stellarconductornexus.com').toString();
-  const stellar = await fetchText(stellarUrl, { Referer: embed });
+  const stellar = await fetchText(stellarUrl, { Referer: embed }, 20000, jar);
   const cfg = parseJsonAssignment(stellar.text, 'CFG');
-  if (!cfg || !cfg.playerUrl) throw new Error('CFG/playerUrl ausente');
+  onStep({ name: 'stellar', ...pageInfo(stellar), ms: stellar.ms, hasCfg: Boolean(cfg && cfg.playerUrl) });
+  if (!cfg || !cfg.playerUrl) throw new Error(`CFG/playerUrl ausente (${pageSummary(stellar)})`);
 
   const playerUrl = new URL(cfg.playerUrl, 'https://stellarconductornexus.com').toString();
-  const player = await fetchText(playerUrl, { Referer: srcJson.src });
-  const config = parseJsonAssignment(player.text, 'CONFIG');
-  if (!config || !config.apiToken) throw new Error('CONFIG/apiToken ausente');
+  const player = await fetchText(playerUrl, { Referer: srcJson.src }, 20000, jar);
+  let config = parseJsonAssignment(player.text, 'CONFIG');
+  let tokenFromPage = '';
+  if (!config || !config.apiToken) {
+    // O objeto pode ter mudado de nome/formato: tenta achar o token direto na página.
+    const scraped = findApiToken(player.text);
+    if (scraped) {
+      tokenFromPage = scraped;
+      config = { ...(config || {}), apiToken: scraped };
+    }
+  }
+  onStep({
+    name: 'player',
+    ...pageInfo(player),
+    ms: player.ms,
+    hasConfig: Boolean(config && config.apiToken),
+    scrapedToken: Boolean(tokenFromPage)
+  });
+  if (!config || !config.apiToken) throw new Error(`CONFIG/apiToken ausente (${pageSummary(player)})`);
 
-  const meta = await fetchText(cfg.metaApi, { Referer: srcJson.src });
+  const meta = await fetchText(cfg.metaApi, { Referer: srcJson.src }, 20000, jar);
   let metaJson;
   try {
     metaJson = JSON.parse(meta.text);
   } catch (error) {
-    throw new Error('metaApi não é JSON');
+    throw new Error(`metaApi não é JSON (${pageSummary(meta)})`);
   }
   const host = metaJson && metaJson.data && metaJson.data.stream_urls_api_host;
+  onStep({ name: 'meta', ...pageInfo(meta), ms: meta.ms, host: host || null });
   if (!host) throw new Error('stream_urls_api_host ausente');
 
   const apiUrl =
     `https://${host}/api.php?type=${encodeURIComponent(type)}&tmdb=${encodeURIComponent(id)}` +
     `&stream_urls&api_token=${encodeURIComponent(config.apiToken)}`;
-  const api = await fetchText(apiUrl, { Referer: playerUrl });
+  const api = await fetchText(apiUrl, { Referer: playerUrl }, 20000, jar);
+  onStep({ name: 'stream_api', ...pageInfo(api), ms: api.ms });
   if (!api.response.ok) throw new Error(`stream API HTTP ${api.response.status}`);
   let apiJson;
   try {
     apiJson = JSON.parse(api.text);
   } catch (error) {
-    throw new Error('stream API não é JSON');
+    throw new Error(`stream API não é JSON (${pageSummary(api)})`);
   }
   if (!apiJson || !apiJson.data || apiJson.data.stream_urls == null) {
-    throw new Error('stream API sem stream_urls');
+    throw new Error(`stream API sem stream_urls (${String(api.text || '').slice(0, 80)})`);
   }
 
   const streams = await decryptStreamUrls(apiJson.data.stream_urls, apiJson.vs);
+  onStep({ name: 'decrypt', playlists: streams.length });
   if (!streams.length) throw new Error('nenhuma playlist decriptada');
 
   const tokenResponse = await fetchText(
     `https://${host}/generate.php?api_token=${encodeURIComponent(config.apiToken)}`,
-    { Referer: playerUrl }
+    { Referer: playerUrl },
+    20000,
+    jar
   );
   const token = String(tokenResponse.text || '').trim();
+  onStep({ name: 'generate', ...pageInfo(tokenResponse), ms: tokenResponse.ms, hasToken: Boolean(token) });
   if (!token) throw new Error('generate.php sem token');
 
   return {
     provider: 'Vidsrc',
     host,
     apiToken: config.apiToken,
+    tokenSource: tokenFromPage ? 'page-scrape' : 'config',
     pageUrl: embed,
     playerUrl,
     token,
     rawUrls: streams,
     urls: streams.map((url) => `${url}${url.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}`),
     subtitles: Array.isArray(apiJson.default_subs) ? apiJson.default_subs : [],
-    title: metaJson.data.title || null
+    title: (metaJson.data && metaJson.data.title) || null
   };
+}
+
+/**
+ * Extrai as playlists HLS do Vidsrc (vidsrc.sh -> stellar -> API + WASM).
+ *
+ * A cadeia tem 4 saltos e cada um pode falhar sozinho (rate limit, cookie, página diferente por IP).
+ * Por isso: (1) cookies acompanham a cadeia; (2) se o miolo falha, repete UMA vez com token novo —
+ * é o que resolve a maioria dos `CONFIG/apiToken ausente`; (3) o erro diz o que veio em cada página.
+ */
+async function resolveVidsrc(options) {
+  let firstError = null;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      return await resolveVidsrcOnce(options, createJar());
+    } catch (error) {
+      if (!firstError) firstError = error;
+      const retryable = /CONFIG|CFG|apiToken|vs_src|embed HTTP 5|socket|ECONN|tempo/i.test(String(error.message));
+      if (!retryable) break;
+      await new Promise((resolve) => setTimeout(resolve, 900));
+    }
+  }
+  throw firstError;
+}
+
+/** Diagnóstico passo a passo (rota /vidsrc/selftest): mostra onde a cadeia parou, sem segredo. */
+async function selfTestVidsrc(options) {
+  const started = Date.now();
+  const steps = [];
+  const jar = createJar();
+  try {
+    const result = await resolveVidsrcOnce(options, jar, (step) => steps.push(step));
+    return {
+      ok: true,
+      ms: Date.now() - started,
+      cookies: jar.size(),
+      host: result.host,
+      tokenSource: result.tokenSource,
+      playlists: result.urls.length,
+      title: result.title,
+      steps
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      ms: Date.now() - started,
+      cookies: jar.size(),
+      error: error.message,
+      steps
+    };
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -468,6 +617,10 @@ async function probeVidsrc(options) {
 
 module.exports = {
   resolveVidsrc,
+  resolveVidsrcOnce,
+  selfTestVidsrc,
+  parseJsonAssignment,
+  findApiToken,
   resolveVidsrcCached,
   proxyVidsrcHls,
   rewriteHls,

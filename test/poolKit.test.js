@@ -75,3 +75,40 @@ test('buildKit: leva o adproxy com as envs embutidas, sem segredos locais nem no
   assert.ok(!names.some((n) => /node_modules|\/test\/|Dockerfile/.test(n)), 'arquivo que não devia entrar');
   assert.ok(!names.some((n) => /\/\.env$|\.env\.(?!example)/.test(n)), '.env vazou para o zip');
 });
+
+test('buildKit fallback: MEDIA_PROXY ligado, chave embutida, Dockerfile e deploy-fallback.sh', () => {
+  const built = kit.buildKit({ kind: 'fallback' });
+  assert.equal(built.filename, 'fdsflix-adfallback-kit.zip');
+  assert.match(built.mediaKey, /^[a-f0-9]{48}$/);
+  // A chave é a mesma em todo download/nó: o rodízio usa uma ADSHIELD_FALLBACK_KEY só.
+  assert.equal(kit.buildKit({ kind: 'fallback' }).mediaKey, built.mediaKey);
+
+  const files = readZip(built.zip);
+  const names = Object.keys(files);
+
+  for (const must of ['lib/mediaProxy.js', 'lib/config.js', 'server.js', 'api/index.js', 'Dockerfile',
+    'deploy-fallback.sh', 'LEIA-ME.txt', 'package.json']) {
+    assert.ok(files[`adfallback-kit/${must}`], `falta ${must}`);
+  }
+
+  const config = files['adfallback-kit/lib/config.js'].data.toString();
+  assert.match(config, new RegExp(`MEDIA_KIT = \\{ enabled: true, key: '${built.mediaKey}' \\}`));
+  assert.match(config, /mediaProxy: parseBoolean\(env\.MEDIA_PROXY, MEDIA_KIT\.enabled\)/);
+
+  const readme = files['adfallback-kit/LEIA-ME.txt'].data.toString();
+  assert.ok(readme.includes(built.mediaKey), 'a chave precisa estar no LEIA-ME');
+  assert.match(readme, /ADSHIELD_FALLBACK_URLS/);
+
+  assert.equal(files['adfallback-kit/deploy-fallback.sh'].mode, 0o755);
+  assert.ok(!names.some((n) => n.endsWith('/deploy-vercel.sh')), 'o kit de fallback usa o deploy-fallback.sh');
+  assert.ok(!names.some((n) => /node_modules|\/test\//.test(n)));
+});
+
+test('buildKit (pool do Vidsrc) continua sem ligar o proxy de mídia', () => {
+  const files = readZip(kit.buildKit().zip);
+  assert.match(files['adproxy-kit/lib/config.js'].data.toString(), /MEDIA_KIT = \{ enabled: false, key: '' \}/);
+  assert.ok(!Object.keys(files).some((n) => n.endsWith('/deploy-fallback.sh')));
+  assert.ok(!Object.keys(files).some((n) => n.endsWith('/Dockerfile')), 'o pool é só Vercel');
+  // O código do proxy de mídia viaja nos dois kits (desligado no pool), então atualizar um kit não perde nada.
+  assert.match(files['adproxy-kit/lib/mediaProxy.js'].data.toString(), /prepareMedia/);
+});
