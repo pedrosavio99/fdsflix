@@ -859,6 +859,8 @@ cd adfallback-kit</pre></li>
               <pre>ADSHIELD_FALLBACK_URLS=https://SEU-NO.vercel.app
 ADSHIELD_FALLBACK_KEY=chave-do-leia-me</pre></li>
             <li>Para somar outro nó no rodízio (outra conta), repita e separe as URLs por vírgula na mesma variável.</li>
+            <li><strong>Reuso da infra:</strong> os nós do pool do Vidsrc também podem fazer este papel — reenvie neles
+              este mesmo kit (liga o <code>MEDIA_PROXY</code>) e cole as URLs deles aqui. Um nó, dois papéis; a cota é a mesma.</li>
           </ol>
           <p>Cole as URLs abaixo (uma por linha) para montar a linha pronta:</p>
           <textarea id="fbUrls" rows="3" spellcheck="false" placeholder="https://adfallback-kit.vercel.app&#10;https://adfallback-2.vercel.app"></textarea>

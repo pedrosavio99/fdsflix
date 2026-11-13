@@ -50,6 +50,10 @@ Sem `ADSHIELD_BASE_URL`, nada muda: o embed VidLink continua indo direto para
 O mesmo código pode subir **de novo**, em projetos separados, só como relay de mídia para os
 filmes do fdsFlix. A diferença é uma variável: `MEDIA_PROXY=1`.
 
+Os nós que já estão no pool do Vidsrc podem ser **reaproveitados** para este papel: reenvie neles o kit
+novo (o mesmo `deploy-vercel.sh`) e cole as mesmas URLs em `ADSHIELD_FALLBACK_URLS`. Um nó, dois papéis,
+a mesma cota — o consumo entra nos dois medidores.
+
 O caminho mais simples é pelo próprio site: **Configs → “2b · AdFallback” → baixar `.zip`**.
 O kit já vem com `MEDIA_PROXY=1` e uma chave de mídia única embutidos em `lib/config.js`
 (zero variável no host), mais o `deploy-fallback.sh` (Vercel) e o `Dockerfile` (Wasmer/VPS).

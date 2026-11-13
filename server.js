@@ -790,9 +790,13 @@ app.post('/api/usage', (req, res) => {
   let fallbackAccepted = 0;
   for (const item of items) {
     if (!item) continue;
-    // Primeiro tenta a pool do Vidsrc; se não é um nó dela, o consumo é do AdFallback (mesmo medidor).
-    if (usageLedger.record(item.base, item.bytes, item.seconds).ok) accepted += 1;
-    else if (adshieldFallback.record(item.base, item.bytes, item.seconds).ok) fallbackAccepted += 1;
+    // O MESMO nó pode estar nas duas pools (reuso da infra: pool do Vidsrc + AdFallback). Aí o consumo
+    // tem que entrar nos dois medidores — senão o rodízio do AdFallback acharia que o nó está zerado e
+    // mandaria tudo para ele. Cada medidor ignora base que não é dele.
+    const vidsrc = usageLedger.record(item.base, item.bytes, item.seconds).ok;
+    const fallback = adshieldFallback.record(item.base, item.bytes, item.seconds).ok;
+    if (vidsrc) accepted += 1;
+    if (fallback) fallbackAccepted += 1;
   }
   res.json({ ok: true, accepted, fallbackAccepted });
 });

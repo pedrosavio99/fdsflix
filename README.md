@@ -101,6 +101,9 @@ ADSHIELD_FALLBACK_URLS=https://adfallback-a.vercel.app,https://adfallback-b.wasm
 ADSHIELD_FALLBACK_KEY=chave-do-kit          # = MEDIA_PROXY_KEY embutida no nó
 ```
 
+- **Reuso da infra:** os próprios nós do pool do Vidsrc podem fazer os dois papéis — reenvie neles o
+  kit novo (que liga `MEDIA_PROXY=1`) e cole as mesmas URLs em `ADSHIELD_FALLBACK_URLS`. Um nó, dois
+  papéis, a mesma cota; o consumo entra nos dois medidores.
 - **Kit pronto no site:** Configs → **“2b · AdFallback”** → baixar `.zip`. Ele já vem com
   `MEDIA_PROXY=1` e uma chave única embutidos; o `deploy-fallback.sh` publica na Vercel e o
   `Dockerfile` serve para Wasmer/VPS. Depois é só colar a URL e a chave no Render.

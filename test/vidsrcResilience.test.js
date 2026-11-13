@@ -267,3 +267,30 @@ test('disjuntor: reabrir sem sucesso entre as janelas dobra o tempo (5 → 10 �
   assert.equal(cascade.breakerState().windowMinutes, 5, 'depois de um sucesso, volta à janela base');
   cascade._resetVidsrcState();
 });
+
+test('sonda de recuperação: com o disjuntor aberto, uma sonda (ctx.probe) ainda testa a pool e fecha se voltar', withPool([A, B], async () => {
+  cascade._resetVidsrcState();
+  cascade.openBreaker('CONFIG/apiToken ausente');
+  assert.equal(cascade.breakerOpen(), true);
+
+  const s = stubFetch({ default: 'ok' });
+  try {
+    // sem probe: nem tenta
+    const blocked = await cascade.tryVidsrcProxy('801', 'movie', 1, 1, 'X', ctx());
+    assert.equal(blocked, null);
+    assert.equal(s.calls.length, 0);
+
+    // com probe: tenta em segundo plano e, dando certo, fecha o disjuntor
+    const probe = await cascade.tryVidsrcProxy('802', 'movie', 1, 1, 'X', {
+      note: () => {},
+      errors: [],
+      captionsPromise: Promise.resolve([]),
+      probe: true
+    });
+    assert.ok(probe, 'a sonda conseguiu extrair');
+    assert.equal(cascade.breakerOpen(), false, 'sucesso na sonda fecha o disjuntor');
+  } finally {
+    s.restore();
+    cascade._resetVidsrcState();
+  }
+}));
