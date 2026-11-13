@@ -450,6 +450,7 @@
   .cfg-calib select,.cfg-calib input{padding:.45rem .6rem;font-size:.82rem}
   .cfg-row{display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.7rem}
   .cfg-devbox{margin-top:.9rem;padding:.7rem .85rem;border:1px dashed var(--warn);border-radius:10px;background:rgba(255,200,0,.05)}
+  .cfg-health{margin:.5rem 0 0;padding:.55rem .7rem;border:1px solid var(--line);border-radius:8px;background:var(--panel-2);font-size:.78rem;line-height:1.5;white-space:pre-wrap;word-break:break-word;color:var(--muted)}
   .cfg-devbox p{margin:0 0 .5rem;font-size:.82rem}
   .cfg-devbox .cfg-row{margin-top:.45rem}
   .cfg-note{margin-top:.9rem;padding:.6rem .8rem;border:1px solid var(--line);border-left:3px solid var(--warn);border-radius:8px;background:var(--panel-2);font-size:.8rem;color:var(--muted)}
@@ -865,6 +866,7 @@ ADSHIELD_FALLBACK_KEY=chave-do-leia-me</pre></li>
           <div class="cfg-row"><button id="fbCopyLine" class="ghost" type="button">Copiar a linha</button></div>
           <p id="fbUrlMsg" role="status"></p>
           <p id="fbNodes" class="cfg-fb-nodes">…</p>
+          <pre id="fbVidsrc" class="cfg-health">…</pre>
           <div class="cfg-row cfg-devbox">
             <div>
               <p><strong>🧪 Área dev (teste)</strong> — força <strong>todos os filmes</strong> pelo AdFallback, com a pool do Vidsrc
@@ -2246,6 +2248,12 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
       return;
     }
     diag('info', 'Servidor: build ' + dbg.build + ' · ordem da cascata: ' + dbg.fallbackOrder);
+    if (dbg.vidsrcBreaker && dbg.vidsrcBreaker.open) {
+      diag('warn', '🔴 Disjuntor do Vidsrc ABERTO até ' +
+        (dbg.vidsrcBreaker.until ? new Date(dbg.vidsrcBreaker.until).toLocaleTimeString() : '?') +
+        ' — ' + (dbg.vidsrcBreaker.reason || 'falha sistêmica') +
+        '. A cascata vai direto ao AdFallback (não espera a pool).');
+    }
     if (dbg.devForce && dbg.devForce.active) {
       diag('warn', '🧪 MODO DEV ATIVO: os filmes estão sendo forçados pelo AdFallback' +
         (dbg.devForce.until ? ' até ' + new Date(dbg.devForce.until).toLocaleTimeString() : '') +
@@ -5143,8 +5151,45 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
         }).join(' · ') + (info.enabled ? '' : ' — desligado agora.');
     }
 
+    // Saúde da fonte principal: disjuntor e falhas por nó (o aviso que aparece ANTES de quebrar).
+    function fbVidsrcPaint(health) {
+      var el = $('fbVidsrc');
+      if (!el) return;
+      if (!health) { el.textContent = 'Saúde do Vidsrc: sem resposta do servidor.'; return; }
+      var b = health.breaker || {};
+      var lines = [
+        b.open
+          ? '🔴 DISJUNTOR ABERTO até ' + (b.until ? new Date(b.until).toLocaleTimeString() : '?') +
+            ' — ' + (b.reason || 'falha sistêmica') + '.\nO Vidsrc está sendo pulado e o AdFallback assume; fecha sozinho em ' + (b.windowMinutes || b.minutes) + ' min.'
+          : '🟢 Disjuntor fechado — o Vidsrc está sendo tentado normalmente.'
+      ];
+      var nodes = health.nodes || [];
+      var broken = nodes.filter(function (n) { return n.fail > 0 || n.cooling; });
+      if (broken.length) {
+        lines.push('Falhas por nó (ok/falhas · chamadas/min):');
+        broken.slice(0, 6).forEach(function (n) {
+          lines.push('· ' + n.host + ': ' + n.ok + ' ok / ' + n.fail + ' falhas' +
+            (n.consecutiveFailures > 1 ? ' (' + n.consecutiveFailures + ' seguidas)' : '') +
+            ' · ' + n.callsLastMinute + '/min' + (n.cooling ? ' · em cooldown' : '') +
+            (n.lastError ? '\n   último: ' + n.lastError : ''));
+        });
+        if (broken.length > 6) lines.push('… e mais ' + (broken.length - 6) + ' nó(s).');
+      } else {
+        lines.push('Nenhuma falha registrada nos ' + nodes.length + ' nó(s) desde o último reinício.');
+      }
+      el.textContent = lines.join('\n');
+    }
+
+    function fbVidsrcRefresh() {
+      apiFetch('/api/vidsrc/health')
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(fbVidsrcPaint)
+        .catch(function () { /* servidor dormindo */ });
+    }
+
     function fbRefresh() {
       if ($('fbDevMsg')) fbDevRefresh();
+      if ($('fbVidsrc')) fbVidsrcRefresh();
       apiFetch('/api/fallback/info')
         .then(function (r) { return r.ok ? r.json() : null; })
         .then(function (info) {

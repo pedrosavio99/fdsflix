@@ -9,7 +9,7 @@ const fs = require('fs');
 const crypto = require('crypto');
 
 const { getVidLinkStream, probeVideo } = require('./lib/streamExtractor');
-const { getFallbackStream, getProviderList, getCineProReport } = require('./lib/fallbackCascade');
+const { getFallbackStream, getProviderList, getCineProReport, breakerOpen, breakerState, vidsrcHealth } = require('./lib/fallbackCascade');
 const { getAnimeReport } = require('./lib/animeFire');
 const cineproRunner = require('./lib/cineproRunner');
 const { normalizeCineProUrl } = require('./lib/cineproUrl');
@@ -947,6 +947,12 @@ app.get('/api/fallback/kit', requireApiKey, requireStatsKey, (req, res) => {
   }
 });
 
+// Saúde da fonte principal: disjuntor + sucessos/falhas de cada nó (para o painel Configs).
+app.get('/api/vidsrc/health', requireApiKey, requireStatsKey, (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.json(vidsrcHealth());
+});
+
 // Estado do rodízio: quantos nós, quanto cada um já entregou no ciclo e se está em cooldown.
 app.get('/api/fallback/info', requireApiKey, requireStatsKey, (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
@@ -1001,6 +1007,7 @@ function buildStreamDebug(trace, startedAt) {
     adshield: hostOf(process.env.ADSHIELD_BASE_URL),
     adshieldFallback: adshieldFallback.hosts(),
     adshieldFallbackEnabled: adshieldFallback.isEnabled(),
+    vidsrcBreaker: breakerState(),
     devForce: devForceSnapshot(),
     relay: Boolean(process.env.VIDEO_RELAY_URL),
     fallbackOrder: process.env.FALLBACK_ORDER || '(padrão)',
@@ -1282,6 +1289,18 @@ app.get('/api/stream', requireApiKey, async (req, res) => {
       for (const t of trace) if (t.outcome === 'sem resultado' || t.outcome === 'erro') skip.push(t.provider);
       skip.push(streamInfo.provider);
       streamInfo = null;
+
+      // Disjuntor aberto + AdFallback configurado: não gasta os outros provedores (uns 5 s) — já
+      // temos uma fonte, então vai direto ao resgate. É o que corta a abertura de 23 s para ~1-2 s.
+      if (forceDev !== true && breakerOpen() && type === 'movie' && adshieldFallback.isEnabled()) {
+        trace.push({
+          provider: 'Disjuntor Vidsrc',
+          outcome: 'ABERTO',
+          ms: 0,
+          notes: ['Vidsrc pulado (falha sistêmica recente). Indo direto ao AdFallback para não esperar a cascata inteira.']
+        });
+        break;
+      }
     }
 
     if (!streamInfo && type === 'movie' && boundCandidates.length && adshieldFallback.isEnabled()) {

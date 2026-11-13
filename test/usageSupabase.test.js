@@ -66,9 +66,19 @@ function freshLedger() {
   n += 1;
   process.env.USAGE_FILE = path.join(os.tmpdir(), `fdsflix-usage-sb-${process.pid}-${n}.json`);
   const ledger = require('../lib/usageLedger');
+  currentLedger = ledger;
   return ledger;
 }
-const settle = () => new Promise((resolve) => setTimeout(resolve, 80)); // deixa o pull inicial terminar
+// Espera o pull inicial terminar de verdade (sob carga o setTimeout fixo de 80 ms virava teste instável).
+let currentLedger = null;
+const settle = async () => {
+  const until = Date.now() + 2000;
+  while (Date.now() < until) {
+    const status = currentLedger && currentLedger.storageStatus();
+    if (status && status.hydrated) return;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+};
 
 test('registra, envia ao Supabase em soma atômica e usa só a chave "apikey"', async () => {
   const ledger = freshLedger();
