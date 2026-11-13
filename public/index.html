@@ -450,6 +450,7 @@
   .cfg-calib select,.cfg-calib input{padding:.45rem .6rem;font-size:.82rem}
   .cfg-row{display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.7rem}
   .cfg-devbox{margin-top:.9rem;padding:.7rem .85rem;border:1px dashed var(--warn);border-radius:10px;background:rgba(255,200,0,.05)}
+  .usage-sub{margin:1rem 0 .15rem;font-weight:700;font-size:.82rem;color:var(--muted)}
   .cfg-health{margin:.5rem 0 0;padding:.55rem .7rem;border:1px solid var(--line);border-radius:8px;background:var(--panel-2);font-size:.78rem;line-height:1.5;white-space:pre-wrap;word-break:break-word;color:var(--muted)}
   .cfg-inline{flex:1;min-width:220px;padding:.5rem .6rem;border:1px solid var(--line);border-radius:8px;background:var(--panel-2);color:inherit;font-size:.82rem}
   .cfg-devbox p{margin:0 0 .5rem;font-size:.82rem}
@@ -2043,6 +2044,42 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
   // A aba "TV ao vivo" (livetv.js) soma o consumo das Vercels pela mesma contagem.
   window.FdsUsage = { add: usageAdd };
 
+  // Medidor do modo "direct" (mp4 servido pelo nó): o <video> não expõe os bytes baixados, então
+  // estimamos por (segundos em buffer) × (tamanho do arquivo ÷ duração). Mesma filosofia do contador
+  // das Vercels: é estimativa, mas acompanha o gasto real do nó enquanto você assiste.
+  function startDirectMeter(video, url, playToken) {
+    var meter = { bps: 0, maxBuffered: 0, stopped: false, token: playToken };
+    function bufferedSeconds() {
+      var total = 0;
+      try {
+        for (var i = 0; i < video.buffered.length; i++) total += video.buffered.end(i) - video.buffered.start(i);
+      } catch (err) { /* sem buffer ainda */ }
+      return total;
+    }
+    function flush() {
+      if (meter.stopped || !meter.bps || meter.token !== state.playToken) return;
+      var secs = bufferedSeconds();
+      if (secs <= meter.maxBuffered + 0.5) return;
+      var delta = secs - meter.maxBuffered;
+      meter.maxBuffered = secs;
+      usageAdd(url, Math.round(delta * meter.bps), delta);
+    }
+    function calibrate() {
+      var duration = Number(video.duration) || 0;
+      var fallbackBps = video.videoHeight >= 720 ? 320 * 1024 : 140 * 1024; // ≈2,6 / 1,1 Mbps
+      if (!(duration > 0)) { meter.bps = fallbackBps; return; }
+      fetch(url, { method: 'HEAD' }).then(function (r) {
+        var size = Number(r.headers.get('content-length') || 0);
+        meter.bps = size > 0 ? size / duration : fallbackBps;
+        flush();
+      }).catch(function () { meter.bps = fallbackBps; flush(); });
+    }
+    video.addEventListener('loadedmetadata', calibrate);
+    video.addEventListener('progress', flush);
+    video.addEventListener('timeupdate', flush);
+    video.addEventListener('emptied', function () { meter.stopped = true; });
+  }
+
   function usageFlush(beacon) {
     var items = Object.keys(usage.pending).map(function (base) {
       return { base: base, bytes: Math.round(usage.pending[base].bytes), seconds: Math.round(usage.pending[base].seconds) };
@@ -2097,6 +2134,8 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
     top.appendChild(b);
     top.appendChild(document.createTextNode(' livres de ' + fmtBytes(quota)));
     $('bwSub').textContent = pool.length + ' Vercel' + (pool.length > 1 ? 's' : '') + ' · ' + pct.toFixed(1) + '% usado · renova em ' + d.daysLeft + ' d · estimativa';
+    var fb = window.FdsFallback && window.FdsFallback.totals ? window.FdsFallback.totals() : null;
+    if (fb) $('bwSub').textContent += ' · AdFallback ' + fmtBytes(fb.used);
     var st = d.stats;
     if (st && st.willExhaustBeforeReset && st.exhaustDate) {
       $('bwSub').textContent = '⚠ no ritmo atual esgota em ' + st.exhaustDate.slice(8, 10) + '/' + st.exhaustDate.slice(5, 7) + ' (renova em ' + d.daysLeft + ' d)';
@@ -2278,7 +2317,7 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
       ' · relay Cloudflare: ' + (dbg.relay ? 'sim' : 'não'));
     var fbPool = dbg.adshieldFallback || [];
     diag(fbPool.length ? 'ok' : 'info',
-      'AdFallback (rodízio dos filmes): ' + (fbPool.length
+      'AdFallback (rodízio de filmes e séries): ' + (fbPool.length
         ? fbPool.join(' · ') + (dbg.adshieldFallbackEnabled ? '' : ' (DESLIGADO)')
         : 'sem nós (ADSHIELD_FALLBACK_URLS não definida)'));
     diag('info', 'Provedores na ordem: ' + (dbg.providers || []).join(' → '));
@@ -3402,6 +3441,7 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
           startClientHevc(apiUrl(data.url), startSeconds, video, playToken, data.quality + 'p · decodificado no seu navegador');
         } else if (data.mode === 'direct') {
           video.src = apiUrl(data.url);
+          startDirectMeter(video, apiUrl(data.url), playToken);
           video.play().catch(function () {
             hideOverlay();
             setStatus('warn', 'O navegador bloqueou o autoplay — clique no ▶ do vídeo.');
@@ -4896,6 +4936,79 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
     $('cfgDialog').addEventListener('click', function (e) { if (e.target === $('cfgDialog')) $('cfgDialog').close(); });
 
     // Card "banda total" + lista por Vercel dentro do modal.
+    // Guarda o estado do AdFallback para a barra de banda e o cantinho do cabeçalho.
+    var fallbackInfoCache = null;
+
+    function fallbackPending(base) {
+      return (usage.pending[base] || {}).bytes || 0;
+    }
+
+    function fallbackTotals() {
+      var info = fallbackInfoCache;
+      if (!info || !info.nodes || !info.nodes.length) return null;
+      var used = 0;
+      var quota = 0;
+      info.nodes.forEach(function (n) {
+        used += n.usedBytes + fallbackPending(n.base);
+        quota += n.quotaBytes || (n.quotaGb * 1073741824);
+      });
+      return { used: used, quota: quota, count: info.nodes.length };
+    }
+
+    // O cantinho do cabeçalho é de outro escopo: expõe o total por aqui.
+    window.FdsFallback = { totals: fallbackTotals };
+
+    // Barra do AdFallback: mostra cada nó (inclusive os herdados do pool, marcados "compat") e o total.
+    function paintFallbackRows(box) {
+      var info = fallbackInfoCache;
+      var title = document.createElement('p');
+      title.className = 'usage-sub';
+      title.textContent = 'AdFallback — entrega fora do Render' +
+        (info && info.count ? ' (' + info.count + ' nó(s) · ' + info.totalQuotaGb + ' GB de cota)' : '');
+      box.appendChild(title);
+      if (!info) {
+        var wait = document.createElement('p');
+        wait.textContent = 'Carregando o consumo do AdFallback…';
+        box.appendChild(wait);
+        return;
+      }
+      if (!info.count) {
+        var none = document.createElement('p');
+        none.textContent = 'Nenhum nó de AdFallback configurado.';
+        box.appendChild(none);
+        return;
+      }
+      var totals = fallbackTotals();
+      info.nodes.forEach(function (n) {
+        var used = n.usedBytes + fallbackPending(n.base);
+        var quota = n.quotaBytes || (n.quotaGb * 1073741824) || 1;
+        var pct = Math.min(100, used / quota * 100);
+        var row = document.createElement('div');
+        row.className = 'usage-row';
+        var name = document.createElement('div');
+        name.className = 'name';
+        var a = document.createElement('span');
+        a.textContent = n.host + (n.legacy ? ' (compat)' : '');
+        var b = document.createElement('span');
+        b.textContent = 'livres ' + fmtBytes(Math.max(0, quota - used)) + ' de ' + fmtBytes(quota) +
+          ' (' + pct.toFixed(1) + '% usado)' + (n.cooling ? ' · falhou há pouco' : '') +
+          (n.delivered ? ' · já entregou' : '');
+        name.appendChild(a); name.appendChild(b);
+        var bar = document.createElement('div');
+        bar.className = 'usage-bar' + (pct >= 85 ? ' crit' : (pct >= 60 ? ' warn' : ''));
+        var iu = document.createElement('i'); iu.className = 'used'; iu.style.width = pct + '%';
+        bar.appendChild(iu);
+        row.appendChild(name); row.appendChild(bar);
+        box.appendChild(row);
+      });
+      if (totals) {
+        var foot = document.createElement('p');
+        foot.textContent = 'Total AdFallback: ' + fmtBytes(totals.used) + ' de ' + fmtBytes(totals.quota) +
+          ' · é o que sai dos nós, não do Render.';
+        box.appendChild(foot);
+      }
+    }
+
     function paintCfgBw() {
       var box = $('cfgBw');
       var d = usage.data;
@@ -4903,9 +5016,18 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
       $('cfgBwNote').textContent = d ? d.note : '';
       var sel = $('cfgCalBase');
       sel.innerHTML = '';
-      if (!d) { box.innerHTML = '<p>Sem resposta do servidor ainda (se for o Render grátis, ele pode estar acordando).</p>'; return; }
+      if (!d) {
+        var off = document.createElement('p');
+        off.textContent = 'Sem resposta do servidor ainda (se for o Render grátis, ele pode estar acordando).';
+        box.appendChild(off);
+        paintFallbackRows(box);
+        return;
+      }
       if (!d.pool.length) {
-        box.innerHTML = '<p>Nenhuma Vercel no pool. Siga o passo a passo abaixo e coloque as URLs em <code>VIDSRC_PROXY_URLS</code> no Render.</p>';
+        var empty = document.createElement('p');
+        empty.innerHTML = 'Nenhuma Vercel no pool. Siga o passo a passo abaixo e coloque as URLs em <code>VIDSRC_PROXY_URLS</code> no Render.';
+        box.appendChild(empty);
+        paintFallbackRows(box);
         return;
       }
       var pend = pendingBytes();
@@ -4938,6 +5060,7 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
       var foot = document.createElement('p');
       foot.textContent = 'Renova em ' + d.daysLeft + ' dia(s) · ≈ ' + d.total.hoursLeft + ' h de vídeo ainda cabem no total.';
       box.appendChild(foot);
+      paintFallbackRows(box);
     }
 
     // Monta a linha VIDSRC_PROXY_URLS=... a partir das URLs coladas (https, sem barra final, sem repetidas).
@@ -5205,7 +5328,11 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
         .then(function (info) {
           if (!info) return;
           if ($('fbDownload')) $('fbDownload').disabled = !info.kit;
+          fallbackInfoCache = info;
           fbPaint(info);
+          // Reaproveita os dados para a barra de banda (o mesmo fetch alimenta as duas seções).
+          if ($('cfgBw')) paintCfgBw();
+          cornerPaint();
         })
         .catch(function () { /* servidor dormindo: tenta na próxima abertura */ });
     }
