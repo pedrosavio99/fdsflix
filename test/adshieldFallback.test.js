@@ -38,6 +38,8 @@ function resetEnv() {
   delete process.env.ADSHIELD_FALLBACK;
   delete process.env.ADSHIELD_FALLBACK_QUOTAS;
   delete process.env.ADSHIELD_FALLBACK_QUOTA_GB;
+  delete process.env.VIDSRC_PROXY_URLS;
+  delete process.env.VIDSRC_PROXY_URL;
   delete process.env.RENDER_EXTERNAL_URL;
   fallback._reset();
   try { fs.unlinkSync(USAGE_FILE); } catch (error) { /* sem arquivo */ }
@@ -338,6 +340,29 @@ test('nó antigo não consome o limite de tentativas: o nó novo ainda é alcan�
   } finally {
     restore();
     delete process.env.ADSHIELD_FALLBACK_MAX_NODES;
+    resetEnv();
+  }
+});
+
+
+test('herda os nós do pool do Vidsrc automaticamente (nada para cadastrar à mão)', () => {
+  resetEnv();
+  process.env.ADSHIELD_FALLBACK_URLS = 'https://novo.example';
+  process.env.VIDSRC_PROXY_URLS = 'https://a.wasmer.app,https://novo.example,https://b.vercel.app';
+  try {
+    assert.deepEqual(fallback.nodes(), ['https://novo.example', 'https://a.wasmer.app', 'https://b.vercel.app']);
+  } finally {
+    resetEnv();
+  }
+});
+
+test('com só o pool do Vidsrc configurado, o AdFallback já fica ativo (herança)', () => {
+  resetEnv();
+  process.env.VIDSRC_PROXY_URLS = 'https://a.wasmer.app';
+  try {
+    assert.equal(fallback.isEnabled(), true);
+    assert.deepEqual(fallback.nodes(), ['https://a.wasmer.app']);
+  } finally {
     resetEnv();
   }
 });

@@ -838,15 +838,16 @@ npx vercel login</pre></li>
       </details>
 
       <details class="cfg-sec" id="fbSec">
-        <summary>2b · AdFallback (só filmes): nó extra que entrega o vídeo quando a pool inteira cai</summary>
+        <summary>2b · AdFallback (filmes e séries): nó extra que entrega o vídeo quando a pool inteira cai</summary>
         <div>
           <p><strong>Para que serve:</strong> o Render tem só 5 GB/mês e não pode servir vídeo. Quem entrega é o pool de Vercels acima;
             quando ele inteiro engasga por um minuto, o fdsFlix <em>pula</em> o VidLink Pro (gastaria a banda do Render) e responde 503 —
             mesmo com o filme achado. O AdFallback é um <strong>segundo conjunto de nós</strong>, fora do pool, que busca a playlist/arquivo
             dessas outras fontes com o token dele: <strong>zero bytes de vídeo no Render</strong>.</p>
           <p>É um <strong>rodízio</strong> igual ao de cima: cada nó tem a própria cota; o fdsFlix escolhe o de mais folga, manda o filme
-            inteiro por ele e o próximo para outro. Ele só entra <strong>no fim</strong> (e só em filmes): o caminho normal — pool do Vidsrc,
-            borda Cloudflare, arquivo direto — continua exatamente igual.</p>
+            inteiro por ele e o próximo para outro. Ele só entra <strong>no fim</strong>, em filmes e séries: o caminho normal — pool do
+            Vidsrc, borda Cloudflare, arquivo direto — continua exatamente igual. Os nós que já estão na pool do Vidsrc entram
+            sozinhos como compat (nada para cadastrar).</p>
           <div class="cfg-row"><button id="fbDownload" type="button">⬇ Baixar AdFallback (.zip)</button></div>
           <p id="fbStatus" role="status"></p>
           <ol>

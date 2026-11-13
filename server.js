@@ -1174,7 +1174,7 @@ function codecHint(url) {
 }
 
 /**
- * ÚLTIMO RECURSO DOS FILMES — o AdFallback (rodízio de AdShields).
+ * ÚLTIMO RECURSO (FILMES E SÉRIES) — o AdFallback (rodízio de AdShields).
  *
  * A cascata achou uma fonte, mas entregá-la gastaria a banda do Render (VidLink Pro, AnimeFire sem
  * borda, …). Em vez de responder 503, pedimos a um nó do AdFallback (adproxy com MEDIA_PROXY=1) para
@@ -1325,7 +1325,7 @@ app.get('/api/stream', requireApiKey, async (req, res) => {
 
       // Disjuntor aberto + AdFallback configurado: não gasta os outros provedores (uns 5 s) — já
       // temos uma fonte, então vai direto ao resgate. É o que corta a abertura de 23 s para ~1-2 s.
-      if (forceDev !== true && breakerOpen() && type === 'movie' && adshieldFallback.isEnabled()) {
+      if (forceDev !== true && breakerOpen() && adshieldFallback.isEnabled()) {
         trace.push({
           provider: 'Disjuntor Vidsrc',
           outcome: 'ABERTO',
@@ -1336,7 +1336,7 @@ app.get('/api/stream', requireApiKey, async (req, res) => {
       }
     }
 
-    if (!streamInfo && type === 'movie' && boundCandidates.length && adshieldFallback.isEnabled()) {
+    if (!streamInfo && boundCandidates.length && adshieldFallback.isEnabled()) {
       if (await rescueMovieWithAdShield(req, res, { candidates: boundCandidates, trace, hevcOk, forced: forceDev })) return;
     }
 

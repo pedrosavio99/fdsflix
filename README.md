@@ -83,7 +83,7 @@ várias Vercels e acompanhar o consumo numa barra: [docs/VERCEL-POOL.md](docs/VE
 > tem anúncios no HTML e o vídeo não passa por ele; use o AdShield como proxy
 > do player, não da aplicação toda.
 
-### AdFallback (só filmes, último recurso) — rodízio de nós
+### AdFallback (filmes e séries, último recurso) — rodízio de nós
 
 O Render Free tem 5 GB/mês de saída, então o `/api/stream` **pula** qualquer fonte cujo vídeo
 teria que passar por ele. Na prática isso deixa o Vidsrc (pelas Vercels/Wasmers da pool) como
@@ -112,8 +112,8 @@ ADSHIELD_FALLBACK_KEY=chave-do-kit          # = MEDIA_PROXY_KEY embutida no nó
   `Dockerfile` serve para Wasmer/VPS. Depois é só colar a URL e a chave no Render.
 - **Desligado por padrão:** sem `ADSHIELD_FALLBACK_URLS`, nada muda. `ADSHIELD_FALLBACK=0`
   desliga sem apagar as URLs.
-- **Só no fim da linha:** é chamado apenas quando a cascata termina sem nada entregável, e só
-  para `type=movie`. O caminho normal (Vidsrc na pool, borda Cloudflare, arquivo direto) continua
+- **Só no fim da linha:** é chamado apenas quando a cascata termina sem nada entregável. Vale para
+  filmes e séries. O caminho normal (Vidsrc na pool, borda Cloudflare, arquivo direto) continua
   sendo o primeiro e não muda.
 - **Cobre todas as fontes:** VidLink Pro, AnimeFire, Embed.su etc. — a URL que a cascata achou
   é reescrita para passar pelo nó (playlist, chave, init map e segmentos, com `Range`).

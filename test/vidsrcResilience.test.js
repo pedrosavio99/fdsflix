@@ -222,7 +222,7 @@ test('disjuntor: erro sistêmico em 2+ nós abre o disjuntor e o próximo pedido
     const none = await cascade.tryVidsrcProxy('604', 'movie', 1, 1, 'Y', c);
     assert.equal(none, null);
     assert.equal(s.calls.length, 0, 'não gastou nenhuma requisição com o disjuntor aberto');
-    assert.ok(c.notes.some((n) => /DISJUNTOR ABERTO: .*Vidsrc pulado até/.test(n)));
+    assert.ok(c.notes.some((n) => /DISJUNTOR ABERTO: .*Vidsrc pulado por ~\d+ min/.test(n)));
   } finally { s.restore(); cascade._resetVidsrcState(); }
 }));
 
