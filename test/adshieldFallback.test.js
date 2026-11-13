@@ -14,6 +14,9 @@ const path = require('node:path');
 
 const USAGE_FILE = path.join(os.tmpdir(), `fdsflix-fallback-${process.pid}.json`);
 process.env.ADSHIELD_FALLBACK_FILE = USAGE_FILE;
+delete process.env.SUPABASE_URL;
+delete process.env.SUPABASE_SECRET_KEY;
+process.env.USAGE_FILE = path.join(os.tmpdir(), `fdsflix-usage-fb-${process.pid}.json`);
 
 const fallback = require('../lib/adshieldFallback');
 
@@ -365,4 +368,22 @@ test('com só o pool do Vidsrc configurado, o AdFallback já fica ativo (heranç
   } finally {
     resetEnv();
   }
+});
+
+test('consumo de nó dedicado também vai ao histórico durável: sobrevive ao Render dormir (arquivo local some)', () => {
+  resetEnv();
+  const ledger = require('../lib/usageLedger');
+  const DEDICATED = 'https://dedicado-durable.example';
+  process.env.ADSHIELD_FALLBACK_URLS = DEDICATED;
+  assert.equal(fallback.record(DEDICATED, 5 * MB).ok, true);
+  assert.equal(ledger.recordExtra(DEDICATED, 5 * MB).ok, true);
+  assert.equal(fallback.usedBytes(DEDICATED), 5 * MB);
+  fallback._reset(); // simula o Render reiniciando: contador local zerado
+  try { fs.unlinkSync(USAGE_FILE); } catch (error) { /* sem arquivo */ }
+  assert.equal(fallback.usedBytes(DEDICATED), 5 * MB);
+  // nó do pool não entra por aqui (já é contado pelo próprio pool)
+  process.env.VIDSRC_PROXY_URLS = 'https://pool-x.example';
+  assert.equal(ledger.recordExtra('https://pool-x.example', MB).ok, false);
+  assert.equal(ledger.recordExtra('lixo', MB).ok, false);
+  resetEnv();
 });

@@ -2042,7 +2042,24 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
   }
 
   // A aba "TV ao vivo" (livetv.js) soma o consumo das Vercels pela mesma contagem.
-  window.FdsUsage = { add: usageAdd };
+  // HLS NATIVO (iPhone/Safari sem hls.js): o navegador não informa segmentos nem bytes, então a banda é ESTIMADA pelo tempo
+  // realmente assistido x taxa típica (≈1,1 Mbps até 480p, ≈2,6 Mbps de 720p para cima). Sem isso a TV/filme no iPhone
+  // não apareceria em nenhuma barra. `alive()` diz se esta sessão ainda é a atual; ao virar falsa, a medição para.
+  function startNativeMeter(video, url, alive) {
+    var last = null;
+    var timer = setInterval(function () {
+      if (!alive() || video.src === '' ) { clearInterval(timer); return; }
+      if (video.paused || video.ended) { last = null; return; }
+      var t = video.currentTime;
+      if (last !== null && t > last && t - last < 15) {
+        var bps = video.videoHeight >= 720 ? 320 * 1024 : 140 * 1024;
+        usageAdd(url, Math.round((t - last) * bps), t - last);
+      }
+      last = t;
+    }, 5000);
+  }
+
+  window.FdsUsage = { add: usageAdd, native: startNativeMeter };
 
   // Medidor do modo "direct" (mp4 servido pelo nó): o <video> não expõe os bytes baixados, então
   // estimamos por (segundos em buffer) × (tamanho do arquivo ÷ duração). Mesma filosofia do contador
@@ -3102,8 +3119,9 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
   function attachHls(url, video, startPosition) {
     if (!window.Hls || !Hls.isSupported()) {
       if (video.canPlayType('application/vnd.apple.mpegurl')) {
-        diag('warn', 'hls.js indisponível: usando HLS nativo do navegador (sem detalhes de segmentos).');
+        diag('warn', 'hls.js indisponível: usando HLS nativo do navegador (sem detalhes de segmentos; banda estimada pelo tempo assistido).');
         video.src = url;
+        (function (token) { startNativeMeter(video, url, function () { return token === state.playToken; }); })(state.playToken);
         return;
       }
       throw new Error('Este navegador não tem suporte a HLS.');

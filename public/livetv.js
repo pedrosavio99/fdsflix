@@ -1287,6 +1287,8 @@
       failSource('erro do player nativo' + (code ? ' (' + code + ')' : ''), c.mode === 'direct' && !c.played ? 'direct' : '');
     };
     video.src = url;
+    // O HLS nativo não informa bytes: a banda da Vercel/nó é estimada pelo tempo assistido (mesma contagem das outras).
+    try { if (window.FdsUsage && window.FdsUsage.native) window.FdsUsage.native(video, url, function () { return Boolean(state.cur && state.cur.sid === sid); }); } catch (e) { /* estatística nunca derruba a TV */ }
     startPlayback();
   }
 

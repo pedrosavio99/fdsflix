@@ -795,6 +795,8 @@ app.post('/api/usage', (req, res) => {
     // mandaria tudo para ele. Cada medidor ignora base que não é dele.
     const vidsrc = usageLedger.record(item.base, item.bytes, item.seconds).ok;
     const fallback = adshieldFallback.record(item.base, item.bytes, item.seconds).ok;
+    // Nó só do AdFallback: grava também no histórico durável (Supabase), que sobrevive ao Render dormir.
+    if (fallback && !vidsrc) usageLedger.recordExtra(item.base, item.bytes, item.seconds);
     if (vidsrc) accepted += 1;
     if (fallback) fallbackAccepted += 1;
   }
