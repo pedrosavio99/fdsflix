@@ -275,7 +275,9 @@ function createApp(config) {
       target: config.targetOrigin || null,
       secretStable: config.secretStable,
       uptimeSeconds: Math.round(process.uptime()),
-      node: process.version
+      node: process.version,
+      // `hvc1` = este build já troca o sample entry hev1->hvc1 no stream (necessário para o Safari).
+      features: { mediaProxy: Boolean(config.mediaProxy), hvc1: Boolean(config.mediaProxy) }
     };
     if (!config.targetOrigin) {
       body.error = 'TARGET_ORIGIN não configurado';
