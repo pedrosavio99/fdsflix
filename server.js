@@ -1246,15 +1246,15 @@ async function rescueMovieWithAdShield(req, res, { candidates, trace, hevcOk, fo
     // O codec vem do provedor (o VidLink traz) ou de uma pista na URL; sem isso, entrega como está.
     let codec = String(info.codec || '').toLowerCase();
     if (!codec && prepared.kind === 'file') codec = codecHint(info.url);
-    // Arquivo HEVC: se o nó NÃO sabe entregar como "hvc1", o Safari recusa e só ffmpeg resolveria
-    // (Render bloqueado) — pula. Se o nó tem o patch (prepare devolve hvc1:true), entrega: o Safari
-    // toca HEVC hvc1 nativamente, sem transcodificar e sem gastar a banda do Render.
-    if (prepared.kind === 'file' && /hevc|h265|hvc1|hev1/.test(codec) && !hevcOk) {
-      if (!prepared.hvc1) {
-        entry.notes.push(`${info.provider}: HEVC e este nó ainda não entrega hvc1 (reenvie o kit novo nele)`);
-        continue;
-      }
-      entry.notes.push(`${info.provider}: HEVC entregue como hvc1 pelo nó (o Safari toca sem transcodificar)`);
+    // HEVC: ENTREGA SEMPRE pelo nó (como era antes). O nó não gasta a banda do Render, e muitos
+    // navegadores que dizem "sem HEVC" tocam mesmo assim. Se o navegador não decodificar, o player
+    // cai no aviso/embed — mas nunca mais devolvemos 503 por causa disso. Quando o nó é o kit novo,
+    // ele ainda troca hev1->hvc1 no voo, que é o que faz o Safari tocar.
+    if (prepared.kind === 'file' && /hevc|h265|hvc1|hev1/.test(codec)) {
+      entry.notes.push(
+        `${info.provider}: HEVC entregue pelo nó` +
+        (prepared.hvc1 ? ' como hvc1 (Safari toca)' : ' (nó antigo: reenvie o kit para o Safari tocar)')
+      );
     }
 
     const captions = buildCaptions(info.captions, 0).map((caption) => ({
