@@ -387,3 +387,23 @@ test('consumo de nó dedicado também vai ao histórico durável: sobrevive ao R
   assert.equal(ledger.recordExtra('lixo', MB).ok, false);
   resetEnv();
 });
+
+test('cold start (status 0) ganha uma segunda tentativa no mesmo nó', async () => {
+  resetEnv();
+  process.env.ADSHIELD_FALLBACK_URLS = 'https://frio.example';
+  let calls = 0;
+  const restore = stubFetch(async () => {
+    calls += 1;
+    if (calls === 1) throw new TypeError('fetch failed'); // nó acordando
+    return okResponse('https://frio.example');
+  });
+  try {
+    const out = await fallback.prepare({ url: 'https://cdn.example/filme.mp4' });
+    assert.equal(out.ok, true);
+    assert.equal(out.node, 'https://frio.example');
+    assert.equal(calls, 2, 'tentou de novo depois do cold start');
+  } finally {
+    restore();
+    resetEnv();
+  }
+});

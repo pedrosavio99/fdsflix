@@ -1381,8 +1381,13 @@ app.get('/api/stream', requireApiKey, async (req, res) => {
           devForce: devForceSnapshot()
         });
       }
+      // Mostra o motivo real do AdFallback (cold start, 429 do CDN, sem rota…) em vez de "veja o diagnóstico".
+      const fbEntry = (trace || []).find((t) => t.provider === 'AdFallback');
+      const fbWhy = fbEntry && fbEntry.outcome !== 'USADO'
+        ? (fbEntry.notes.filter((n) => !/^nós:/.test(n)).slice(-1)[0] || '')
+        : '';
       const tried = boundCandidates.length && adshieldFallback.isEnabled()
-        ? ' O AdFallback também foi tentado e não entregou (veja o diagnóstico).'
+        ? ' O AdFallback também foi tentado e não entregou' + (fbWhy ? ` (${fbWhy})` : '') + '.'
         : '';
       return res.status(503).json({ error: outageMessage(trace) + tried, retryable: true });
     }
@@ -2100,6 +2105,11 @@ app.get('/hls/:id/:file', blockRenderVideo, (req, res) => {
 /* ------------------------------------------------------------------ */
 
 egress.startLogging();
+
+// Mantém os nós do AdFallback acordados (serverless frio = 503 na cara do usuário).
+if (adshieldFallback.isEnabled()) {
+  adshieldFallback.startKeepAlive(Number(process.env.ADSHIELD_FALLBACK_WARM_MINUTES) || 3);
+}
 liveTv.startWarmer();
 liveEpg.ensure(); // já deixa a programação pronta antes do primeiro espectador
 
