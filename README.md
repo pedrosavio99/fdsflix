@@ -188,6 +188,14 @@ O fdsFlix utiliza uma **cascata de fallback inteligente**: ao buscar um título,
 
 > Se os serviços auxiliares locais não estiverem rodando na máquina, a cascata passa por eles instantaneamente e usa os provedores online nativos (VidLink Pro, Vidsrc, etc.) sem travar nem degradar o tempo de resposta.
 
+### Áudio dublado (PT-BR) — opcional
+
+O provedor **Dublado PT** entra no fim da cascata e só existe quando `PT_DUB_API_BASE` está definido
+(serviços comunitários tipo SuperFlixAPI usam formatos parecidos). Sem a variável ele **não aparece
+nem no diagnóstico** — nada muda para quem já funciona. Formatos de resposta aceitos:
+`{stream_url}`, `{url}`, `{data:{url}}`, `{sources:[{url}]}`, com `quality`/`qualidade` e
+`subtitles`/`legendas`. Há também o **VidFast** nas opções de embed (iframe), útil no iPhone.
+
 ## Player alternativo (embed) — quando nenhuma fonte direta acha o título
 
 Se a cascata direta não encontra o título, o player mostra uma barra com serviços de embed (Vidsrc, Vidsrc.cc, VidLink, VidFast, 2Embed, AutoEmbed, Embed.su). Eles abrem por ID do TMDB dentro de um `<iframe>`. **Nunca carregam sozinhos** (clique para abrir): são sites de terceiros, podem ter anúncios e não salvam o progresso. A lista fica em `EMBED_PROVIDERS` no `public/index.html`.
@@ -289,6 +297,19 @@ docs/API.md            Documentação da API pública (usar em outros projetos)
 docs/DEPLOY-ORACLE.md  Guia do Always Free (VM ARM + HTTPS grátis)
 docs/DEPLOY-RENDER.md  Guia do Render + Vercel (passo a passo)
 ```
+
+## Safari / iPhone
+
+O CDN do VidLink entrega **HEVC com o sample entry `hev1`**, e o **Safari só toca HEVC marcado como `hvc1`**.
+Por isso o filme abria no Chrome e não no iPhone. Duas correções (já no código):
+
+- o detector de HEVC aceita a resposta `"maybe"` do Safari e assume suporte em Safari/iOS (antes ele
+  concluía "sem HEVC" e o servidor tentava transcodificar sem necessidade);
+- o nó do AdFallback troca os **4 bytes** `hev1` → `hvc1` dentro do `moov` **no próprio stream**
+  (metadado, sem re-encode e sem gastar banda extra). O arquivo sai com o mesmo tamanho; o Safari toca.
+
+O patch roda no nó, então **é preciso reenviar o kit** no nó de fallback para valer. Caminhos que
+entregam HEVC `hev1` sem passar pelo nó (ex.: `/api/proxy` do Render) continuam limitados ao Chrome.
 
 ## Limitações
 

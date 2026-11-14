@@ -1374,12 +1374,21 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
       var video = document.createElement('video');
       var types = [
         'video/mp4; codecs="hvc1.1.6.L93.B0"',
-        'video/mp4; codecs="hev1.1.6.L93.B0"'
+        'video/mp4; codecs="hvc1.1.6.L120.90"',
+        'video/mp4; codecs="hvc1"',
+        'video/mp4; codecs="hev1.1.6.L93.B0"',
+        'video/mp4; codecs="hev1"'
       ];
       for (var i = 0; i < types.length; i++) {
-        if (video.canPlayType(types[i]) === 'probably') return true;
+        // Safari costuma responder "maybe" (não "probably") para HEVC — aceitar os dois.
+        var can = video.canPlayType(types[i]);
+        if (can === 'probably' || can === 'maybe') return true;
         if (window.MediaSource && MediaSource.isTypeSupported(types[i])) return true;
       }
+      // Safari/iOS decodifica HEVC por hardware desde o iOS 11, mas o canPlayType pode devolver
+      // string vazia para perfis específicos. Sem isso, o servidor tentava transcodificar por engano.
+      var ua = navigator.userAgent || '';
+      if (/Safari/i.test(ua) && !/Chrome|Chromium|Android|Edg/i.test(ua)) return true;
       return false;
     } catch (err) {
       return false;

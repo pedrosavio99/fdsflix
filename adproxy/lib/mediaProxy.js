@@ -349,6 +349,88 @@ async function prepareMedia(req, res, config) {
   }
 }
 
+/* ------------------------------------------------------------------ */
+/* Safari e HEVC: o arquivo vem com o sample entry "hev1" e o Safari     */
+/* só aceita "hvc1". A troca é de 4 BYTES dentro do moov (metadado),     */
+/* sem re-encode e sem passar o vídeo por outro servidor.               */
+/* ------------------------------------------------------------------ */
+
+const HVC1_CACHE_MS = 60 * 60 * 1000;
+const HVC1_SCAN_BYTES = 2 * 1024 * 1024;
+const hvc1Cache = new Map(); // url -> { offset: number|null, at }
+
+/** Procura "stsd" e, logo depois dele, o sample entry "hev1" no trecho. */
+function findHev1In(buffer, baseOffset) {
+  let at = buffer.indexOf('stsd', 0, 'latin1');
+  while (at !== -1) {
+    const limit = Math.min(buffer.length, at + 4096);
+    let entry = buffer.indexOf('hev1', at + 4, 'latin1');
+    if (entry !== -1 && entry < limit) return baseOffset + entry;
+    at = buffer.indexOf('stsd', at + 4, 'latin1');
+  }
+  return null;
+}
+
+function totalFromContentRange(value) {
+  const match = /\/(\d+)\s*$/.exec(String(value || ''));
+  return match ? Number(match[1]) : 0;
+}
+
+/**
+ * Descobre o offset absoluto do sample entry "hev1" (cache por URL). Tenta o começo do
+ * arquivo e, se o moov estiver no fim (comum), a cauda. Devolve null quando não há o que
+ * trocar (já é hvc1, não é MP4, ou não deu para ler).
+ */
+async function findHvc1Offset(url, options) {
+  const hit = hvc1Cache.get(url);
+  if (hit && Date.now() - hit.at < HVC1_CACHE_MS) return hit.offset;
+
+  const probe = async (range) => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 10000);
+    try {
+      const { response } = await openUpstream(url, { ...options, range, signal: controller.signal });
+      const buffer = Buffer.from(await response.arrayBuffer());
+      return { response, buffer };
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+
+  let offset = null;
+  try {
+    const head = await probe(`bytes=0-${HVC1_SCAN_BYTES - 1}`);
+    const cr = head.response.headers.get('content-range') || '';
+    const start = Number((/bytes (\d+)-/.exec(cr) || [])[1]) || 0;
+    offset = findHev1In(head.buffer, start);
+    if (offset === null) {
+      const total = totalFromContentRange(cr);
+      if (total > 0) {
+        const from = Math.max(0, total - HVC1_SCAN_BYTES);
+        const tail = await probe(`bytes=${from}-${total - 1}`);
+        const tailStart = Number((/bytes (\d+)-/.exec(tail.response.headers.get('content-range') || '') || [])[1]) || from;
+        offset = findHev1In(tail.buffer, tailStart);
+      }
+    }
+  } catch (error) {
+    offset = null;
+  }
+
+  hvc1Cache.set(url, { offset, at: Date.now() });
+  while (hvc1Cache.size > 300) hvc1Cache.delete(hvc1Cache.keys().next().value);
+  return offset;
+}
+
+/** Troca os 4 bytes "hev1" por "hvc1" se o pedaço atual cobrir o offset. */
+function patchHev1Chunk(buffer, position, offset) {
+  if (offset === null || offset === undefined) return buffer;
+  const local = offset - position;
+  if (local < 0 || local + 4 > buffer.length) return buffer;
+  if (buffer.toString('latin1', local, local + 4) !== 'hev1') return buffer;
+  buffer.write('hvc1', local, 'latin1');
+  return buffer;
+}
+
 /** Uma sondagem com um UA: 1 KB da origem + tipo de conteúdo. Nunca responde: devolve o resultado. */
 async function probeOnce(rawUrl, options, signal) {
   const { response, finalUrl } = await openUpstream(rawUrl, {
@@ -483,13 +565,31 @@ async function serveMedia(req, res, config) {
     }
     res.setHeader('Cache-Control', 'public, max-age=3600');
 
+    // Safari não toca HEVC marcado como "hev1": troca os 4 bytes do sample entry para "hvc1"
+    // no próprio stream (sem re-encode e sem sair do nó). Custa 2 MB de leitura por arquivo/hora.
+    let hvc1Offset = null;
+    const looksMp4 = /video\/mp4/i.test(contentType) || /\.mp4(?:$|\?)/i.test(finalUrl);
+    if (looksMp4) {
+      try {
+        hvc1Offset = await findHvc1Offset(entry.url, options);
+      } catch (error) {
+        hvc1Offset = null;
+      }
+    }
+    let position = Number((/bytes (\d+)-/.exec(response.headers.get('content-range') || '') || [])[1]) || 0;
+
     const stream = Readable.from(
       (async function* pipeBody() {
-        if (head.length) yield head;
+        if (head.length) {
+          yield patchHev1Chunk(head, position, hvc1Offset);
+          position += head.length;
+        }
         for (;;) {
           const { value, done } = await reader.read();
           if (done) return;
-          yield Buffer.from(value);
+          const chunk = Buffer.from(value);
+          yield patchHev1Chunk(chunk, position, hvc1Offset);
+          position += chunk.length;
         }
       })()
     );

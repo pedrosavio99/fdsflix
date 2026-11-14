@@ -23,6 +23,17 @@ let proxyBase;
 let disabledBase;
 
 const MP4 = Buffer.alloc(4096, 1);
+
+// MP4 "de mentira" só com a estrutura que importa: stsd + sample entry hev1.
+const HEV1_AT = 4 + 4 + 4 + 8 + 4 + 8 + 4 + 8; // calculado abaixo de propósito
+const HEV1_FILE = Buffer.concat([
+  Buffer.from('00000018ftypisom', 'latin1'),
+  Buffer.from('00000020moov', 'latin1'),
+  Buffer.from('00000014stsd', 'latin1'),
+  Buffer.from('00000000', 'latin1'),
+  Buffer.from('0000000chev1', 'latin1'),
+  Buffer.alloc(2048, 0x41)
+]);
 MP4[0] = 0x00;
 MP4[4] = 0x66; // "ftyp" aproximado: só para os testes de bytes
 
@@ -60,6 +71,13 @@ function startOrigin() {
     if (url.pathname === '/seg.ts') {
       res.setHeader('Content-Type', 'text/html'); // CDN mal-educado, como o do Vidsrc
       res.end(Buffer.from([0x47, 0x40, 0x11, 0x10, 1, 2, 3, 4]));
+      return;
+    }
+    if (url.pathname === '/fake-hev1.mp4') {
+      res.setHeader('Content-Type', 'video/mp4');
+      res.setHeader('Content-Length', String(HEV1_FILE.length));
+      res.setHeader('Accept-Ranges', 'bytes');
+      res.end(HEV1_FILE);
       return;
     }
     if (url.pathname === '/movie.mp4') {
@@ -228,4 +246,18 @@ test('referer/UA informados no prepare são repassados à origem', async () => {
   } finally {
     await close(capture);
   }
+});
+
+
+test('HEVC "hev1" é servido como "hvc1" (Safari só toca hvc1)', async () => {
+  const prepared = await prepare({ u: `${originBase}/fake-hev1.mp4` }, { 'x-media-key': 'chave-teste' });
+  const info = await prepared.json();
+  assert.equal(info.ok, true);
+  assert.equal(info.kind, 'file');
+
+  const res = await fetch(info.url);
+  const body = Buffer.from(await res.arrayBuffer());
+  assert.equal(body.length, HEV1_FILE.length, 'o tamanho não muda (só 4 bytes)');
+  assert.ok(body.includes(Buffer.from('hvc1')), 'sample entry trocado para hvc1');
+  assert.ok(!body.includes(Buffer.from('hev1')), 'não sobrou hev1');
 });
