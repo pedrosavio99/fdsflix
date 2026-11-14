@@ -1382,22 +1382,49 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
     }
   }
 
+  // HEVC por navegador (pesquisado): Safari decodifica nativo (hvc1); Chrome/Edge/Brave só por HARDWARE (GPU + driver; no Linux
+  // precisa de VA-API; no Windows o Edge pede a extensão HEVC); Firefox 133+ (Windows) / 137+ (Linux) toca se o sistema tiver o
+  // decodificador. canPlayType é pouco confiável (o Chromium responde vazio para "hvc1" e o MSE espera "hev1"), então juntamos
+  // canPlayType + MediaSource + (abaixo) MediaCapabilities, que é o que consulta a GPU de verdade.
+  var HEVC_TYPES = [
+    'video/mp4; codecs="hvc1.1.6.L93.B0"',
+    'video/mp4; codecs="hev1.1.6.L93.B0"',
+    'video/mp4; codecs="hvc1.1.6.L120.90"'
+  ];
+
   function detectHevc() {
     try {
       var video = document.createElement('video');
-      var types = [
-        'video/mp4; codecs="hvc1.1.6.L93.B0"',
-        'video/mp4; codecs="hev1.1.6.L93.B0"'
-      ];
-      for (var i = 0; i < types.length; i++) {
-        if (video.canPlayType(types[i]) === 'probably') return true;
-        if (window.MediaSource && MediaSource.isTypeSupported(types[i])) return true;
+      for (var i = 0; i < HEVC_TYPES.length; i++) {
+        var can = video.canPlayType(HEVC_TYPES[i]);
+        if (can === 'probably' || can === 'maybe') return true;
+        if (window.MediaSource && MediaSource.isTypeSupported(HEVC_TYPES[i])) return true;
       }
       // Aparelho Apple decodifica HEVC por hardware, mesmo quando o canPlayType devolve vazio para o perfil testado.
       return isApple();
     } catch (err) {
       return false;
     }
+  }
+
+  // Refina o palpite perguntando ao navegador se ele DECODIFICA 1080p HEVC (consulta o hardware). Só corrige quando a
+  // resposta é clara: "sim" liga o HEVC nativo; "não" desliga (evita mandar HEVC para quem diz sim mas não toca).
+  function refineHevc() {
+    try {
+      var mc = navigator.mediaCapabilities;
+      if (!mc || !mc.decodingInfo || /[?&]hevc=wasm\b/.test(location.search)) return;
+      var asks = HEVC_TYPES.slice(0, 2).map(function (type) {
+        return mc.decodingInfo({ type: 'file', video: { contentType: type, width: 1920, height: 1080, bitrate: 8000000, framerate: 24 } })
+          .then(function (r) { return Boolean(r && r.supported); }, function () { return null; });
+      });
+      Promise.all(asks).then(function (results) {
+        var yes = results.some(function (r) { return r === true; });
+        var no = results.every(function (r) { return r === false; });
+        if (yes) state.hevc = true;
+        else if (no && !isApple()) state.hevc = false;
+        diag('info', 'HEVC (MediaCapabilities): ' + (yes ? 'o aparelho decodifica' : (no ? 'o aparelho NÃO decodifica' : 'sem resposta clara')) + ' → nativo: ' + (state.hevc ? 'sim' : 'não'));
+      });
+    } catch (err) { /* sem MediaCapabilities: fica o palpite de cima */ }
   }
 
   function toast(message) {
@@ -3451,6 +3478,8 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
       return;
     }
     diag('info', 'Modo normal: o fdsFlix vai pedir o stream ao servidor (cascata de provedores).');
+    diag('info', 'Decodificador HEVC no navegador (WebAssembly): ' + (state.clientHevcOff ? 'DESLIGADO nesta sessão (' + (state.clientFailReason || 'falhou antes') + ')' : (cvpMissing() === '' ? 'disponível' : 'indisponível — falta: ' + cvpMissing())) +
+      ' · HEVC nativo: ' + (state.hevc ? 'sim' : 'não'));
     showOverlay('Extraindo o stream…', true);
     setStatus('working', 'Pedindo o vídeo ao servidor…');
 
@@ -3496,7 +3525,6 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
         params.set('e', String(episode));
         // hevc=1: o servidor entrega o HEVC original (sem ffmpeg); quem decodifica é o navegador.
         params.set('hevc', useClient || (state.hevc && !state.forceTranscode) ? '1' : '0');
-        if (isApple()) params.set('apple', '1'); // só iPhone/Safari: o nó troca hev1->hvc1 (não afeta os outros navegadores)
         var directPlay = directExtensionEnabled() && !state.forceTranscode &&
           (useClient || (state.hevc && !state.forceTranscode));
         if (directPlay) params.set('direct', '1');
@@ -3543,7 +3571,12 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
         // No stream convertido o servidor já começa em "start": não buscar de novo.
         if (data.mode === 'hls' && data.transcoded) state.pendingSeek = 0;
         state.captions = Array.isArray(data.captions) ? data.captions : [];
-        var clientPlay = data.mode === 'direct' && state.useClient && /hevc|h265|hev1|hvc1/i.test(String(data.sourceCodec || data.codec || ''));
+        var isHevcSource = /hevc|h265|hev1|hvc1/i.test(String(data.sourceCodec || data.codec || ''));
+        // O servidor pode entregar HEVC mesmo a quem pediu hevc=0 (nó externo, sem gastar o Render). Se o navegador não tem HEVC
+        // nativo mas tem o decodificador próprio (WebAssembly), usa ele em vez de tentar o <video> e falhar.
+        var clientPlay = data.mode === 'direct' && isHevcSource &&
+          (state.useClient || (!state.hevc && !state.forceTranscode && !state.clientHevcOff && cvpSupported()));
+        if (clientPlay && !state.useClient) diag('info', 'O vídeo veio em HEVC e este navegador não decodifica: usando o decodificador do navegador (WebAssembly).');
         addCaptions(state.captions, clientPlay);
         populateSubLang(state.captions);
         applySavedSubLang(state.captions);
@@ -4313,6 +4346,14 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
 
     // Rede de segurança: o navegador disse que suportava HEVC mas não decodificou.
     // Refaz o pedido forçando a transcodificação para H.264.
+    var canClientDecode = cvpMissing() === '' && !state.clientHevcOff;
+    if ((error.code === 3 || error.code === 4) && state.lastMode === 'direct' && !state.forceTranscode && !canClientDecode) {
+      // Sem HEVC nativo E sem o decodificador do navegador: converter exigiria o ffmpeg do Render (gasta os 5 GB). Explica em vez de ficar reiniciando.
+      var br = navigator.brave ? 'Brave' : 'este navegador';
+      fail('O ' + br + ' não decodifica HEVC aqui' + (cvpMissing() ? ' (e falta ' + cvpMissing() + ' para o decodificador do fdsFlix)' : '') +
+        '. Ative a aceleração de hardware nas configurações do navegador, ou use Chrome, Edge, Safari ou Firefox atualizados.');
+      return;
+    }
     if ((error.code === 3 || error.code === 4) && state.lastMode === 'direct' && !state.forceTranscode) {
       state.forceTranscode = true;
       toast('O navegador não decodificou o vídeo original. Convertendo para H.264…');
@@ -4430,6 +4471,7 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
     beaconStop(state.sessionId);
   });
   window.addEventListener('pagehide', function () { progRemember(true); });
+  refineHevc(); // pergunta ao hardware se decodifica HEVC (corrige o palpite do canPlayType, que erra em Chromium/Brave)
   document.addEventListener('visibilitychange', function () {
     if (document.visibilityState === 'hidden') progRemember(true);
   });

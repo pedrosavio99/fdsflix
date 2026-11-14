@@ -26,7 +26,7 @@
   var MAX_RECONNECTS = 30;       // a Vercel corta streams longos (~5 min); reconecta sozinho
 
   var state = {
-    open: false, data: null, group: '', onlyLive: false,
+    open: false, data: null, group: '', onlyLive: true,
     epg: null, hero: '', cur: null, seq: 0, hls: null, ts: null, tsLast: null, watch: 0, poll: 0, polls: 0,
     log: [], diag: null, diagAt: 0, diagTimer: 0, diagBusy: false, netTimer: 0,
     net: { frags: [], samples: [], bytes: 0, count: 0, tsMbps: null }
@@ -438,7 +438,7 @@
     els.next.addEventListener('click', function () { if (state.cur) failSource('troca manual'); });
     els.reload.addEventListener('click', function () { if (state.cur) play(state.cur.id, true); });
     els.retry.addEventListener('click', function () { if (state.cur) { state.cur.attempt = 0; request(); } });
-    els.onlyLive.addEventListener('change', function () { state.onlyLive = els.onlyLive.checked; save({ onlyLive: state.onlyLive }); renderList(); });
+    els.onlyLive.addEventListener('change', function () { state.onlyLive = els.onlyLive.checked; renderList(); });
     els.heroPlay.addEventListener('click', function () { if (state.hero) play(state.hero); });
     els.heroSched.addEventListener('click', function () { if (state.hero) play(state.hero); });
     els.video.addEventListener('playing', onPlaying);
@@ -1500,8 +1500,9 @@
     if (state.open) return;
     var saved = load();
     state.group = saved.group || '';
-    state.onlyLive = !!saved.onlyLive;
-    els.onlyLive.checked = state.onlyLive;
+    // Sempre começa só com os canais no ar (vale em toda visita); o usuário pode desligar, mas ao reabrir volta ligado.
+    state.onlyLive = true;
+    els.onlyLive.checked = true;
     state.open = true;
     state.polls = 0;
     els.root.hidden = false;

@@ -395,8 +395,19 @@ async function findHvc1Offset(url, options) {
     const timer = setTimeout(() => controller.abort(), 10000);
     try {
       const { response } = await openUpstream(url, { ...options, range, signal: controller.signal });
-      const buffer = Buffer.from(await response.arrayBuffer());
-      return { response, buffer };
+      // Lê no máximo HVC1_SCAN_BYTES: se a origem ignorar o Range e mandar o arquivo inteiro, não baixa o filme.
+      const chunks = [];
+      let total = 0;
+      const reader = response.body && response.body.getReader ? response.body.getReader() : null;
+      if (!reader) return { response, buffer: Buffer.alloc(0), partial: false };
+      while (total < HVC1_SCAN_BYTES) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        chunks.push(Buffer.from(value));
+        total += value.length;
+      }
+      reader.cancel().catch(() => null);
+      return { response, buffer: Buffer.concat(chunks).subarray(0, HVC1_SCAN_BYTES), partial: response.status !== 206 };
     } finally {
       clearTimeout(timer);
     }
@@ -414,7 +425,7 @@ async function findHvc1Offset(url, options) {
         const from = Math.max(0, total - HVC1_SCAN_BYTES);
         const tail = await probe(`bytes=${from}-${total - 1}`);
         const tailStart = Number((/bytes (\d+)-/.exec(tail.response.headers.get('content-range') || '') || [])[1]) || from;
-        offset = findHev1In(tail.buffer, tailStart);
+        if (!tail.partial) offset = findHev1In(tail.buffer, tailStart); // origem sem Range: o "fim" seria o começo de novo
       }
     }
   } catch (error) {
