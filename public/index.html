@@ -1369,27 +1369,32 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
     });
   }
 
+  // iPhone/iPad (qualquer navegador: no iOS todos usam o WebKit) e Safari do Mac. Só esses ganham o tratamento do HEVC
+  // para Safari; todos os outros navegadores seguem exatamente como antes.
+  function isApple() {
+    try {
+      var ua = navigator.userAgent || '';
+      if (/iPhone|iPad|iPod/i.test(ua)) return true;
+      if (/Macintosh/i.test(ua) && (navigator.maxTouchPoints || 0) > 1) return true; // iPadOS pedindo "site de computador"
+      return /Macintosh/i.test(ua) && /Safari/i.test(ua) && !/Chrome|Chromium|Edg|OPR|Firefox|FxiOS/i.test(ua);
+    } catch (err) {
+      return false;
+    }
+  }
+
   function detectHevc() {
     try {
       var video = document.createElement('video');
       var types = [
         'video/mp4; codecs="hvc1.1.6.L93.B0"',
-        'video/mp4; codecs="hvc1.1.6.L120.90"',
-        'video/mp4; codecs="hvc1"',
-        'video/mp4; codecs="hev1.1.6.L93.B0"',
-        'video/mp4; codecs="hev1"'
+        'video/mp4; codecs="hev1.1.6.L93.B0"'
       ];
       for (var i = 0; i < types.length; i++) {
-        // Safari costuma responder "maybe" (não "probably") para HEVC — aceitar os dois.
-        var can = video.canPlayType(types[i]);
-        if (can === 'probably' || can === 'maybe') return true;
+        if (video.canPlayType(types[i]) === 'probably') return true;
         if (window.MediaSource && MediaSource.isTypeSupported(types[i])) return true;
       }
-      // Safari/iOS decodifica HEVC por hardware desde o iOS 11, mas o canPlayType pode devolver
-      // string vazia para perfis específicos. Sem isso, o servidor tentava transcodificar por engano.
-      var ua = navigator.userAgent || '';
-      if (/Safari/i.test(ua) && !/Chrome|Chromium|Android|Edg/i.test(ua)) return true;
-      return false;
+      // Aparelho Apple decodifica HEVC por hardware, mesmo quando o canPlayType devolve vazio para o perfil testado.
+      return isApple();
     } catch (err) {
       return false;
     }
@@ -3491,6 +3496,7 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
         params.set('e', String(episode));
         // hevc=1: o servidor entrega o HEVC original (sem ffmpeg); quem decodifica é o navegador.
         params.set('hevc', useClient || (state.hevc && !state.forceTranscode) ? '1' : '0');
+        if (isApple()) params.set('apple', '1'); // só iPhone/Safari: o nó troca hev1->hvc1 (não afeta os outros navegadores)
         var directPlay = directExtensionEnabled() && !state.forceTranscode &&
           (useClient || (state.hevc && !state.forceTranscode));
         if (directPlay) params.set('direct', '1');

@@ -250,8 +250,8 @@ test('referer/UA informados no prepare são repassados à origem', async () => {
 });
 
 
-test('HEVC "hev1" é servido como "hvc1" (Safari só toca hvc1)', async () => {
-  const prepared = await prepare({ u: `${originBase}/fake-hev1.mp4` }, { 'x-media-key': 'chave-teste' });
+test('HEVC "hev1" vira "hvc1" SÓ quando o Render pede (iPhone/Safari: h=1)', async () => {
+  const prepared = await prepare({ u: `${originBase}/fake-hev1.mp4`, h: '1' }, { 'x-media-key': 'chave-teste' });
   const info = await prepared.json();
   assert.equal(info.ok, true);
   assert.equal(info.kind, 'file');
@@ -261,4 +261,13 @@ test('HEVC "hev1" é servido como "hvc1" (Safari só toca hvc1)', async () => {
   assert.equal(body.length, HEV1_FILE.length, 'o tamanho não muda (só 4 bytes)');
   assert.ok(body.includes(Buffer.from('hvc1')), 'sample entry trocado para hvc1');
   assert.ok(!body.includes(Buffer.from('hev1')), 'não sobrou hev1');
+});
+
+test('sem o pedido do iPhone/Safari o arquivo vai intacto (nenhuma leitura extra na origem)', async () => {
+  const prepared = await prepare({ u: `${originBase}/fake-hev1.mp4` }, { 'x-media-key': 'chave-teste' });
+  const info = await prepared.json();
+  assert.equal(info.ok, true);
+  const res = await fetch(info.url);
+  const body = Buffer.from(await res.arrayBuffer());
+  assert.deepEqual(body, HEV1_FILE, 'idêntico ao da origem');
 });

@@ -1217,6 +1217,8 @@ function codecHint(url) {
  * @returns {Promise<boolean>} true se já respondeu ao cliente.
  */
 async function rescueMovieWithAdShield(req, res, { candidates, trace, hevcOk, forced = false }) {
+  // Só iPhone/iPad/Safari (o navegador avisa com apple=1) recebe o HEVC com a troca hev1->hvc1; os demais ficam como sempre.
+  const apple = String(req.query.apple || '') === '1';
   const entry = { provider: 'AdFallback', outcome: 'sem resultado', ms: 0, notes: [] };
   if (trace) trace.push(entry);
   const started = Date.now();
@@ -1236,7 +1238,7 @@ async function rescueMovieWithAdShield(req, res, { candidates, trace, hevcOk, fo
     }
 
     const headers = (info.bridge && info.bridge.headers) || {};
-    const prepared = await adshieldFallback.prepare({ url: info.url, headers });
+    const prepared = await adshieldFallback.prepare({ url: info.url, headers, apple });
     if (!prepared.ok) {
       entry.notes.push(`${info.provider}: ${prepared.error}`);
       continue;
@@ -1246,15 +1248,16 @@ async function rescueMovieWithAdShield(req, res, { candidates, trace, hevcOk, fo
     // O codec vem do provedor (o VidLink traz) ou de uma pista na URL; sem isso, entrega como está.
     let codec = String(info.codec || '').toLowerCase();
     if (!codec && prepared.kind === 'file') codec = codecHint(info.url);
-    // HEVC: ENTREGA SEMPRE pelo nó (como era antes). O nó não gasta a banda do Render, e muitos
-    // navegadores que dizem "sem HEVC" tocam mesmo assim. Se o navegador não decodificar, o player
-    // cai no aviso/embed — mas nunca mais devolvemos 503 por causa disso. Quando o nó é o kit novo,
-    // ele ainda troca hev1->hvc1 no voo, que é o que faz o Safari tocar.
+    // Arquivo HEVC sem HEVC no navegador exigiria ffmpeg: isso continuaria preso ao Render (como sempre foi).
+    // No iPhone/Safari (apple=1, hevcOk já vem verdadeiro) segue pelo nó, que troca hev1->hvc1 se for o kit novo.
     if (prepared.kind === 'file' && /hevc|h265|hvc1|hev1/.test(codec)) {
-      entry.notes.push(
-        `${info.provider}: HEVC entregue pelo nó` +
-        (prepared.hvc1 ? ' como hvc1 (Safari toca)' : ' (nó antigo: reenvie o kit para o Safari tocar)')
-      );
+      if (!hevcOk) {
+        entry.notes.push(`${info.provider}: HEVC e o navegador não decodifica (precisaria do ffmpeg do Render)`);
+        continue;
+      }
+      if (apple) {
+        entry.notes.push(`${info.provider}: HEVC para Apple` + (prepared.hvc1 ? ' (nó troca hev1->hvc1)' : ' (nó antigo, sem a troca hvc1)'));
+      }
     }
 
     const captions = buildCaptions(info.captions, 0).map((caption) => ({

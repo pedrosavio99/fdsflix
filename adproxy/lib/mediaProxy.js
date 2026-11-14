@@ -79,6 +79,7 @@ function signToken(options, config) {
     a: options.userAgent ? String(options.userAgent).slice(0, 300) : '',
     e: Math.floor(Date.now() / 1000) + ttlSec(config)
   };
+  if (options.hvc1) payload.h = 1; // só iPhone/Safari: pede a troca hev1->hvc1 (os demais navegadores recebem o arquivo intacto)
   const body = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
   const mac = crypto.createHmac('sha256', config.secret).update(`media1.${body}`).digest('base64url');
   return `${body}.${mac}`;
@@ -118,7 +119,8 @@ function verifyToken(token, config) {
     url: url.toString(),
     referer: safeHttpUrl(parsed.r),
     origin: safeHttpUrl(parsed.o),
-    userAgent: typeof parsed.a === 'string' ? parsed.a : ''
+    userAgent: typeof parsed.a === 'string' ? parsed.a : '',
+    hvc1: parsed.h === 1
   };
 }
 
@@ -290,7 +292,8 @@ async function prepareMedia(req, res, config) {
     config,
     referer: safeHttpUrl(req.query.r),
     origin: safeHttpUrl(req.query.o),
-    userAgent: String(req.query.a || '').trim().slice(0, 300)
+    userAgent: String(req.query.a || '').trim().slice(0, 300),
+    hvc1: String(req.query.h || '') === '1'
   };
 
   const started = Date.now();
@@ -571,7 +574,7 @@ async function serveMedia(req, res, config) {
     // no próprio stream (sem re-encode e sem sair do nó). Custa 2 MB de leitura por arquivo/hora.
     let hvc1Offset = null;
     const looksMp4 = /video\/mp4/i.test(contentType) || /\.mp4(?:$|\?)/i.test(finalUrl);
-    if (looksMp4) {
+    if (looksMp4 && entry.hvc1) {
       try {
         hvc1Offset = await findHvc1Offset(entry.url, options);
       } catch (error) {
