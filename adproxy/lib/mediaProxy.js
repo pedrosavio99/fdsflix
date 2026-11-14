@@ -341,6 +341,8 @@ async function prepareMedia(req, res, config) {
       status,
       length: length || null,
       ua: attempt.userAgent && attempt.userAgent !== NEUTRAL_USER_AGENT ? 'personalizado' : 'neutro',
+      // Este nó entrega HEVC "hev1" como "hvc1" (Safari toca). Nós antigos não mandam este campo.
+      hvc1: true,
       ms: Date.now() - started,
       expiresInSec: ttlSec(config)
     });

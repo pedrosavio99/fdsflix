@@ -161,6 +161,7 @@ test('playlist é reescrita e variante/chave/segmento também passam pelo nó', 
   const info = await prepared.json();
   assert.equal(info.ok, true);
   assert.equal(info.kind, 'hls');
+  assert.equal(info.hvc1, true, 'o nó anuncia que entrega hev1 como hvc1 (Safari)');
   assert.match(info.url, /\/_adshield\/media\/m\//);
 
   const master = await fetch(info.url);
