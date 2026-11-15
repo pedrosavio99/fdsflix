@@ -37,6 +37,8 @@
   var relayBtn = $('relayTestBtn');
   var relayList = $('relayList');
   var webRun = $('webRun');
+  var extState = $('extState');
+  var extReady = null;
   var webNote = $('webNote');
   var webList = $('webList');
   var seq = 0;
@@ -272,6 +274,13 @@
   // O servidor (Render) leva 403 dos sites; o navegador do admin está em IP residencial.
   // A extensão busca as páginas e devolve o HTML aqui; o painel faz o resto.
 
+  function paintExtState() {
+    if (!extState) return;
+    if (extReady === true) { extState.className = 'src-ok'; extState.textContent = 'extensão: OK'; }
+    else if (extReady === false) { extState.className = 'src-no'; extState.textContent = 'extensão: não detectada (↻ em chrome://extensions)'; }
+    else { extState.className = 'src-no'; extState.textContent = 'extensão: …'; }
+  }
+
   function extPing(timeout) {
     return new Promise(function (resolve) {
       var id = 'p' + Math.random().toString(36).slice(2);
@@ -444,6 +453,9 @@
         return (s.attempts || []).map(function (a) { return a.slug + '→' + (a.status || (a.timeout ? 'tempo' : '?')); });
       }));
       if (tried.length) why += ' · slugs tentados: ' + tried.slice(0, 5).join(', ');
+      if (data.bridge === false) {
+        why += ' · EXTENSÃO NÃO DETECTADA: abra chrome://extensions e clique em ↻ no cartão fdsFlix Direct (versão 1.1.0), depois recarregue esta página.';
+      }
       if (data && data.relay === false) why += ' · relay desligado.';
       webNote.textContent = why;
       webNote.className = 'pix-note err';
@@ -546,6 +558,7 @@
         if (client && client.film) {
           data.sites = [client].concat((data.sites || []).filter(function (s) { return s.site !== client.site; }));
         }
+        data.bridge = Boolean(client);
         paintWeb(data);
       })
       .catch(function (err) {
@@ -712,6 +725,7 @@
       title: String((item && item.title) || '')
     };
     if (srcTitle) srcTitle.textContent = context.title || 'Título aberto';
+    extPing(1200).then(function (ok) { extReady = ok; paintExtState(); });
     if (!dlg.open) dlg.showModal();
     if (item && item.title) input.value = item.title;
     resultsEl.textContent = '';
