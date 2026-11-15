@@ -105,7 +105,8 @@ variável própria dele.
   `<iframe>`, `.m3u8/.mp4` e `data-post` do Dooplay. Sites de catálogo/crítica/loja (AdoroCinema,
   JustWatch, Filmelier, Disney+, Prime, YouTube…) são **excluídos** — não são fonte. Rota
   `GET /api/admin/websearch?title=&year=&type=&s=&e=` (admin). O DDG rate-limita (HTTP 202) às
-  vezes; o Bing é o que segura.
+  vezes; o Bing é o que segura. Resultado só entra se tiver **alguma palavra do título** em
+  `matchesTitle()` — sem isso o Bing devolve Baidu/calculadora para título ambíguo ("A Odisseia").
 - **Idioma do áudio** (`lib/audioLang.js`): o painel lê a faixa de áudio com `ffprobe`
   (`stream_tags=language`) e mostra **🇧🇷 dublado** quando aparece `por`. É a diferença entre
   "o site diz dublado" e "o arquivo é dublado". Best-effort: sem ffprobe, não mostra o selo.
@@ -119,7 +120,12 @@ variável própria dele.
   Com um título aberto, `#tokyoFindBtn` chama `window.fdsFlixTokyo.openFor({id, type, title})`:
   a busca então usa os nomes do TMDB em vários idiomas (pt-BR primeiro) e a duração do filme, e
   marca "✅ confere" no resultado cuja duração bate com o runtime — é assim que se acha a versão
-  em pt-BR do acervo. Sem contexto (aberto pela barra), é busca livre. Rotas `GET /api/admin/tokyo/search?q=`,
+  em pt-BR do acervo. Sem contexto (aberto pela barra), é busca livre.
+  **Os players dos sites tocam DENTRO do painel** (iframe `#tkFrame`, botão ▶ em cada servidor/opção):
+  é o caminho para quem trava o token no IP do espectador. O `vidsrc.sh` (servidor 6 do redecanais,
+  `?ds_lang=pob,pt,en` = dublado) usa `data-api` próprio, `apiToken` **preso ao IP** e
+  `stream_urls` cifrado em ChaCha20 via WebAssembly (`vsdec.js`); descriptografei no Node, mas o
+  `.m3u8` só abre para o IP que pediu o token — por isso embed/iframe, não extração. Rotas `GET /api/admin/tokyo/search?q=`,
   `GET /api/admin/tokyo/play?id=` e `GET /api/admin/sources/test` exigem `requireApiKey` + `requireStatsKey`; tudo (botão, diálogo,
   CSS `.tk-*`) é `.admin-only` e o módulo não roda sem `html.is-admin`. Texto vindo do site entra
   sempre por `textContent`. A busca reordena pelo título e marca "🎬 filme" a partir de 40 min;

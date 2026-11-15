@@ -73,6 +73,9 @@
 
   function stopPlayback() {
     try { player.pause(); } catch (e) { /* sem vídeo */ }
+    var old = document.getElementById('tkFrame');
+    if (old) { old.src = 'about:blank'; old.style.display = 'none'; }
+    player.style.display = '';
     if (hls) { try { hls.destroy(); } catch (e) { /* ignore */ } hls = null; }
     player.removeAttribute('src');
     try { player.load(); } catch (e) { /* ignore */ }
@@ -298,6 +301,13 @@
         label.textContent = server.label + ' · ' + server.url.slice(0, 70);
         row.appendChild(label);
         if (server.audio === 'dublado') row.appendChild(chip('dublado', 'ok'));
+        var playBtn = document.createElement('button');
+        playBtn.type = 'button';
+        playBtn.className = 'ghost';
+        playBtn.textContent = '▶';
+        playBtn.title = 'Tocar aqui dentro (player do site)';
+        playBtn.addEventListener('click', function () { playEmbed(server.url, site.site + ' · ' + server.label); });
+        row.appendChild(playBtn);
         var link = document.createElement('a');
         link.className = 'ghost';
         link.href = server.url;
@@ -358,6 +368,13 @@
         label.className = 'src-name';
         label.textContent = (opt.audio ? opt.audio + ' · ' : '') + opt.url.slice(0, 80);
         sub.appendChild(label);
+        var play = document.createElement('button');
+        play.type = 'button';
+        play.className = 'ghost';
+        play.textContent = '▶';
+        play.title = 'Tocar aqui dentro (player do site)';
+        play.addEventListener('click', function () { playEmbed(opt.url, (page.host || 'site') + ' · ' + (opt.audio || 'player')); });
+        sub.appendChild(play);
         var a = document.createElement('a');
         a.className = 'ghost';
         a.href = opt.url;
@@ -395,6 +412,31 @@
         webNote.className = 'pix-note err';
       })
       .then(function () { webRun.disabled = false; });
+  }
+
+  // Toca o player do próprio site DENTRO do painel (iframe). É o caminho para os
+  // provedores que travam o token no IP de quem assiste (vidsrc.sh e cia): o player
+  // deles roda aqui e resolve o token a partir do nosso visitante.
+  function playEmbed(url, label) {
+    stopPlayback();
+    playerBox.hidden = false;
+    try { player.pause(); } catch (e) { /* ignore */ }
+    player.removeAttribute('src');
+    player.style.display = 'none';
+
+    var frame = document.getElementById('tkFrame');
+    if (!frame) {
+      frame = document.createElement('iframe');
+      frame.id = 'tkFrame';
+      frame.className = 'tk-frame';
+      frame.setAttribute('allowfullscreen', '');
+      frame.setAttribute('allow', 'autoplay; fullscreen; encrypted-media');
+      frame.setAttribute('referrerpolicy', 'origin');
+      playerBox.insertBefore(frame, playerInfo);
+    }
+    frame.style.display = 'block';
+    frame.src = url;
+    playerInfo.textContent = (label || 'player do site') + ' · tocando aqui dentro (o player é deles)';
   }
 
   function playSource(item, btn) {
