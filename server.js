@@ -12,6 +12,8 @@ const { getVidLinkStream, probeVideo } = require('./lib/streamExtractor');
 const { getFallbackStream, getProviderList, getCineProReport, breakerOpen, breakerState, vidsrcHealth } = require('./lib/fallbackCascade');
 const { getAnimeReport } = require('./lib/animeFire');
 const tokyoVideo = require('./lib/tokyoVideo');
+const audioLang = require('./lib/audioLang');
+const websearch = require('./lib/websearch');
 const cineproRunner = require('./lib/cineproRunner');
 const { normalizeCineProUrl } = require('./lib/cineproUrl');
 const {
@@ -769,6 +771,14 @@ app.get('/api/admin/sources/test', requireApiKey, requireStatsKey, async (req, r
         entry.url = out.url;
         entry.cors = out.cors === true;
         entry.quality = out.quality || 'auto';
+        // Idioma do áudio ("dublado?"): lê a faixa, não o nome do site.
+        try {
+          const langs = await audioLang.audioLanguages(out.url, 7000);
+          if (langs) {
+            entry.audio = langs;
+            entry.dubbed = audioLang.isPortuguese(langs);
+          }
+        } catch (err) { /* best effort */ }
       }
     } catch (err) {
       entry.ms = Date.now() - started;
@@ -778,6 +788,27 @@ app.get('/api/admin/sources/test', requireApiKey, requireStatsKey, async (req, r
   }));
 
   res.json({ id, type, season, episode, title, results });
+});
+
+// Busca na web: faz "assistir <título> online grátis dublado" e sonda as páginas achadas.
+// É o plano B quando nenhuma fonte de API entrega. Só administrador.
+app.get('/api/admin/websearch', requireApiKey, requireStatsKey, async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const title = String(req.query.title || '').trim().slice(0, 120);
+  if (!title) return res.status(400).json({ error: 'Informe ?title=' });
+  const type = req.query.type === 'tv' ? 'tv' : 'movie';
+  try {
+    res.json(await websearch.find({
+      title,
+      year: Number(req.query.year) || 0,
+      type,
+      season: Math.max(1, Number(req.query.s) || 1),
+      episode: Math.max(1, Number(req.query.e) || 1)
+    }));
+  } catch (err) {
+    console.warn('[websearch] falhou:', err.message);
+    res.status(502).json({ error: 'A busca na web não respondeu agora.' });
+  }
 });
 
 // Busca no acervo do TokyVideo (ferramenta do administrador: achar título que as outras fontes

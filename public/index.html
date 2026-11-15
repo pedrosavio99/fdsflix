@@ -1041,6 +1041,15 @@
       <button id="tokyoClose" class="ghost" type="button" aria-label="Fechar">✕</button>
     </div>
     <div class="cfg-body">
+      <div class="cfg-card" id="webBox">
+        <div class="src-head">
+          <b>Buscar na web</b>
+          <button id="webRun" class="ghost" type="button">Procurar "assistir … online grátis"</button>
+        </div>
+        <p id="webNote" class="pix-note" role="status"></p>
+        <div id="webList" class="src-list"></div>
+      </div>
+
       <div class="cfg-card" id="srcTestBox">
         <div class="src-head">
           <b id="srcTestTitle">Nenhum título aberto</b>
@@ -4545,7 +4554,8 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
       type: item.type,
       title: item.title,
       season: state.curS,
-      episode: state.curE
+      episode: state.curE,
+      year: item.year
     });
   });
 

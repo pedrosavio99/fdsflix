@@ -89,10 +89,26 @@ variável própria dele.
   (`/wp-json/dooplayer/v1/<post>/movie/<n>` → `embed_url`); todos os seis são por id do TMDB, ou
   seja, para esses provedores não existe "refinar busca": o id já está no app. O MP4 é
   **faststart** (moov no começo, começa na hora), H.264, aceita Range e não exige Referer.
+  **O mgeb.lat está atrás do Cloudflare e desafia IP de datacenter (403/"Just a moment"):** por isso
+  `lib/mgeb.js` tenta direto e, se não sair MP4, **refaz pelo relay** (`VIDEO_RELAY_URL`) — o Worker
+  passa. Sem esse retry a fonte não funciona no Render (foi o que fez "nada funcionar" nos testes).
   O CDN **não manda `Access-Control-Allow-Origin`**, então o resultado vem com `cors: false` e o
   `/api/stream` repassa isso; o front tira o `crossorigin` do `<video>` (TokyVideo, que exige CORS,
   vem com `cors: true`). Série: `/embed/<tmdbId>/<temporada>/<episódio>` (o seletor da página só troca o
   caminho; conferido: GoT S1E2 → 94049.mp4, S2E5 → 94062.mp4). Teste: `test/mgeb.test.js`.
+- **Buscar na web** (`lib/websearch.js`, `WEBSEARCH_ENABLED=0` desliga): é o plano B quando
+  nenhuma fonte de API entrega. Faz duas coisas: (a) **busca dentro dos sites** — hoje o
+  `redecanais` (`/search/<título>/` → `/filme/<slug>/` → `data-post` + `/wp-json/dooplayer/v1/
+  <post>/movie/<n>` → 6 `embed_url`, todos por id do TMDB, e o servidor 6 vem com `ds_lang=pt`);
+  (b) **busca no DuckDuckGo HTML + Bing** com as consultas "assistir <título> <ano> online
+  grátis dublado", sonda as páginas e tira delas `data-tipo="dublado|legendado"` + `data-url`,
+  `<iframe>`, `.m3u8/.mp4` e `data-post` do Dooplay. Sites de catálogo/crítica/loja (AdoroCinema,
+  JustWatch, Filmelier, Disney+, Prime, YouTube…) são **excluídos** — não são fonte. Rota
+  `GET /api/admin/websearch?title=&year=&type=&s=&e=` (admin). O DDG rate-limita (HTTP 202) às
+  vezes; o Bing é o que segura.
+- **Idioma do áudio** (`lib/audioLang.js`): o painel lê a faixa de áudio com `ffprobe`
+  (`stream_tags=language`) e mostra **🇧🇷 dublado** quando aparece `por`. É a diferença entre
+  "o site diz dublado" e "o arquivo é dublado". Best-effort: sem ffprobe, não mostra o selo.
 - **Painel "Outras fontes" do admin** (`public/tokyo.js`, botões `#tokyoOpen` na barra e
   `#tokyoFindBtn` nos controles do player, diálogo `#tokyoDialog`): a parte de cima é o **teste de
   todas as fontes** — `GET /api/admin/sources/test?id=&type=&s=&e=&title=` roda a cascata inteira em
@@ -111,6 +127,6 @@ variável própria dele.
 
 ## Como rodar e testar
 
-- `npm start` (porta `PORT`, padrão 3000) · `npm test` (229 testes, `node --test test/*.test.js`).
+- `npm start` (porta `PORT`, padrão 3000) · `npm test` (236 testes, `node --test test/*.test.js`).
 - Manutenção/"mudamos de URL": tela "Site" do admin (`lib/siteStatus.js`, `public/sitegate.js`, `public/site.js`; tabela `pix_settings` no Supabase).
 - Docs: `docs/DEPLOY-RENDER.md`, `docs/VERCEL-POOL.md`, `docs/TV-AO-VIVO.md`, `docs/VISITANTES.md`, `docs/API.md`.

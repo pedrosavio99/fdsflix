@@ -34,6 +34,9 @@
   var srcNote = $('srcTestNote');
   var srcList = $('srcTestList');
   var srcRun = $('srcTestRun');
+  var webRun = $('webRun');
+  var webNote = $('webNote');
+  var webList = $('webList');
   var seq = 0;
   var lastData = null;
   var hls = null;        // player HLS do painel (quando a fonte entrega .m3u8)
@@ -191,6 +194,13 @@
       name.textContent = item.name;
       row.appendChild(name);
 
+      if (item.ok && item.dubbed) {
+        var br = document.createElement('span');
+        br.className = 'src-ok';
+        br.style.background = '#1d3a1f';
+        br.textContent = '🇧🇷 dublado';
+        row.appendChild(br);
+      }
       var tag = document.createElement('span');
       if (item.ok) {
         tag.className = 'src-ok';
@@ -247,6 +257,144 @@
         srcNote.className = 'pix-note err';
       })
       .then(function () { srcTesting = false; srcRun.disabled = false; });
+  }
+
+  /* ---- buscar na web ("assistir <título> online grátis") ---- */
+
+  function chip(text, cls) {
+    var span = document.createElement('span');
+    span.className = 'src-' + (cls || 'no');
+    span.textContent = text;
+    return span;
+  }
+
+  function paintWeb(data) {
+    webList.textContent = '';
+
+    // 1) O que foi achado DENTRO dos sites (redecanais e cia), com os servidores deles.
+    (data.sites || []).forEach(function (site) {
+      if (!site.film) return;
+      var head = document.createElement('div');
+      head.className = 'src-row';
+      var name = document.createElement('span');
+      name.className = 'src-name';
+      name.textContent = site.site + ' · ' + (site.title || site.film);
+      head.appendChild(name);
+      var open = document.createElement('a');
+      open.className = 'ghost';
+      open.href = site.film;
+      open.target = '_blank';
+      open.rel = 'noopener noreferrer';
+      open.textContent = 'Abrir';
+      head.appendChild(open);
+      webList.appendChild(head);
+
+      (site.servers || []).forEach(function (server) {
+        var row = document.createElement('div');
+        row.className = 'src-row';
+        row.style.marginLeft = '1.2rem';
+        var label = document.createElement('span');
+        label.className = 'src-name';
+        label.textContent = server.label + ' · ' + server.url.slice(0, 70);
+        row.appendChild(label);
+        if (server.audio === 'dublado') row.appendChild(chip('dublado', 'ok'));
+        var link = document.createElement('a');
+        link.className = 'ghost';
+        link.href = server.url;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        link.textContent = 'Abrir';
+        row.appendChild(link);
+        webList.appendChild(row);
+      });
+    });
+
+    var list = (data && data.results) || [];
+    if (!list.length && !(data.sites || []).some(function (s) { return s.film; })) {
+      webNote.textContent = data && data.error ? data.error : 'Nada encontrado na busca.';
+      webNote.className = 'pix-note err';
+      return;
+    }
+    var foundSites = (data.sites || []).filter(function (s) { return s.film; }).length;
+    webNote.textContent = (foundSites ? foundSites + ' site(s) com o filme · ' : '') +
+      list.length + ' página(s) da busca · ' + (data.queries || []).join(' | ');
+    webNote.className = 'pix-note ok';
+
+    list.forEach(function (item) {
+      var page = item.page || {};
+      var row = document.createElement('div');
+      row.className = 'src-row';
+
+      var name = document.createElement('span');
+      name.className = 'src-name';
+      name.textContent = (page.host || hostOf(item.url)) + ' · ' + (page.title || item.title || '').slice(0, 60);
+      row.appendChild(name);
+
+      var hasDub = (page.options || []).some(function (o) { return o.audio === 'dublado'; });
+      if (hasDub) row.appendChild(chip('dublado', 'ok'));
+      if ((page.streams || []).length) row.appendChild(chip('arquivo', 'ok'));
+      if ((page.options || []).length) row.appendChild(chip((page.options.length) + ' player(s)', 'ok'));
+      if ((page.iframes || []).length) row.appendChild(chip((page.iframes.length) + ' iframe(s)', 'ok'));
+
+      var open = document.createElement('a');
+      open.className = 'ghost';
+      open.href = item.url;
+      open.target = '_blank';
+      open.rel = 'noopener noreferrer';
+      open.textContent = 'Abrir';
+      row.appendChild(open);
+
+      webList.appendChild(row);
+
+      // O que a página entrega para tocar (embeds marcados como dublado primeiro).
+      var options = (page.options || []).slice().sort(function (a, b) {
+        return (b.audio === 'dublado' ? 1 : 0) - (a.audio === 'dublado' ? 1 : 0);
+      });
+      options.slice(0, 4).forEach(function (opt) {
+        var sub = document.createElement('div');
+        sub.className = 'src-row';
+        sub.style.marginLeft = '1.2rem';
+        var label = document.createElement('span');
+        label.className = 'src-name';
+        label.textContent = (opt.audio ? opt.audio + ' · ' : '') + opt.url.slice(0, 80);
+        sub.appendChild(label);
+        var a = document.createElement('a');
+        a.className = 'ghost';
+        a.href = opt.url;
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        a.textContent = 'Abrir';
+        sub.appendChild(a);
+        webList.appendChild(sub);
+      });
+    });
+  }
+
+  function runWebSearch() {
+    var title = (context.title || input.value || '').trim();
+    if (!title) {
+      webNote.textContent = 'Abra um filme (ou digite um título) primeiro.';
+      webNote.className = 'pix-note err';
+      return;
+    }
+    webRun.disabled = true;
+    webList.textContent = '';
+    webNote.textContent = 'Procurando "assistir ' + title + ' online grátis"…';
+    webNote.className = 'pix-note';
+
+    var url = '/api/admin/websearch?title=' + encodeURIComponent(title) +
+      (context.year ? '&year=' + encodeURIComponent(context.year) : '') +
+      '&type=' + encodeURIComponent(context.type || 'movie') +
+      '&s=' + encodeURIComponent(context.season || 1) +
+      '&e=' + encodeURIComponent(context.episode || 1);
+
+    json(url)
+      .then(paintWeb)
+      .catch(function (err) {
+        webNote.textContent = err.message || 'A busca falhou.';
+        webNote.className = 'pix-note err';
+      })
+      .then(function () { webRun.disabled = false; });
   }
 
   function playSource(item, btn) {
@@ -350,6 +498,12 @@
     else say('Este título não tem nome para buscar — digite um.', 'err');
     runSources();
   }
+
+  function hostOf(url) {
+    try { return new URL(url).hostname.replace(/^www\./, ''); } catch (e) { return ''; }
+  }
+
+  if (webRun) webRun.addEventListener('click', runWebSearch);
 
   openBtn.addEventListener('click', function () {
     if (!dlg.open) dlg.showModal();
