@@ -3958,7 +3958,7 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
     var req = apiFetch('/api/stream/options?' + q.toString(), { signal: controller.signal })
       .then(function (r) { return r.ok ? r.json() : empty; })
       .catch(function (err) { if (err && err.name === 'AbortError') { state.langChecking = false; throw err; } return empty; });
-    var timeout = new Promise(function (resolve) { setTimeout(function () { resolve(empty); }, 11000); });
+    var timeout = new Promise(function (resolve) { setTimeout(function () { resolve(empty); }, 8000); });
 
     return Promise.race([req, timeout]).then(function (data) {
       state.langChecking = false;
@@ -4054,7 +4054,7 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
       if (playToken !== state.playToken) return;
       var cards = $('langPick');
       if (cards && !cards.hidden) return;
-      if (state.langChecking && Date.now() - wakeAt < 12000) { slowTimer = setTimeout(wakeCheck, 3000); return; }
+      if (state.langChecking && Date.now() - wakeAt < 9000) { slowTimer = setTimeout(wakeCheck, 3000); return; }
       showOverlay('Acordando o servidor… no Render gratuito isso pode levar até ~1 minuto.', true);
       setStatus('working', 'Acordando o servidor (Render gratuito)…');
     }, 6000);

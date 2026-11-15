@@ -806,7 +806,7 @@
         var row = document.createElement('div');
         row.className = 'src-row';
         var label = document.createElement('span');
-        label.textContent = m.title + (m.year ? ' (' + m.year + ')' : '') + ' · #' + m.id + ' · ' + (m.sources || []).join('+') + (m.dub ? ' · 🇧🇷 dublado' : '');
+        label.textContent = m.title + (m.year ? ' (' + m.year + ')' : '') + ' · #' + m.id + ' · ' + (m.sources || []).join('+') + (m.dub ? ' · 🇧🇷 dublado' : '') + (m.label ? ' · upload: "' + m.label + '"' : '');
         var del = document.createElement('button');
         del.type = 'button';
         del.className = 'ghost';

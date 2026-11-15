@@ -38,7 +38,7 @@ test('fonte de prioridade maior que trava não segura as outras para sempre', as
   const r = await cascade.getFallbackStream(args());
   assert.equal(r.provider, 'Boa');
   const ms = Date.now() - t;
-  assert.ok(ms >= 4500 && ms < 6500, `levou ${ms} ms (esperado ~5 s de tolerância)`);
+  assert.ok(ms >= 2800 && ms < 4500, `levou ${ms} ms (esperado ~3 s de tolerância)`);
 });
 
 test('fonte pesada não parte se uma leve entrega logo', async () => {

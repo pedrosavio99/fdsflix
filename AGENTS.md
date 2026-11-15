@@ -213,7 +213,7 @@ variável própria dele.
 `getFallbackStream` (`lib/fallbackCascade.js`) **não é mais em série**: as fontes leves partem juntas; as pesadas
 (`HEAVY`: CinePro, CineWinx, Stream-Winx, Consumet, MegaMoviesLibre, API5, KekikStream — poupam os 0,1 CPU) só
 entram aos 3 s ou quando as leves acabam sem nada. A ordem de `ALL_PROVIDERS` segue sendo a prioridade: vence a
-de maior prioridade que entregar; se uma menor entregar antes, as maiores ainda têm 5 s (`PRIORITY_GRACE_MS`) para
+de maior prioridade que entregar; se uma menor entregar antes, as maiores ainda têm 3 s (`PRIORITY_GRACE_MS`) para
 chegar. Teto geral 40 s. Antes eram ~13 s só para chegar nas fontes novas (Vidsrc 8 s + Embed.su 2 s + …).
 - **`accept` / `onReject`**: o `/api/stream` veta DENTRO da corrida a fonte que gastaria a banda do Render
   (`renderBound`) e a guarda em `boundCandidates` para o AdFallback — sem reiniciar a cascata (antes reiniciava e
@@ -225,8 +225,15 @@ chegar. Teto geral 40 s. Antes eram ~13 s só para chegar nas fontes novas (Vids
   original ficava sem legenda. No front, **dublado começa sem legenda** (só se a pessoa nunca escolheu; não grava
   isso como escolha) e **original liga a legenda** (pt-BR primeiro).
 - `/api/stream/options` só oferece versão que o `/api/stream` realmente entrega (filtra `renderBound`; o front manda
-  os mesmos `hevc`/`direct`). Orçamento 9 s (`BUDGET_MS`) + 2,5 s de tolerância; o front desiste da checagem em 11 s
+  os mesmos `hevc`/`direct`). Orçamento 6 s (`BUDGET_MS`) + 2,5 s de tolerância; o front desiste da checagem em 8 s
   e segue a cascata normal. Testes: `test/parallelCascade.test.js`. Gancho de teste: `_setProviders()`.
+- **`lib/matchGuard.js` — "este upload é MESMO este filme?"** (BitChute, Internet Archive, PeerTube). Título parecido +
+  duração parecida NÃO bastam (caso real: "La Odisea", minissérie de 1997 publicada em 2023, casou com "A Odisseia",
+  2026). Regras: publicado antes do lançamento (−14 dias) ⇒ não é; ano diferente no título ⇒ não é; ano do filme
+  no título/descrição ⇒ vale (e ganha +20 de preferência); sem ano nenhum ⇒ só se o título for EXATAMENTE o nome
+  principal do TMDB (pt-BR/original/inglês, nunca nome alternativo de outro país) e a duração bater em ±4%.
+  Cada entrada do catálogo guarda o `label` (título do upload) e o painel o mostra para o admin conferir/remover.
+  O Catálogo entra sempre na lista de fontes (não depende de já ter carregado do Supabase).
 - `catalog.reachable`: tempo esgotado **não** mata o link (CDN do BitChute chega a demorar 10 s+ para 2 bytes);
   só resposta HTTP de erro conta como morto.
 
@@ -254,6 +261,6 @@ chegar. Teto geral 40 s. Antes eram ~13 s só para chegar nas fontes novas (Vids
 
 ## Como rodar e testar
 
-- `npm start` (porta `PORT`, padrão 3000) · `npm test` (265 testes, `node --test test/*.test.js`).
+- `npm start` (porta `PORT`, padrão 3000) · `npm test` (272 testes, `node --test test/*.test.js`).
 - Manutenção/"mudamos de URL": tela "Site" do admin (`lib/siteStatus.js`, `public/sitegate.js`, `public/site.js`; tabela `pix_settings` no Supabase).
 - Docs: `docs/DEPLOY-RENDER.md`, `docs/VERCEL-POOL.md`, `docs/TV-AO-VIVO.md`, `docs/VISITANTES.md`, `docs/API.md`.
