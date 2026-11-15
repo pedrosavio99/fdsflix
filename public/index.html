@@ -465,6 +465,34 @@
   details.cfg-sec{border:1px solid var(--line);border-radius:10px;margin:.6rem 0;background:rgba(0,0,0,.18)}
   details.cfg-sec>summary{cursor:pointer;padding:.55rem .8rem;font-weight:700;font-size:.9rem}
   details.cfg-sec>div{padding:0 .9rem .8rem}
+  .site-live-row{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap}
+  .site-live-row button{margin-left:auto;padding:.35rem .7rem;font-size:.78rem}
+  .site-live .dot{width:.7rem;height:.7rem;border-radius:50%;background:#8c90a6;display:inline-block}
+  .site-live .dot.ok{background:#3ddc84;animation:sitePulse 1.8s ease-out infinite}
+  .site-live .dot.bad{background:#ff5c5c}
+  .site-live .dot.wait{background:#ffd27a;animation:sitePulse 1s ease-out infinite}
+  @keyframes sitePulse{0%{box-shadow:0 0 0 0 rgba(61,220,132,.55)}100%{box-shadow:0 0 0 .7rem rgba(61,220,132,0)}}
+  #siteVisitors.ok{color:#7ee2a8}#siteVisitors.warn{color:#ffd27a}
+  .sw{display:flex;align-items:center;gap:.7rem;cursor:pointer;user-select:none;font-weight:800;font-size:1rem}
+  .sw input{position:absolute;opacity:0;width:1px;height:1px}
+  .sw-track{position:relative;flex:none;width:54px;height:30px;border-radius:99px;background:#3a3a4a;border:1px solid var(--line);transition:background .25s,box-shadow .25s}
+  .sw-track i{position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:#fff;box-shadow:0 2px 6px rgba(0,0,0,.4);transition:transform .35s cubic-bezier(.3,1.6,.5,1)}
+  .sw input:checked+.sw-track{background:#e0883a;box-shadow:0 0 14px rgba(224,136,58,.55)}
+  .sw input:checked+.sw-track i{transform:translateX(24px)}
+  .sw input:focus-visible+.sw-track{outline:2px solid #fff;outline-offset:2px}
+  .sw-ico{position:relative;display:inline-block;width:1.7rem;height:1.7rem;font-size:1.25rem;text-align:center;filter:grayscale(1);opacity:.55;transition:opacity .25s,filter .25s}
+  .sw-ico b{position:absolute;inset:0;font-weight:400}
+  .sw input:checked~.sw-ico{filter:none;opacity:1}
+  .sw input:checked~.sw-ico-maint b:first-child{animation:siteSpin 2.4s linear infinite}
+  .sw input:checked~.sw-ico-maint b:last-child{animation:siteWob 1s ease-in-out infinite;transform-origin:20% 80%}
+  .sw input:checked~.sw-ico-moved b{animation:siteDrive 2s ease-in-out infinite}
+  @keyframes siteSpin{to{transform:rotate(360deg)}}
+  @keyframes siteWob{0%,100%{transform:rotate(-20deg)}50%{transform:rotate(25deg)}}
+  @keyframes siteDrive{0%{transform:translateX(-6px)}50%{transform:translateX(8px)}100%{transform:translateX(-6px)}}
+  .sw-extra{max-height:0;overflow:hidden;opacity:0;transition:max-height .35s ease,opacity .3s ease}
+  .sw-extra.on{max-height:9rem;opacity:1;margin-top:.5rem}
+  .sw-extra input,.sw-extra textarea{width:100%;background:var(--panel);border:1px solid var(--line);border-radius:8px;color:var(--text);padding:.55rem .7rem;font:inherit;font-size:.85rem}
+  @media (prefers-reduced-motion:reduce){.sw *,.site-live .dot{animation:none !important}}
   .pix-badge{margin:0 0 .8rem;padding:.7rem .9rem;border-radius:10px;background:#12351f;color:#7ee2a8 !important;font-weight:800;font-size:1rem}
   .pix-qr{display:flex;justify-content:center;margin:.7rem 0}
   .pix-qr img{width:min(240px,70vw);height:auto;background:#fff;border-radius:10px;padding:6px}
@@ -737,6 +765,36 @@
   @media (max-width:640px){
     .controls{gap:.35rem}
   }
+  /* ---- barra do player, versão para o público: simples, em "pílulas" ---- */
+  .player-header .controls{gap:.5rem;padding:.55rem;border:1px solid var(--line);border-radius:14px;background:linear-gradient(180deg,rgba(255,255,255,.045),rgba(255,255,255,.015))}
+  .tv-controls{gap:.35rem;padding:.15rem .8rem .15rem .25rem;border-radius:999px;background:rgba(0,0,0,.28);border:1px solid var(--line)}
+  .ep-now{padding:0 .5rem;font-size:.9rem;white-space:nowrap}
+  .ep-step{border-radius:50%;width:2.1rem;height:2.1rem;transition:background .15s,border-color .15s,transform .1s}
+  .ep-step:hover:not(:disabled){background:var(--brand);border-color:var(--brand);color:#fff}
+  .ep-step:active:not(:disabled){transform:scale(.92)}
+  .controls select,.controls .ghost,.opts>summary{border-radius:999px}
+  .controls select{padding:.45rem .8rem;font-weight:600;color:var(--text)}
+  #reloadBtn{padding:.45rem .9rem;font-size:.82rem}
+  .sub-bar{border-radius:14px;padding:.55rem .7rem;gap:.6rem;background:linear-gradient(180deg,rgba(255,255,255,.045),rgba(255,255,255,.015))}
+  .sub-bar .sub-lang{color:var(--text);font-weight:700;font-size:.86rem}
+  .sub-bar .sub-lang select{border-radius:999px;padding:.45rem .8rem;font-size:.84rem;font-weight:600;max-width:230px}
+  .sub-adjust{margin-left:auto}
+  .sub-adjust>summary{cursor:pointer;list-style:none;padding:.4rem .8rem;border:1px solid var(--line);border-radius:999px;font-size:.78rem;font-weight:600;color:var(--muted);user-select:none}
+  .sub-adjust>summary::-webkit-details-marker{display:none}
+  .sub-adjust>summary:hover,.sub-adjust[open]>summary{color:var(--text);background:var(--panel-2)}
+  .sub-adjust-body{display:flex;flex-wrap:wrap;gap:.4rem;align-items:center;margin-top:.5rem;padding:.6rem;border:1px solid var(--line);border-radius:12px;background:var(--panel-2)}
+  .sub-bar:has(.sub-adjust[open]){flex-direction:column;align-items:stretch}
+  .sub-bar:has(.sub-adjust[open]) .sub-adjust{margin-left:0}
+  /* para o público: o que não ajuda a assistir some (qualidade fica; início e sincronia fina ficam atrás de "Mais opções") */
+  html:not(.is-admin) .sub-hint,html:not(.is-admin) #subScaleTag,html:not(.is-admin) .season-hint{display:none !important}
+  @media (max-width:640px){
+    .player-header .controls{padding:.5rem}
+    .tv-controls{width:100%;justify-content:space-between}
+    .ep-now{flex:1;text-align:center}
+    .sub-adjust{margin-left:0;width:100%}
+    .sub-bar .sub-lang{width:100%}
+    .sub-bar .sub-lang select{flex:1;max-width:none}
+  }
 </style>
 <script>
 /* Área do administrador: só marca o <html> para mostrar/esconder botões. A senha vale no servidor. */
@@ -746,7 +804,9 @@
   html:not(.is-admin) #bwCorner,
   html:not(.is-admin) #usageBox,
   html:not(.is-admin) #diagPanel,
+  html:not(.is-admin) #playerStatus,
   html:not(.is-admin) .admin-only{display:none !important}
+  html:not(.is-admin) #logoLink{touch-action:none;-webkit-touch-callout:none;-webkit-user-select:none;user-select:none} /* toque longo no logo = pedir a senha */
 </style>
 </head>
 <body>
@@ -774,6 +834,10 @@
         <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20m6.9 6h-2.95a15.7 15.7 0 0 0-1.38-3.56A8.03 8.03 0 0 1 18.9 8M12 4.04c.83 1.2 1.48 2.53 1.91 3.96h-3.82c.43-1.43 1.08-2.76 1.91-3.96M4.26 14a8.2 8.2 0 0 1 0-4h3.38a16.5 16.5 0 0 0 0 4zm.82 2h2.95c.32 1.25.78 2.45 1.38 3.56A7.99 7.99 0 0 1 5.08 16m2.95-8H5.08a7.99 7.99 0 0 1 4.33-3.56A15.7 15.7 0 0 0 8.03 8M12 19.96c-.83-1.2-1.48-2.53-1.91-3.96h3.82c-.43 1.43-1.08 2.76-1.91 3.96M14.34 14H9.66a14.7 14.7 0 0 1 0-4h4.68a14.7 14.7 0 0 1 0 4m.25 5.56c.6-1.11 1.06-2.31 1.38-3.56h2.95a8.03 8.03 0 0 1-4.33 3.56M16.36 14a16.5 16.5 0 0 0 0-4h3.38a8.2 8.2 0 0 1 0 4z"/></svg>
         <span class="lbl">Acessos</span>
       </a>
+      <button id="siteOpen" class="nav-btn admin-only" type="button" title="Manutenção e mudança de URL" aria-label="Site">
+        <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M22.7 19 13.6 9.9a5.5 5.5 0 0 0-1.3-5.8 5.4 5.4 0 0 0-5.3-1.4l3.2 3.2-.9 3.4-3.4.9-3.2-3.2a5.4 5.4 0 0 0 1.4 5.3 5.5 5.5 0 0 0 5.8 1.3l9.1 9.1a1.5 1.5 0 0 0 2.1 0l1.3-1.3a1.5 1.5 0 0 0 0-2.2"/></svg>
+        <span class="lbl">Site</span>
+      </button>
       <button id="pixOpen" class="nav-btn admin-only" type="button" title="Teste de permissão por pagamento Pix" aria-label="Pix">
         <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.6 7.6 7a2 2 0 0 0 0 2.8l2 2-2 2a2 2 0 0 0 0 2.8L12 21.4l4.4-4.4a2 2 0 0 0 0-2.8l-2-2 2-2a2 2 0 0 0 0-2.8zm0 3.2 2.1 2.1a.6.6 0 0 1 0 .9L12 11l-2.1-2.2a.6.6 0 0 1 0-.9zm0 7.2 2.1 2.1a.6.6 0 0 1 0 .9L12 18.2l-2.1-2.2a.6.6 0 0 1 0-.9z"/></svg>
         <span class="lbl">Pix</span>
@@ -781,12 +845,46 @@
       <button id="adminLogout" class="nav-btn admin-only" type="button" title="Sair da área do administrador" aria-label="Sair do modo administrador">
         <span class="lbl">Sair</span><span aria-hidden="true" class="lbl-ic">🔓</span>
       </button>
-      <button id="cfgOpen" class="nav-btn" type="button" title="Kit para subir mais uma Vercel no pool" aria-label="Configurações">
+      <button id="cfgOpen" class="nav-btn admin-only" type="button" title="Kit para subir mais uma Vercel no pool" aria-label="Configurações">
         <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M19.14 12.94c.04-.31.06-.63.06-.94s-.02-.63-.07-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.61-.22l-2.39.96a7 7 0 0 0-1.62-.94l-.36-2.54a.49.49 0 0 0-.48-.41h-3.84a.49.49 0 0 0-.48.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.49.49 0 0 0-.61.22L2.74 8.84a.48.48 0 0 0 .12.64l2.03 1.58c-.05.31-.08.63-.08.94s.03.63.08.94l-2.03 1.58a.5.5 0 0 0-.12.64l1.92 3.32c.12.22.37.29.61.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.26.41.48.41h3.84c.24 0 .44-.17.48-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.49 0 .61-.22l1.92-3.32a.5.5 0 0 0-.12-.64zM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2"/></svg>
         <span class="lbl">Configs</span>
       </button>
     </div>
   </nav>
+
+  <dialog id="siteDialog" class="cfg" aria-labelledby="siteTitle" style="max-width:520px">
+    <div class="cfg-head">
+      <h3 id="siteTitle">Site · manutenção e nova URL</h3>
+      <button id="siteClose" class="ghost" type="button" aria-label="Fechar">✕</button>
+    </div>
+    <div class="cfg-body">
+      <div class="cfg-card site-live">
+        <div class="site-live-row"><i id="siteDot" class="dot wait"></i><b>API</b><span id="siteApi">testando…</span>
+          <button id="sitePing" class="ghost" type="button">Testar de novo</button></div>
+        <p>Os visitantes veem agora: <b id="siteVisitors">…</b></p>
+      </div>
+
+      <div class="cfg-card">
+        <label class="sw"><input type="checkbox" id="siteMaint"><span class="sw-track"><i></i></span>
+          <span class="sw-ico sw-ico-maint" aria-hidden="true"><b>⚙️</b><b>🔧</b></span><span class="sw-lbl">Modo manutenção</span></label>
+        <p>Tela animada "voltamos em breve" e a API recusa os visitantes. Você, no modo admin, continua usando o site normal.</p>
+        <div id="siteMsgBox" class="sw-extra"><textarea id="siteMsg" rows="2" maxlength="200" placeholder="Mensagem (opcional)"></textarea></div>
+        <div class="cfg-row"><button id="sitePrevMaint" class="ghost" type="button">Ver prévia</button></div>
+      </div>
+
+      <div class="cfg-card">
+        <label class="sw"><input type="checkbox" id="siteMoved"><span class="sw-track"><i></i></span>
+          <span class="sw-ico sw-ico-moved" aria-hidden="true"><b>🚚</b></span><span class="sw-lbl">Mudamos de URL</span></label>
+        <p>Tela animada "mudamos de endereço" com botão e redirecionamento automático (10 s, dá para ficar) para o endereço novo.</p>
+        <div id="siteUrlBox" class="sw-extra"><input id="siteUrl" type="url" spellcheck="false" placeholder="https://novo-endereco.com"></div>
+        <div class="cfg-row"><button id="sitePrevMoved" class="ghost" type="button">Ver prévia</button></div>
+      </div>
+
+      <div class="cfg-row"><button id="siteApply" type="button">Aplicar</button></div>
+      <p id="sitePersist"></p>
+      <p id="siteNote" class="pix-note" role="status"></p>
+    </div>
+  </dialog>
 
   <dialog id="pixDialog" class="cfg" aria-labelledby="pixTitle" style="max-width:520px">
     <div class="cfg-head">
@@ -1182,7 +1280,7 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
                       <label>Início (min)
                         <input id="startInput" type="number" min="0" step="0.5" value="0">
                       </label>
-                      <label class="switch" title="Toca direto no player do provedor (iframe): o vídeo vai do site deles para o seu navegador e NÃO passa pelo servidor do fdsFlix — gasta 0 da banda do Render. Em troca: sem as legendas/controles do fdsFlix, pode ter anúncios e não salva o progresso.">
+                      <label class="switch admin-only" title="Toca direto no player do provedor (iframe): o vídeo vai do site deles para o seu navegador e NÃO passa pelo servidor do fdsFlix — gasta 0 da banda do Render. Em troca: sem as legendas/controles do fdsFlix, pode ter anúncios e não salva o progresso.">
                         <input id="preferEmbedToggle" type="checkbox">
                         <span class="slider"></span>
                         <span>Economizar banda</span>
@@ -1199,8 +1297,8 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
 
               <div id="embedBar" class="embed-bar" hidden>
                 <div id="embedNote" class="embed-note">
-                  Nenhuma fonte direta tem este título. Dá para tentar um <strong>player alternativo (embed)</strong>.
-                  Eles rodam no site de terceiros: podem ter anúncios e <em>não</em> salvam o progresso.
+                  Este título não está disponível no player principal agora. Dá para tentar uma <strong>opção alternativa</strong>.
+                  Elas abrem em outro site: podem ter anúncios e <em>não</em> salvam o progresso.
                 </div>
                 <div id="embedBtns" class="embed-btns"></div>
                 <label class="switch embed-safe" title="Impede o player de terceiros de abrir pop-ups, novas abas e de redirecionar esta página. Alguns players se recusam a tocar em modo seguro: se der erro, desligue.">
@@ -1211,21 +1309,25 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
               </div>
 
               <div id="subBar" class="sub-bar" hidden>
-                <label class="sub-lang">Legenda
+                <label class="sub-lang"><span class="sub-lang-ico" aria-hidden="true">💬</span><span class="sub-lang-txt">Legenda</span>
                   <select id="subLangSelect" aria-label="Idioma da legenda"></select>
                 </label>
-                <span class="sub-divider"></span>
-                <span class="sub-title">Sincronia</span>
-                <button id="subMinus" class="step-btn" type="button" title="Adiantar a legenda 0,5 s">−0,5s</button>
-                <button id="subMinusFine" class="step-btn" type="button" title="Adiantar a legenda 0,1 s (atalho: [ ou G)">−0,1</button>
-                <input id="subOffsetInput" type="number" step="0.1" min="-600" max="600" value="0"
-                       title="Atraso em segundos (positivo = legenda mais tarde)" aria-label="Atraso da legenda em segundos">
-                <button id="subPlusFine" class="step-btn" type="button" title="Atrasar a legenda 0,1 s (atalho: ] ou H)">+0,1</button>
-                <button id="subPlus" class="step-btn" type="button" title="Atrasar a legenda 0,5 s">+0,5s</button>
-                <button id="subReset" class="step-btn" type="button" title="Zerar o ajuste (atraso e escala)">0</button>
-                <button id="subSyncBtn" class="step-btn sync-btn" type="button" title="Escolha a fala que acabou de ouvir e o fdsFlix calcula o ajuste">🎯 Sincronizar</button>
-                <span id="subScaleTag" class="sub-scale" hidden></span>
-                <span class="sub-hint">positivo = legenda mais tarde · atalhos: [ ] ou G H (0,1 s)</span>
+                <details class="sub-adjust">
+                  <summary title="Se a legenda estiver adiantada ou atrasada">⏱ Ajustar legenda</summary>
+                  <div class="sub-adjust-body">
+                    <span class="sub-title">Sincronia</span>
+                    <button id="subMinus" class="step-btn" type="button" title="Adiantar a legenda 0,5 s">−0,5s</button>
+                    <button id="subMinusFine" class="step-btn" type="button" title="Adiantar a legenda 0,1 s (atalho: [ ou G)">−0,1</button>
+                    <input id="subOffsetInput" type="number" step="0.1" min="-600" max="600" value="0"
+                           title="Atraso em segundos (positivo = legenda mais tarde)" aria-label="Atraso da legenda em segundos">
+                    <button id="subPlusFine" class="step-btn" type="button" title="Atrasar a legenda 0,1 s (atalho: ] ou H)">+0,1</button>
+                    <button id="subPlus" class="step-btn" type="button" title="Atrasar a legenda 0,5 s">+0,5s</button>
+                    <button id="subReset" class="step-btn" type="button" title="Zerar o ajuste (atraso e escala)">0</button>
+                    <button id="subSyncBtn" class="step-btn sync-btn" type="button" title="Escolha a fala que acabou de ouvir e o fdsFlix calcula o ajuste">🎯 Sincronizar</button>
+                    <span id="subScaleTag" class="sub-scale" hidden></span>
+                    <span class="sub-hint">positivo = legenda mais tarde</span>
+                  </div>
+                </details>
               </div>
               <div id="subWarn" class="sub-warn" role="status" hidden></div>
               <div id="syncPanel" class="sync-panel" hidden>
@@ -1294,6 +1396,7 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
 <div id="toast" class="toast" hidden></div>
 
 <script src="/config.js"></script>
+<script src="/sitegate.js"></script>
 <!-- hls.js 1.7.4 vem do CDN (jsDelivr): economiza ~190 KB de banda do Render por visita nova. Arquivo idêntico ao
      de /vendor/hls.min.js (mesmo SHA-384); se o CDN falhar ou o hash não bater, cai na cópia local. -->
 <script src="https://cdn.jsdelivr.net/npm/hls.js@1.7.4/dist/hls.min.js" integrity="sha384-p9vgU/7IYJWd3I4STrtqxqR/2cAQlhIX7D/HrTnIMEjjcUox165b7se7sxmm3zDg" crossorigin="anonymous" onerror="document.write('&lt;script src=&quot;/vendor/hls.min.js&quot;&gt;&lt;\/script&gt;')"></script>
@@ -1301,6 +1404,7 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
 <script src="/livetv.js"></script>
 <script src="/vendor/qrcode.js"></script>
 <script src="/pix.js"></script>
+<script src="/site.js"></script>
 <script>
 (function () {
   'use strict';
@@ -1485,7 +1589,21 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
     } catch (err) { /* sem MediaCapabilities: fica o palpite de cima */ }
   }
 
+  /* O público (quem não entrou com a senha de administrador) só vê vídeo e carregamento: mensagens técnicas
+   * (servidor, fonte, conversão, Render, Vercel...) não aparecem para ele. A regra é "seguro por padrão": só passa
+   * o que casa com esta lista; qualquer texto novo que alguém escrever no futuro já fica escondido do público. */
+  var PUBLIC_OK = /^(Sem conexão|Conexão instável|Conexão de volta|O navegador bloqueou o autoplay|Próximo episódio|Retomando|Retomo|Continuando|Removido da|Adicionado à|Auto-próximo|Este vídeo não pôde)/i;
+  var PUBLIC_ERROR = 'Não conseguimos carregar este vídeo agora. Tente novamente em instantes.';
+  function isAdminView() { return Boolean(getAdminKey()); }
+  function publicText(text, fallback) {
+    if (isAdminView()) return text;
+    var t = String(text == null ? '' : text);
+    return PUBLIC_OK.test(t) ? t : fallback;
+  }
+
   function toast(message) {
+    message = publicText(message, '');
+    if (!message) return;
     var el = $('toast');
     el.textContent = message;
     el.hidden = false;
@@ -1869,6 +1987,7 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
   var EMBED_NOTE_DEFAULT = null;
 
   function preferEmbedEnabled() {
+    if (!isAdminView()) return false; // modo de economia de banda do Render: só o administrador
     try { return localStorage.getItem(PREFER_EMBED_KEY) === '1'; } catch (err) { return false; }
   }
 
@@ -1920,7 +2039,7 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
       var btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'ghost';
-      btn.textContent = provider.name;
+      btn.textContent = isAdminView() ? provider.name : 'Opção ' + (index + 1); // o público não vê o nome do provedor
       btn.setAttribute('data-embed', String(index));
       box.appendChild(btn);
     });
@@ -1966,6 +2085,11 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
 
   function setNotice(kind, text, showRetry) {
     var notice = $('serverNotice');
+    if (!isAdminView()) {
+      // Faixa de "servidor": o público só vê que está carregando ou que não deu para conectar, sem falar de servidor/Render.
+      if (kind === 'checking' || kind === 'ok' || kind === 'warn') { notice.hidden = true; return; }
+      text = kind === 'waking' ? 'Preparando tudo… isso pode levar alguns instantes.' : 'Não conseguimos conectar agora. Toque em tentar de novo.';
+    }
     notice.hidden = false;
     notice.className = 'server-notice ' + kind;
     $('noticeText').textContent = text;
@@ -2122,7 +2246,7 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
   // Frases de cinema por etapa da espera. O texto principal continua sendo o status real; a frase é só companhia.
   var CINE_PHRASES = {
     boot: ['Ligando o projetor… 📽️', 'Limpando as lentes da tela', 'Ajeitando a poltrona 🛋️', 'Procurando um lugar bom na sala…'],
-    wake: ['Acordando o dono do cinema ☕', 'O servidor tá se espreguiçando 😴', 'Abrindo a bilheteria…', 'Quase lá, o café tá esfriando'],
+    wake: ['Acordando o dono do cinema ☕', 'O projecionista tá se espreguiçando 😴', 'Abrindo a bilheteria…', 'Quase lá, o café tá esfriando'],
     find: ['Procurando o filme certo na prateleira 🎞️', 'Perguntando pro porteiro qual é a sala…', 'Desenrolando a fita… 🎬', 'Conferindo se não é o filme errado 😅'],
     load: ['Estourando a pipoca 🍿', 'Apagando as luzes da sala…', 'Pedindo silêncio pra galera 🤫', 'Colocando a legenda no lugar'],
     buffer: ['Enchendo o balde de pipoca 🍿', 'Esticando o rolo da fita…', 'Segura aí, a cena já vem 🎬', 'Dando uma ajeitada no projetor']
@@ -2167,7 +2291,7 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
 
   function showOverlay(text, showSpinner) {
     $('overlay').hidden = false;
-    $('overlayText').textContent = text || '';
+    $('overlayText').textContent = publicText(text || '', showSpinner ? 'Carregando…' : PUBLIC_ERROR);
     var stage = showSpinner ? cineStage(text) : '';
     $('spinner').hidden = !showSpinner || Boolean(stage);
     $('cineAnim').hidden = !stage;
@@ -2601,6 +2725,10 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
     badge.className = 'badge ' + kind;
     badge.textContent = labels[kind] || 'INFO';
     $('statusText').textContent = text || '';
+    if (kind === 'error' && !isAdminView()) {
+      showOverlay(publicText(text, PUBLIC_ERROR), false); // a barra de status é só do administrador
+      $('overlayRetry').hidden = false;
+    }
   }
 
   function fail(message) {
@@ -3698,7 +3826,7 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
         if (playToken !== state.playToken) return;
         diag('err', 'FALHA: ' + ((err && err.message) || err));
         if (!navigator.onLine || /failed to fetch|networkerror|load failed/i.test((err && err.message) || '')) {
-          scheduleNetResume('Sem conexão com o servidor.');
+          scheduleNetResume('Sem conexão.');
           return;
         }
         if (autoNextFallback()) return;
@@ -4408,6 +4536,7 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
     if ((error.code === 3 || error.code === 4) && state.lastMode === 'direct' && !state.forceTranscode && !canClientDecode) {
       // Sem HEVC nativo E sem o decodificador do navegador: converter exigiria o ffmpeg do Render (gasta os 5 GB). Explica em vez de ficar reiniciando.
       var br = navigator.brave ? 'Brave' : 'este navegador';
+      if (!isAdminView()) { fail('Este vídeo não pôde ser reproduzido neste navegador. Tente em outro navegador.'); return; }
       fail('O ' + br + ' não decodifica HEVC aqui' + (cvpMissing() ? ' (e falta ' + cvpMissing() + ' para o decodificador do fdsFlix)' : '') +
         '. Ative a aceleração de hardware nas configurações do navegador, ou use Chrome, Edge, Safari ou Firefox atualizados.');
       return;
@@ -5740,7 +5869,7 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
   apiFetch('/api/config')
     .then(function (response) { return response.ok ? response.json() : null; })
     .then(function (config) {
-      if (config && config.ffmpeg === false) {
+      if (config && config.ffmpeg === false && isAdminView()) {
         toast('ffmpeg não encontrado no servidor: vídeos HEVC não poderão ser convertidos.');
       }
     })
@@ -5799,6 +5928,21 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
   }, true);
   var out = document.getElementById('adminLogout');
   if (out) out.addEventListener('click', lock);
+  // Sem engrenagem para o público: no celular, segure o logo por 2 s para pedir a senha (no PC: Ctrl+Shift+L ou #admin).
+  (function () {
+    var logo = document.getElementById('logoLink');
+    if (!logo) return;
+    var timer = 0; var fired = false;
+    function cancel() { clearTimeout(timer); }
+    logo.addEventListener('pointerdown', function () {
+      if (stored()) return;
+      fired = false; cancel();
+      timer = setTimeout(function () { fired = true; unlock(false); }, 2000);
+    });
+    ['pointerup', 'pointerleave', 'pointercancel'].forEach(function (ev) { logo.addEventListener(ev, cancel); });
+    logo.addEventListener('click', function (e) { if (fired) { e.preventDefault(); fired = false; } });
+    logo.addEventListener('contextmenu', function (e) { if (!stored()) e.preventDefault(); }); // menu do toque longo no celular
+  })();
   // Ctrl+Shift+L, ou abrir o site com #admin no endereço, pede a senha. Sem botão visível para o público.
   document.addEventListener('keydown', function (e) {
     if (e.ctrlKey && e.shiftKey && (e.key === 'L' || e.key === 'l')) { e.preventDefault(); unlock(false); }

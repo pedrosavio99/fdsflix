@@ -33,6 +33,7 @@ const egress = require('./lib/egressMeter');
 const poolKit = require('./lib/poolKit');
 const pixKit = require('./lib/pixKit');
 const pixAuth = require('./lib/pixAuth');
+const siteStatus = require('./lib/siteStatus');
 const liveTv = require('./lib/liveTv');
 const liveEpg = require('./lib/liveEpg');
 const { relayFetch, getRelayConfig } = require('./lib/relayFetch');
@@ -91,6 +92,25 @@ app.use((req, res, next) => {
   try { visitors.record(req); } catch (err) { /* estatística nunca derruba o site */ }
   try { watchStats.record(req); } catch (err) { /* idem: o que o público assiste (lib/watchStats.js) */ }
   next();
+});
+
+// Manutenção (tela do administrador "Site"): com o switch ligado a API e o /hls/ recusam os visitantes com 503; o admin
+// (senha 118111) passa direto. O estado e a saúde nunca são bloqueados. Falha na leitura do estado = deixa passar.
+const site = siteStatus.createSiteStatus();
+app.use(async (req, res, next) => {
+  try {
+    const p = req.path;
+    if (p !== '/api' && !p.startsWith('/api/') && !p.startsWith('/hls/')) return next();
+    await site.ready();
+    const status = site.snapshot();
+    if (!siteStatus.blockedByMaintenance(p, status, status.maintenance.on && statsKeyOK(req))) return next();
+    const message = status.maintenance.message || siteStatus.DEFAULT_MESSAGE;
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Retry-After', '120');
+    return res.status(503).json({ maintenance: true, error: message, message });
+  } catch (err) {
+    return next();
+  }
 });
 
 // Config do frontend gerada no Render quando ADSHIELD_BASE_URL está definido.
@@ -672,6 +692,7 @@ app.get('/api/row', requireApiKey, async (req, res) => {
 /* ------------------------------------------------------------------ */
 
 app.get('/api/config', (req, res) => {
+  if (!statsKeyOK(req)) return res.json({ version: 2 });
   res.json({
     hasTmdbKey: Boolean(TMDB_API_KEY),
     ffmpeg: FFMPEG_OK,
@@ -688,6 +709,7 @@ app.get('/api/egress', requireStatsKey, (req, res) => {
 });
 
 app.get('/api/health', (req, res) => {
+  if (!statsKeyOK(req)) return res.json({ ok: true }); // o Render só precisa do 200; o resto é do administrador
   res.json({
     ok: true,
     ffmpeg: FFMPEG_OK,
@@ -965,6 +987,26 @@ app.get('/api/fallback/kit', requireApiKey, requireStatsKey, (req, res) => {
   } catch (err) {
     res.status(500).json({ error: `Não consegui montar o kit do AdFallback: ${err.message}` });
   }
+});
+
+/* ------------------------------------------------------------------ */
+/* Site: manutenção e "mudamos de URL" (switches do administrador)      */
+/* ------------------------------------------------------------------ */
+
+// Público: o site consulta isto ao abrir (e a cada ~45 s) para saber se mostra a tela de aviso.
+app.get('/api/site/status', requireApiKey, async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  try { await site.ready(); res.json(site.publicView()); } catch (err) { res.json({ maintenance: { on: false }, moved: { on: false } }); }
+});
+
+app.get('/api/site/admin', requireApiKey, requireStatsKey, async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  try { await site.ready(); res.json(site.adminView()); } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/site/set', requireApiKey, requireStatsKey, async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  try { res.json(await site.set(req.body)); } catch (err) { res.status(400).json({ error: err.message || String(err) }); }
 });
 
 /* ------------------------------------------------------------------ */
@@ -1375,9 +1417,16 @@ app.get('/api/stream', requireApiKey, async (req, res) => {
   const trace = [];
   const startedAt = Date.now();
   const jsonWithDebug = res.json.bind(res);
-  res.json = (body) => jsonWithDebug(body && typeof body === 'object' && !Array.isArray(body)
-    ? { ...body, debug: buildStreamDebug(trace, startedAt) }
-    : body);
+  // O diagnóstico (nós, fontes, tempos) e os detalhes técnicos só saem para o administrador (senha 118111). O público
+  // recebe o mínimo para tocar: nada de nome de provedor, nota técnica nem motivo de falha.
+  const adminCall = statsKeyOK(req);
+  res.json = (body) => {
+    if (!body || typeof body !== 'object' || Array.isArray(body)) return jsonWithDebug(body);
+    if (adminCall) return jsonWithDebug({ ...body, debug: buildStreamDebug(trace, startedAt) });
+    const { provider, note, edgeSkipped, debug, ...rest } = body;
+    if (res.statusCode >= 500 && rest.error) rest.error = 'Não foi possível carregar este vídeo agora.';
+    return jsonWithDebug(rest);
+  };
 
   try {
     // Área dev (senha admin no painel): força os filmes pelo AdFallback, com a pool do Vidsrc
@@ -1761,17 +1810,19 @@ app.get('/api/live/stream', requireApiKey, async (req, res) => {
         url: plan.url,
         kind: found.source.kind,
         via: plan.via,
-        tried,
-        origin: found.source.origin,
-        skipped
+        // Origem, tentativas e fontes puladas: só o administrador (a área nerd da TV); o público não precisa.
+        tried: statsKeyOK(req) ? tried : 0,
+        origin: statsKeyOK(req) ? found.source.origin : '',
+        skipped: statsKeyOK(req) ? skipped : []
       });
     }
     const why = skipped.length
       ? `Há fonte no ar, mas nenhuma conseguiu chegar ao navegador: ${lastReason}`
       : (lastReason || 'Nenhuma fonte deste canal respondeu agora.');
+    if (!statsKeyOK(req)) return res.status(503).json({ ok: false, error: 'Este canal não está disponível agora.', tried: 0, skipped: [] });
     return res.status(503).json({ ok: false, error: why, tried, skipped });
   } catch (err) {
-    return res.status(502).json({ ok: false, error: 'Falha ao achar o canal: ' + err.message });
+    return res.status(502).json({ ok: false, error: statsKeyOK(req) ? 'Falha ao achar o canal: ' + err.message : 'Este canal não está disponível agora.' });
   }
 });
 

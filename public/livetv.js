@@ -38,6 +38,7 @@
   function api(path) {
     var headers = {};
     if (CONFIG.apiKey) headers['x-api-key'] = CONFIG.apiKey;
+    if (adminKey()) headers['x-stats-key'] = adminKey(); // só o administrador recebe os detalhes técnicos da TV
     return fetch(API_BASE + path, { headers: headers, cache: 'no-store' });
   }
 
@@ -359,7 +360,7 @@
     ]));
     els.chips.appendChild(els.sub);
     els.list = el('div', { class: 'ltv-groups' });
-    els.note = el('p', { class: 'ltv-note ltv-pad', text: 'Os canais são testados de verdade antes de abrir. O vídeo não passa pelo servidor do fdsFlix; ' +
+    els.note = el('p', { class: 'ltv-note ltv-pad admin-only', text: 'Os canais são testados de verdade antes de abrir. O vídeo não passa pelo servidor do fdsFlix; ' +
       'fontes que são páginas de player abrem pelo AdShield, que tira os anúncios.' });
 
     /* modal do canal: o mesmo esqueleto do modal de filmes */
@@ -379,7 +380,7 @@
     els.msg = el('div', { class: 'ltv-msg', role: 'status', 'aria-live': 'polite', hidden: '' }, [els.mtv, els.spin, els.msgText, els.msgSub, els.retry]);
 
     els.name = el('h2', { text: '' });
-    els.via = el('div', { class: 'ltv-meta', text: '' });
+    els.via = el('div', { class: 'ltv-meta admin-only', text: '' });
     els.next = el('button', { class: 'ghost', type: 'button', text: '⏭ Outra fonte' });
     els.reload = el('button', { class: 'ghost', type: 'button', text: '↻ Recarregar' });
     els.nowTitle = el('span', { class: 'ltv-nowtitle', text: '' });
@@ -1040,7 +1041,7 @@
       renderList();
       return data;
     }).catch(function () {
-      if (!state.data) els.list.textContent = '', els.list.appendChild(el('p', { class: 'ltv-empty', text: 'Não consegui falar com o servidor. Tente de novo em instantes.' }));
+      if (!state.data) els.list.textContent = '', els.list.appendChild(el('p', { class: 'ltv-empty', text: 'Não conseguimos carregar os canais agora. Tente de novo em instantes.' }));
     });
   }
 
@@ -1113,7 +1114,7 @@
       state.scanShown = true;
       startScan();
       var tested = total - unknown;
-      els.scanS.textContent = data ? tested + ' de ' + total + ' canais testados · ' + live + ' já no ar' : 'Ligando a TV…';
+      els.scanS.textContent = !data ? 'Ligando a TV…' : (adminKey() ? tested + ' de ' + total + ' canais testados · ' + live + ' já no ar' : 'Procurando canais no ar… ' + live + (live === 1 ? ' disponível' : ' disponíveis'));
       els.scanBar.style.width = data ? Math.max(6, Math.round(tested / total * 100)) + '%' : '6%';
     } else if (state.scanShown && !els.scan.classList.contains('done')) {
       stopScan();
@@ -1146,8 +1147,15 @@
     }, 2600);
   }
 
+  // O público só vê "procurando o sinal" ou "indisponível": nada de fonte, Vercel, servidor ou motivo técnico.
+  function publicMsg(text, kind) {
+    if (adminKey()) return text;
+    return kind === 'work' ? 'Procurando o sinal do canal…' : 'Este canal não está disponível agora. Tente outro canal ou volte mais tarde.';
+  }
+
   function setMsg(text, kind, retry) {
     if (!text) { els.msg.hidden = true; stopMsgAnim(); return; }
+    text = publicMsg(text, kind);
     els.msg.hidden = false;
     els.msgText.textContent = text;
     els.spin.hidden = true;
