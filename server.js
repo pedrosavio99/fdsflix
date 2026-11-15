@@ -13,6 +13,7 @@ const { getFallbackStream, getProviderList, getCineProReport, breakerOpen, break
 const { getAnimeReport } = require('./lib/animeFire');
 const tokyoVideo = require('./lib/tokyoVideo');
 const audioLang = require('./lib/audioLang');
+const streamOptions = require('./lib/streamOptions');
 const websearch = require('./lib/websearch');
 const extractFetch = require('./lib/extractFetch');
 const cineproRunner = require('./lib/cineproRunner');
@@ -1552,6 +1553,43 @@ async function rescueMovieWithAdShield(req, res, { candidates, trace, hevcOk, fo
 // Junta pedidos idênticos em voo e limita buscas simultâneas (ver lib/streamGuard.js). Sem variável de ambiente; o admin passa direto.
 const streamGuard = createStreamGuard({ isAdmin: statsKeyOK });
 
+// "Dublado ou original?": descobre as versões do título ANTES de tocar (ver lib/streamOptions.js).
+// Devolve só o que o ouvinte precisa decidir; o `pick` é um token curto que o /api/stream reaproveita.
+app.get('/api/stream/options', requireApiKey, async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const id = String(req.query.id || '');
+  const type = String(req.query.type || '');
+  if (!/^\d+$/.test(id) || (type !== 'movie' && type !== 'tv')) {
+    return res.status(400).json({ error: 'id/type inválidos' });
+  }
+  const season = Math.max(1, Number(req.query.s) || 1);
+  const episode = Math.max(1, Number(req.query.e) || 1);
+  const title = String(req.query.title || '').trim().slice(0, 160);
+  const admin = statsKeyOK(req);
+  try {
+    const found = await streamOptions.discover({
+      id, type, season, episode, title,
+      providers: getProviderList(),
+      log: admin ? (row) => console.log('[opcoes] ' + JSON.stringify(row)) : null
+    });
+    const options = [];
+    for (const lang of ['dub', 'orig']) {
+      const info = found[lang];
+      if (!info) continue;
+      options.push({
+        lang,
+        pick: registry.register('pick', info, 8 * 60 * 1000),
+        quality: info.quality || 'auto',
+        ...(admin ? { provider: info.provider } : {})
+      });
+    }
+    return res.json({ options });
+  } catch (err) {
+    // Falha aqui nunca impede de assistir: o front segue pelo caminho normal.
+    return res.json({ options: [] });
+  }
+});
+
 app.get('/api/stream', requireApiKey, streamGuard.middleware, async (req, res) => {
   const id = String(req.query.id || '');
   const type = String(req.query.type || '');
@@ -1568,6 +1606,8 @@ app.get('/api/stream', requireApiKey, streamGuard.middleware, async (req, res) =
   const preferred = Number(req.query.res) || 0;
   const startAt = Math.max(0, Math.min(6 * 3600, Math.floor(Number(req.query.start) || 0)));
   const title = String(req.query.title || '').trim();
+  // Versão escolhida pelo ouvinte (dublado/original) em /api/stream/options; vale para a 1ª tentativa.
+  const picked = registry.resolve('pick', String(req.query.pick || ''));
 
   console.log(
     `[stream] id=${id} type=${type} s=${season} e=${episode} res=${preferred || 'auto'} hevc=${hevcOk ? 'sim' : 'não'} start=${startAt}s${title ? ` title="${title}"` : ''}`
@@ -1611,7 +1651,12 @@ app.get('/api/stream', requireApiKey, streamGuard.middleware, async (req, res) =
     // (AdShield de fallback), que só roda se nada mais entregar.
     const boundCandidates = [];
     for (let attempt = 0; attempt < 12; attempt += 1) {
-      streamInfo = await getFallbackStream({ id, type, season, episode, title, trace, skip });
+      if (attempt === 0 && picked && picked.url && !forceDev) {
+        streamInfo = { ...picked };
+        trace.push({ provider: streamInfo.provider, outcome: 'USADO', ms: 0, notes: ['Versão escolhida pelo ouvinte (dublado/original).'] });
+      } else {
+        streamInfo = await getFallbackStream({ id, type, season, episode, title, trace, skip });
+      }
       if (!streamInfo || !streamInfo.url || ALLOW_RENDER_VIDEO) break;
       let bound = false;
       try { bound = forceDev ? true : await renderBound(streamInfo, { hevcOk, direct }); } catch (err) { bound = true; }

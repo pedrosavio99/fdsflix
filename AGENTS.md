@@ -180,8 +180,30 @@ variável própria dele.
   sempre por `textContent`. A busca reordena pelo título e marca "🎬 filme" a partir de 40 min;
   o checkbox "só filme" filtra na tela.
 
+## Dublado ou original (escolha antes de tocar)
+
+- `GET /api/stream/options?id&type&s&e&title` (`lib/streamOptions.js`): roda as fontes **em paralelo**
+  (leves primeiro; CinePro/CineWinx/etc. só se as leves não acharem nada, por causa dos 0,1 CPU),
+  classifica cada achado em `dub` (áudio pt: `audioLang`/`dubbed`/provedor "Dublado PT"/faixa `por` por
+  ffprobe em MP4) ou `orig`, e devolve o melhor de cada. Cada opção traz um `pick` (token de 8 min no
+  `registry`). Para quando tem as duas; com uma só, espera no máximo 3 s ou até as fontes "de dublagem"
+  (`DUBBERS`) terminarem. Cache 10 min (2 min se vazio). Público não recebe nome de fonte (`provider`
+  só com a senha admin). Erro/timeout ⇒ `{options: []}` e o front segue a cascata normal.
+- `GET /api/stream?...&pick=<token>` reaproveita o link achado na 1ª tentativa (nada é procurado de
+  novo); se for fonte que gastaria o Render, cai no fluxo normal (AdFallback etc.).
+- Front (`public/index.html`, `chooseLanguage()` chamado em `renderPlayer()` antes do `/api/stream`):
+  etapa `lang` do overlay com frases divertidas; **duas versões** ⇒ `#langPick` (dois cards animados
+  no mesmo espaço do player, só aparecem quando as duas existem); **uma** ⇒ vai direto; **nenhuma** ⇒
+  cascata normal. A escolha vale para o título nesta sessão (próximo episódio/recarregar não perguntam);
+  `#langSwitch` ("🎧 Dublado · trocar") reabre os cards. O aviso "Acordando o servidor…" não aparece
+  durante a checagem nem com os cards na tela.
+- Legenda: falha de carregamento da faixa (`error` na `<track>`) ou legenda nativa ruim sem escolha
+  manual ⇒ vai direto para **"Português (Brasil) · tradução automática"** (`translated:true`), antes de
+  pt/en/resto. Só existe se a fonte tiver alguma legenda de outro idioma para traduzir.
+- Testes: `test/streamOptions.test.js`. Verificado no Firefox (Playwright) em desktop e 390 px.
+
 ## Como rodar e testar
 
-- `npm start` (porta `PORT`, padrão 3000) · `npm test` (241 testes, `node --test test/*.test.js`).
+- `npm start` (porta `PORT`, padrão 3000) · `npm test` (247 testes, `node --test test/*.test.js`).
 - Manutenção/"mudamos de URL": tela "Site" do admin (`lib/siteStatus.js`, `public/sitegate.js`, `public/site.js`; tabela `pix_settings` no Supabase).
 - Docs: `docs/DEPLOY-RENDER.md`, `docs/VERCEL-POOL.md`, `docs/TV-AO-VIVO.md`, `docs/VISITANTES.md`, `docs/API.md`.
