@@ -780,6 +780,8 @@ app.get('/api/admin/sources/test', requireApiKey, requireStatsKey, async (req, r
             entry.dubbed = audioLang.isPortuguese(langs);
           }
         } catch (err) { /* best effort */ }
+        // Fonte que sabe o idioma por metadado (ex.: Internet Archive `language: por`).
+        if (!entry.dubbed && out.audioLang === 'por') { entry.dubbed = true; entry.audio = entry.audio || ['por']; }
       }
     } catch (err) {
       entry.ms = Date.now() - started;

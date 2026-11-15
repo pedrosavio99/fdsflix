@@ -70,6 +70,23 @@ variável própria dele.
   `mode:"direct", via:"direct"` — **0 byte no Render e 0 conversão**. Não use `ffprobe` nesse
   acervo: os arquivos têm o `moov` no fim e a sonda lê dezenas de MB (o codec sai de um `Range`
   de 2 KB no `ftyp`). Teste: `test/tokyoVideo.test.js`.
+- **Internet Archive** (`lib/archiveOrg.js`, `ARCHIVEORG_ENABLED=0` desliga): **a fonte que o Render
+  consegue usar quando redecanais/mgeb.lat barram o datacenter** (403 para Render e Worker).
+  archive.org não fica atrás de Cloudflare, tem API pública (`advancedsearch.php` + `/metadata/<id>`),
+  MP4 estável (sem token nem IP preso) e aceita `Range`. Só filmes, vem depois do TokyVideo. Acha
+  pelos nomes do TMDB, exige **título igual** (`sameTitle`: "Toy Story 2" não vale para "Toy Story"),
+  **duração do arquivo = runtime do TMDB** e descarta 10-bit/HEVC/mkv. Prefere `language: por`
+  ("R4BR", "dublado"). O `/download` dá 302 para `dnNNN.*.archive.org`: resolvemos o redirect aqui;
+  o servidor final **não manda CORS** (`cors:false`, `browserDirect:true` → 0 byte no Render).
+  Cobertura depende do título (Chihiro dublado pt-BR 125 min, Clube da Luta sim; Poderoso Chefão,
+  Pulp Fiction não têm filme inteiro). Teste: `test/archiveOrg.test.js`.
+- **MGEB: a cota do CDN do fontedecanais estourou ("Limite de 10 TB atingido", HTTP 403 para qualquer
+  IP, medido em 2026-11-15)** — não é bloqueio de IP. A página lista `var sources = [...]` com
+  outras opções (MP4 hospedado fora, HLS); `lib/mgeb.js` agora testa todas as opções MP4 (com ou sem
+  `token`), exige `ftyp` e, nas sem token, duração de filme (≥40 min; episódio ≥8 min).
+  Ex.: Chihiro (129) → "Opção 3", MP4 no bitchute, 125 min, áudio `por`. Poucos títulos têm essa opção
+  (1 de 96 populares). A **página** do mgeb ainda é barrada de datacenter (Render/Worker 403): isso
+  segue exigindo saída residencial/BR (`docs/RELAY-RESIDENCIAL.md`).
 - **Busca: o acervo vem dos CANAIS, não da busca do site.** A busca do tokyvideo devolve
   clipe/música para quase tudo ("um sonho de liberdade" → 69 resultados, nenhum o filme), então
   `lib/tokyoVideo.js` monta um índice com `/user/<canal>` (dá o id) + `/channel/<id>/videos?offset=N`
@@ -165,6 +182,6 @@ variável própria dele.
 
 ## Como rodar e testar
 
-- `npm start` (porta `PORT`, padrão 3000) · `npm test` (236 testes, `node --test test/*.test.js`).
+- `npm start` (porta `PORT`, padrão 3000) · `npm test` (241 testes, `node --test test/*.test.js`).
 - Manutenção/"mudamos de URL": tela "Site" do admin (`lib/siteStatus.js`, `public/sitegate.js`, `public/site.js`; tabela `pix_settings` no Supabase).
 - Docs: `docs/DEPLOY-RENDER.md`, `docs/VERCEL-POOL.md`, `docs/TV-AO-VIVO.md`, `docs/VISITANTES.md`, `docs/API.md`.

@@ -173,7 +173,8 @@ test('a fonte aparece no fim da cascata, antes do "Dublado PT"', () => {
     const list = cascade.getProviderList().map((p) => p.name);
     assert.ok(list.includes('TokyVideo'));
     assert.equal(list[list.length - 1], 'Dublado PT');
-    assert.equal(list[list.length - 2], 'TokyVideo');
+    assert.equal(list[list.length - 2], 'Internet Archive');
+    assert.equal(list[list.length - 3], 'TokyVideo');
   } finally {
     delete process.env.PT_DUB_API_BASE;
     delete process.env.TOKYOVIDEO_ENABLED;
