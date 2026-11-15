@@ -237,6 +237,27 @@ chegar. Teto geral 40 s. Antes eram ~13 s só para chegar nas fontes novas (Vids
 - `catalog.reachable`: tempo esgotado **não** mata o link (CDN do BitChute chega a demorar 10 s+ para 2 bytes);
   só resposta HTTP de erro conta como morto.
 
+## "Outra versão" (botão do player) e troca automática
+
+Botão **🔀 Outra versão** (`#switchSrcBtn`, público, texto neutro) ao lado de "↻ Recarregar". Serve para o filme errado ou que
+não toca: descarta a versão em uso e busca a próxima (normalmente o AdFallback/outra fonte), retomando do mesmo ponto.
+- A resposta do `/api/stream` traz dois ids OPACOS (o público não pode ver nome de provedor): `src` (fonte) e `sv`
+  (arquivo de vídeo, hash de host+caminho). O front guarda os já descartados por título (`state.triedSrc`) e manda
+  `?skip=<ids>&fresh=1`. O servidor tira as fontes pelo `src` e recusa o MESMO arquivo vindo por outra fonte pelo
+  `sv` (ex.: Catálogo e BitChute ao vivo apontando para o mesmo MP4). Sem outra versão: avisa e libera as descartadas.
+- **Troca automática**: o `/api/stream` manda `expectMin` (duração do TMDB, filmes). No `loadedmetadata`, se a duração do
+  vídeo difere mais de `max(15 min, 20%)`, o front chama `switchVersion(true)` (até 2x por título).
+- Troca pula a checagem dublado/original (`state.noOptions`) e vai direto à cascata.
+
+**Legenda quebrada ⇒ português traduzido sozinho.** O failover só rodava com `!state.subUserChose`, e essa flag virava
+`true` por qualquer legenda salva do título (inclusive a que o próprio player escolheu). Agora `subUserChose` só vale para o
+que a pessoa mexeu na sessão. Ficou "ruim" quando: vazia, caracteres corrompidos (servidor e conferência local do texto
+carregado: `�`, `Ã£`, `â€`…), poucas falas (< 1 a cada 75 s), termina antes de 80% ou depois de 130% do vídeo, ou a faixa
+não carrega. A troca prefere "Português (Brasil) · tradução automática", depois pt, en e o resto.
+
+**Casamento por título (TokyVideo)**: `titleScore` agora exige 3+ letras depois de normalizar e "contém" só por palavra inteira
+(o nome russo "Гладiатор" virava "i" e casou "Gladiador" com "Pulp Fiction"); ano diferente (folga ±1) recusa o candidato.
+
 ## Dublado ou original (escolha antes de tocar)
 
 - `GET /api/stream/options?id&type&s&e&title` (`lib/streamOptions.js`): roda as fontes **em paralelo**
@@ -261,6 +282,6 @@ chegar. Teto geral 40 s. Antes eram ~13 s só para chegar nas fontes novas (Vids
 
 ## Como rodar e testar
 
-- `npm start` (porta `PORT`, padrão 3000) · `npm test` (272 testes, `node --test test/*.test.js`).
+- `npm start` (porta `PORT`, padrão 3000) · `npm test` (276 testes, `node --test test/*.test.js`).
 - Manutenção/"mudamos de URL": tela "Site" do admin (`lib/siteStatus.js`, `public/sitegate.js`, `public/site.js`; tabela `pix_settings` no Supabase).
 - Docs: `docs/DEPLOY-RENDER.md`, `docs/VERCEL-POOL.md`, `docs/TV-AO-VIVO.md`, `docs/VISITANTES.md`, `docs/API.md`.

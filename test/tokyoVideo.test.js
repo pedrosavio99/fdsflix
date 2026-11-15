@@ -317,3 +317,25 @@ test('acervo: título que não existe não vira resultado', () => {
   const hits = tokyo.searchCatalog(acervo, ['O Poderoso Chefão'], 175 * 60, 1972);
   assert.equal(hits.length, 0);
 });
+
+// Regressão real: "Gladiador" (2000, 155 min) abriu "Pulp Fiction 1994" (154 min). Um nome alternativo em russo
+// ("Гладiатор") vira só "i" depois de normalizar e casava com qualquer título que tivesse a letra "i".
+test('titleScore: nome de 1-2 letras depois de normalizar não casa com nada', () => {
+  const tokyo = require('../lib/tokyoVideo');
+  assert.equal(tokyo.titleScore('Гладiатор', 'Pulp Fiction - Tempo de Violência 1994'), 0);
+  assert.equal(tokyo.titleScore('i', 'Pulp Fiction'), 0);
+});
+
+test('titleScore: "contém" só por palavra inteira', () => {
+  const tokyo = require('../lib/tokyoVideo');
+  assert.equal(tokyo.titleScore('Gladiator', 'Gladiators of Rome'), 0);
+  assert.ok(tokyo.titleScore('Gladiator', 'O Gladiator 2000') >= 62);
+  assert.equal(tokyo.titleScore('Gladiador', 'Gladiador'), 100);
+});
+
+test('searchCatalog: mesmo com a duração certa, ano diferente é outro filme', () => {
+  const tokyo = require('../lib/tokyoVideo');
+  const list = [{ id: '1', title: 'Gladiador 1992', durationSec: 9300 }, { id: '2', title: 'Gladiador 2000', durationSec: 9300 }];
+  const hits = tokyo.searchCatalog(list, ['Gladiador'], 9300, 2000);
+  assert.deepEqual(hits.map((h) => h.id), ['2']);
+});

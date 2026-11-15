@@ -1502,6 +1502,7 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
                   </label>
                   <button id="langSwitch" class="ghost" type="button" hidden title="Trocar entre dublado e original">🎧 Trocar áudio</button>
                   <button id="reloadBtn" class="ghost" type="button">↻ Recarregar</button>
+                  <button id="switchSrcBtn" class="ghost" type="button" title="Abriu o filme errado ou não toca direito? Tenta outra versão">🔀 Outra versão</button>
                   <button id="tokyoFindBtn" class="ghost admin-only" type="button" title="Outras fontes: ver o que toca para este título (e o acervo em pt-BR)">🎬 TokyVideo</button>
                   <details class="opts">
                     <summary>⚙ Mais opções</summary>
@@ -1744,6 +1745,12 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
     subScale: 1,
     subInfo: {},
     subUserChose: false,
+    triedSrc: {},        // título -> versões (ids opacos) que a pessoa/auto-troca já descartou
+    autoSwitches: {},    // título -> quantas trocas automáticas já fizemos
+    noOptions: false,    // pula a checagem dublado/original (troca de versão vai direto à cascata)
+    curSrc: '',          // id opaco da fonte em uso
+    curSv: '',           // id opaco do arquivo de vídeo em uso (o mesmo filme por outra fonte também é descartado)
+    expectMin: 0,        // duração esperada do filme (min), para reparar o vídeo errado
     subManual: false,
     autoApplying: false,
     auto: null,
@@ -3118,6 +3125,8 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
         var idx = Array.prototype.indexOf.call(video.querySelectorAll('track'), track);
         subFailover(idx, 'não carregou');
       });
+      // Carregou: agora dá para conferir o texto de verdade (caracteres quebrados) e trocar se estiver ruim.
+      track.addEventListener('load', function () { subQualityCheckSoon(); });
       video.appendChild(track);
     });
   }
@@ -3323,6 +3332,13 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
       return { bad: true, text: 'Esta legenda termina em ' + fmtClock(info.lastEnd) + ', mas o filme tem ' + fmtClock(total) +
         ': o arquivo está incompleto (provavelmente só metade). Tente outro idioma.' };
     }
+    if (total > 900 && info.cues < Math.max(25, total / 75)) {
+      return { bad: true, text: 'Esta legenda tem poucas falas (' + info.cues + ') para um filme de ' + fmtClock(total) + ': está incompleta. Tente outro idioma.' };
+    }
+    if (total > 900 && info.lastEnd > total * 1.3) {
+      return { bad: true, text: 'Esta legenda termina em ' + fmtClock(info.lastEnd) + ' e o vídeo tem ' + fmtClock(total) +
+        ': é de outra versão do filme. Tente outro idioma.' };
+    }
     if (total > 900 && info.lastEnd > total * 1.12) {
       return { bad: false, warn: true, text: 'Esta legenda termina em ' + fmtClock(info.lastEnd) + ' e o vídeo tem ' + fmtClock(total) +
         ': deve ser de outra versão do filme. Se estiver adiantada, use 🎯 Sincronizar.' };
@@ -3393,6 +3409,20 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
     subShowWarn('A legenda ' + why + '. Troquei para o português gerado automaticamente.', 'info');
   }
 
+  // Conferência no próprio navegador: texto já carregado na faixa com caracteres quebrados (�, "Ã£", "Ã§"…).
+  function subLocalGarbled(index) {
+    var track = $('nativePlayer').textTracks[index];
+    if (!track || !track.cues || track.cues.length < 5) return null;
+    var n = Math.min(track.cues.length, 300), bad = 0, total = 0;
+    for (var i = 0; i < n; i++) {
+      var text = String(track.cues[i].text || '');
+      total += text.length;
+      var m = text.match(/\uFFFD|Ã[\u00A0-\u00BF]|Â[\u00A0-\u00BF]|â€[\u0099\u009C\u009D\u00A6\u2018-\u201F]|[\u0080-\u009F]/g);
+      if (m) bad += m.length;
+    }
+    return total ? bad / total : 0;
+  }
+
   var subQualityTimer = null;
   function subQualityCheckSoon() {
     clearTimeout(subQualityTimer);
@@ -3413,6 +3443,12 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
         video.addEventListener('durationchange', subQualityCheckSoon, { once: true });
       }
       var verdict = subJudge(info, total);
+      if (!verdict.bad) {
+        var garbled = subLocalGarbled(index);
+        if (garbled !== null && garbled > 0.01) {
+          verdict = { bad: true, text: 'Esta legenda chegou com caracteres quebrados. Tente outro idioma.' };
+        }
+      }
       var note = info && info.spamRemoved ? ' (removemos ' + info.spamRemoved + ' anúncio(s) do arquivo)' : '';
 
       if (verdict.bad && !state.subUserChose) {
@@ -3937,6 +3973,7 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
   // Pergunta ao servidor quais versões existem (dublado/original) e, se forem duas, deixa a pessoa escolher.
   // Uma versão só: vai direto nela. Nenhuma ou erro: segue o caminho normal (cascata) sem atrapalhar.
   function chooseLanguage(item, season, episode, playToken, controller, useClient) {
+    if (state.noOptions) { state.noOptions = false; state.langOptions = []; state.langNow = ''; refreshLangSwitch(); return Promise.resolve(''); }
     state.langOptions = [];
     state.langNow = '';
     refreshLangSwitch();
@@ -4018,7 +4055,9 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
     state.subScale = loadSubScale(state.subKey);
     state.subInfo = {};
     state.subBad = {};
-    state.subUserChose = Boolean(loadSubPref() || loadSubLang(state.subKey));
+    // Só conta como "escolha da pessoa" o que ela mexer AGORA. A legenda salva para o título é, na maioria das
+    // vezes, a que o próprio player escolheu sozinho — tratá-la como escolha desligava a troca automática.
+    state.subUserChose = false;
     state.syncAnchor = null;
     state.subManual = false;
     $('subOffsetInput').value = String(state.subOffset);
@@ -4112,6 +4151,8 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
         if (item.title) params.set('title', item.title);
         if (state.curPick) params.set('pick', state.curPick);
         if (state.freshNext) { params.set('fresh', '1'); state.freshNext = false; }
+        var triedNow = state.triedSrc[titleKeyNow(item, season, episode)] || [];
+        if (triedNow.length) params.set('skip', triedNow.join(','));
 
         reqStart = Date.now();
         diag('step', 'Pedindo ao servidor: GET ' + apiUrl('/api/stream?' + params.toString()));
@@ -4138,6 +4179,9 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
         diag('ok', 'o player vai buscar o vídeo em: ' + diagWhere(apiUrl(data.url)));
         diag('info', 'legendas: ' + ((data.captions || []).length) + (data.note ? ' · nota: ' + data.note : ''));
         state.sessionId = data.sessionId || null;
+        state.curSrc = data.src || '';
+        state.curSv = data.sv || '';
+        state.expectMin = Number(data.expectMin) || 0;
         state.lastMode = data.mode;
         state.transcoded = Boolean(data.transcoded);
         state.baseOffset = data.transcoded ? startSeconds : 0;
@@ -4222,6 +4266,14 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
           return;
         }
         if (autoNextFallback()) return;
+        var tk = titleKeyNow(item, season, episode);
+        if ((state.triedSrc[tk] || []).length) {
+          // Não há outra versão agora: libera as descartadas (Recarregar volta a tentar tudo) e avisa.
+          state.triedSrc[tk] = [];
+          fail('Não achei outra versão deste título agora. Toque em ↻ Recarregar para tentar de novo.');
+          showEmbedOptions();
+          return;
+        }
         fail(err.message || 'Erro ao preparar o vídeo.');
         showEmbedOptions();
       });
@@ -4773,6 +4825,30 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
     renderPlayer();
   });
 
+  function titleKeyNow(item, season, episode) {
+    item = item || state.selected;
+    if (!item) return '';
+    return item.type + ':' + item.id + ':' + (item.type === 'tv' ? (season || state.curS) + 'x' + (episode || state.curE) : '');
+  }
+
+  // "Outra versão": descarta a versão em uso (a que abriu errado ou não toca) e busca a próxima disponível.
+  function switchVersion(auto) {
+    if (!state.selected) return;
+    var key = titleKeyNow();
+    var list = state.triedSrc[key] = state.triedSrc[key] || [];
+    [state.curSrc, state.curSv].forEach(function (id) { if (id && list.indexOf(id) === -1) list.push(id); });
+    progRemember(true);
+    if (state.lastAbs >= PROG_MIN_SECONDS) $('startInput').value = secondsToStartMinutes(state.lastAbs);
+    state.netRetries = 0;
+    state.resumePending = false;
+    state.freshNext = true;
+    state.noOptions = true;
+    toast(auto ? '🔀 Esta versão não parece ser o filme. Procurando outra…' : '🔀 Procurando outra versão…');
+    diag('step', (auto ? 'Troca automática' : 'Troca pedida') + ': descartando a versão ' + (state.curSrc || '?') + ' e buscando a próxima.');
+    renderPlayer();
+  }
+  $('switchSrcBtn').addEventListener('click', function () { switchVersion(false); });
+
   $('reloadBtn').addEventListener('click', function () {
     // "Recarregar" volta ao ponto atual, não ao início configurado.
     toast('↻ Recarregando o vídeo…');
@@ -4932,6 +5008,20 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
       try { video.currentTime = state.pendingSeek; } catch (err) { /* ignore */ }
     }
     state.pendingSeek = 0;
+    // Vídeo errado? Se a duração está muito longe da do filme (TMDB), troca sozinho para a próxima versão (até 2x).
+    try {
+      var item = state.selected;
+      var dur = video.duration;
+      if (item && item.type === 'movie' && state.expectMin && !state.transcoded && !state.cvp && isFinite(dur) && dur > 300) {
+        var minutes = dur / 60;
+        var key = titleKeyNow();
+        if (Math.abs(minutes - state.expectMin) > Math.max(15, state.expectMin * 0.2) && (state.autoSwitches[key] || 0) < 2) {
+          state.autoSwitches[key] = (state.autoSwitches[key] || 0) + 1;
+          diag('err', 'Duração do vídeo (' + Math.round(minutes) + ' min) não bate com a do filme (' + state.expectMin + ' min).');
+          setTimeout(function () { switchVersion(true); }, 50);
+        }
+      }
+    } catch (err) { /* ignore */ }
   });
 
   video.addEventListener('error', function () {

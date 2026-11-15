@@ -1477,6 +1477,32 @@ function outageMessage(trace) {
   return RENDER_VIDEO_MSG;
 }
 
+/**
+ * Identificador OPACO da fonte (6 hex). O público não pode ver nome de provedor, mas o botão "Outra versão" precisa
+ * dizer ao servidor qual versão já foi tentada: o navegador devolve estes ids em `?skip=` e o servidor os traduz.
+ */
+function srcId(name) {
+  return crypto.createHash('sha1').update('fdsflix-src:' + String(name || '')).digest('hex').slice(0, 6);
+}
+/** Identificador opaco do ARQUIVO de vídeo (host + caminho, sem token): o mesmo filme vindo de duas fontes tem o mesmo id. */
+function urlId(url) {
+  try {
+    const u = new URL(url);
+    return crypto.createHash('sha1').update('fdsflix-url:' + u.host + u.pathname).digest('hex').slice(0, 6);
+  } catch (err) {
+    return '';
+  }
+}
+function skipIdsOf(list) {
+  return new Set(String(list || '').split(',').map((x) => x.trim()).filter((x) => /^[0-9a-f]{6}$/.test(x)).slice(0, 24));
+}
+function namesFromSrcIds(list) {
+  const wanted = skipIdsOf(list);
+  if (!wanted.size) return [];
+  const names = getProviderList().map((p) => p.name).concat(['AdFallback']);
+  return names.filter((n) => wanted.has(srcId(n)));
+}
+
 /** true se entregar esta fonte ao navegador gastaria banda de saída do Render. */
 async function renderBound(info, { hevcOk, direct }) {
   if (direct) return false; // extensão fdsFlix Direct: o navegador busca no CDN
@@ -1674,6 +1700,14 @@ app.get('/api/stream', requireApiKey, streamGuard.middleware, async (req, res) =
   // Versão escolhida pelo ouvinte (dublado/original) em /api/stream/options; vale para a 1ª tentativa.
   const picked = registry.resolve('pick', String(req.query.pick || ''));
   const fresh = String(req.query.fresh || '') === '1';
+  // Duração esperada do filme (min), para o navegador reparar se abriu o vídeo errado e trocar sozinho.
+  let expectMin = 0;
+  if (type === 'movie') {
+    tokyoVideo.tmdbInfo(id, 'movie').then((info) => { expectMin = info && info.runtimeSec ? Math.round(info.runtimeSec / 60) : 0; }).catch(() => {});
+  }
+  // "Outra versão": o navegador manda os ids das versões já tentadas; elas ficam fora desta busca.
+  const userSkip = namesFromSrcIds(req.query.skip);
+  const userSkipIds = skipIdsOf(req.query.skip);
   // Legendas de companhia (VidLink): começam a buscar já, junto com a cascata. Fontes sem legenda
   // própria (Internet Archive, BitChute, TokyVideo, catálogo…) ganham estas — sem isso o filme
   // original ficaria sem legenda nenhuma.
@@ -1693,9 +1727,11 @@ app.get('/api/stream', requireApiKey, streamGuard.middleware, async (req, res) =
   const adminCall = statsKeyOK(req);
   res.json = (body) => {
     if (!body || typeof body !== 'object' || Array.isArray(body)) return jsonWithDebug(body);
-    if (adminCall) return jsonWithDebug({ ...body, debug: buildStreamDebug(trace, startedAt) });
+    if (adminCall) return jsonWithDebug({ ...body, ...(body.provider && body.url ? { src: srcId(body.provider), sv: urlId(body.url) } : {}), ...(body.url && expectMin ? { expectMin } : {}), debug: buildStreamDebug(trace, startedAt) });
     const { provider, note, edgeSkipped, debug, ...rest } = body;
     if (res.statusCode >= 500 && rest.error) rest.error = 'Não foi possível carregar este vídeo agora.';
+    if (provider && rest.url) { rest.src = srcId(provider); rest.sv = urlId(rest.url); }
+    if (rest.url && expectMin) rest.expectMin = expectMin;
     return jsonWithDebug(rest);
   };
 
@@ -1708,7 +1744,7 @@ app.get('/api/stream', requireApiKey, streamGuard.middleware, async (req, res) =
       (devForceActive() || (String(req.query.force || '') === 'fallback' && statsKeyOK(req)));
 
     let streamInfo = null;
-    const skip = forceDev ? ['Vidsrc Proxy'] : [];
+    const skip = (forceDev ? ['Vidsrc Proxy'] : []).concat(userSkip);
     if (forceDev) {
       console.log('[stream] MODO DEV: forçando AdFallback (pool do Vidsrc ignorada)');
       trace.push({
@@ -1740,6 +1776,11 @@ app.get('/api/stream', requireApiKey, streamGuard.middleware, async (req, res) =
       streamInfo = await getFallbackStream({
         id, type, season, episode, title, trace, skip, fresh,
         accept: async (info, entry) => {
+          // O mesmo arquivo que a pessoa descartou, vindo por outra fonte (ex.: catálogo e busca ao vivo do BitChute).
+          if (userSkipIds.size && userSkipIds.has(urlId(info.url))) {
+            entry.notes.push('é o mesmo vídeo que foi descartado; seguindo para a próxima');
+            return false;
+          }
           if (ALLOW_RENDER_VIDEO && !forceDev) return true;
           let bound = false;
           try { bound = forceDev ? true : await renderBound(info, { hevcOk, direct }); } catch (err) { bound = true; }
@@ -1751,6 +1792,7 @@ app.get('/api/stream', requireApiKey, streamGuard.middleware, async (req, res) =
           return false;
         },
         onReject: (info) => {
+          if (userSkipIds.size && userSkipIds.has(urlId(info.url))) return undefined; // descartado pela pessoa: nem como resgate
           boundCandidates.push(info);
           skip.push(info.provider);
           // Disjuntor aberto + AdFallback configurado: não espera as outras fontes (corta a abertura de ~23 s para ~1-2 s).

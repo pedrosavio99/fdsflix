@@ -81,3 +81,11 @@ test('skip respeita a lista e o trace registra o vencedor como USADO', async () 
   assert.equal(r.provider, 'Fica');
   assert.equal(a.trace.find((t) => t.provider === 'Fica').outcome, 'USADO');
 });
+
+test('skip tira a fonte da corrida (botão "Outra versão"): a seguinte entrega', async () => {
+  cascade._setProviders([hit('Errada', 10), hit('Certa', 80)]);
+  const a = args({ skip: ['Errada'] });
+  const r = await cascade.getFallbackStream(a);
+  assert.equal(r.provider, 'Certa');
+  assert.ok(!a.trace.some((t) => t.provider === 'Errada'));
+});
