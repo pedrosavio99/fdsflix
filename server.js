@@ -34,6 +34,7 @@ const poolKit = require('./lib/poolKit');
 const pixKit = require('./lib/pixKit');
 const pixAuth = require('./lib/pixAuth');
 const siteStatus = require('./lib/siteStatus');
+const { createStreamGuard } = require('./lib/streamGuard');
 const liveTv = require('./lib/liveTv');
 const liveEpg = require('./lib/liveEpg');
 const { relayFetch, getRelayConfig } = require('./lib/relayFetch');
@@ -716,7 +717,8 @@ app.get('/api/health', (req, res) => {
     tmdb: Boolean(TMDB_API_KEY),
     sessions: activeSessions(),
     fallbacks: getProviderList().map((p) => p.name),
-    cinepro: cineproRunner.getStatus()
+    cinepro: cineproRunner.getStatus(),
+    streamGuard: streamGuard.stats()
   });
 });
 
@@ -1392,7 +1394,10 @@ async function rescueMovieWithAdShield(req, res, { candidates, trace, hevcOk, fo
   return false;
 }
 
-app.get('/api/stream', requireApiKey, async (req, res) => {
+// Junta pedidos idênticos em voo e limita buscas simultâneas (ver lib/streamGuard.js). Sem variável de ambiente; o admin passa direto.
+const streamGuard = createStreamGuard({ isAdmin: statsKeyOK });
+
+app.get('/api/stream', requireApiKey, streamGuard.middleware, async (req, res) => {
   const id = String(req.query.id || '');
   const type = String(req.query.type || '');
 

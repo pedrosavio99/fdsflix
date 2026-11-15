@@ -17,20 +17,21 @@ Hardware assumido: Render **Free** = 512 MB RAM e **0,1 CPU** (o `render.yaml` d
 
 | Medida (local) | Valor |
 |---|---|
-| RAM do Node em repouso / após carga | ~170 MB / ~210 MB (não é gargalo) |
+| RAM do Node em repouso / sob carga de 35 mil plays | ~170 MB / oscila 190–320 MB. Com heap limitado a 96 MB não estourou e não houve vazamento. Não inclui o CinePro (processo filho só existe no Docker; RAM dele **não medida**) |
 | CPU por chamada leve (`/api/health`, `/api/site/status`) | ~1 ms |
 | CPU por abertura de `/` (index.html 298 KB, gzip a cada pedido) | **~20 ms** (era o ponto fraco) |
 | Visita nova completa (html + livetv.js + demais) | ~35 ms de CPU, ~110 KB de banda |
+| CPU por play (`/api/stream`, caminho feliz, nó da Vercel simulado) | **~6–12 ms** (antes do `streamGuard`). Mesmo título com 100 simultâneos: **~1 ms** (depois) |
 
-Estimativa (a CPU local é mais rápida que 0,1 CPU do Render; trate como ordem de grandeza):
+`lib/streamGuard.js` (ligado em `/api/stream`, sem variável de ambiente): junta pedidos idênticos em voo (nada fica guardado depois da resposta; o "↻ Recarregar" faz busca nova) e limita 30 buscas simultâneas (excedente espera até 30 s e depois roda mesmo assim, nunca é recusado). Admin (senha) nunca é juntado nem enfileirado. Estatísticas em `/api/health` (admin): `streamGuard`. Testes: `test/streamGuard.test.js`.
 
-- **Só o Render (CPU/RAM), com o vídeo saindo por fora:** ~300 espectadores simultâneos (faixa 100–500). Cada espectador faz poucas chamadas leves (aviso de uso a cada 20 s, status do site a cada 45 s, EPG da TV a cada 60 s).
-- **Chegada de visitantes novos:** ~3 a 5 por segundo sustentados (CPU do gzip do HTML). Visita que volta recebe 304 e custa quase nada.
-- **Teto prático hoje: ~50–150 simultâneos (média ~100)**, porque quem limita é a entrega do vídeo, não o Render:
-  - **Worker da Cloudflare (plano grátis):** 100 mil requisições/dia e **1.000 req/min** de pico. Cada trecho HLS (4–6 s) conta uma requisição; um espectador faz ~10–15 req/min, então ~70–100 simultâneos no Worker, e ~55–80 filmes inteiros por dia.
-  - **Vercels do pool (Hobby):** 100 GB/mês cada. Um filme de 2 h em 720p gasta ~1,8–2,7 GB, então ~40–55 sessões de filme por conta por mês. Total = nº de contas × isso.
-  - **ffmpeg no Render (`ALLOW_RENDER_VIDEO=1`):** `MAX_SESSIONS=1`, 360p → **1 espectador**. Mantido bloqueado por padrão.
-  - **Banda de saída do Render:** o código assume 5 GB/mês (fontes na web divergem; confira no painel) → ~40 mil visitas novas/mês só de páginas.
+Estimativa (a CPU local é mais rápida que 0,1 CPU do Render; trate como ordem de grandeza). Correções importantes: tokens de legenda vivem 4 min (`TOKEN_TTL_MS`), então **memória não é gargalo por causa das legendas**; e o Worker da Cloudflare **provavelmente nem carrega o vídeo** (o CDN principal recusa a rede da Cloudflare, ver `deploy/media-relay/README.md`; o vídeo do Vidsrc sai pelas Vercels).
+
+- **Só o Render (CPU), com o vídeo saindo por fora e a banda resolvida com mais fallbacks/Vercels:** ~300 a 500 espectadores simultâneos. Cada espectador faz poucas chamadas leves (aviso de uso a cada 20 s, status do site a cada 45 s, EPG da TV a cada 60 s) e um play a cada 30–120 min.
+- **Chegada de visitantes novos:** ~3 a 5 por segundo sustentados (CPU do gzip do HTML) até o cache do HTML (próximo passo 1). Visita que volta recebe 304 e custa quase nada.
+- **Manada no mesmo título (lançamento):** resolvida pelo `streamGuard` (1 busca para todos). Manada em **títulos diferentes**: ~5–15 plays/s no 0,1 CPU.
+- **Incógnitas que seguem abertas:** (a) RAM do CinePro dentro dos 512 MB; (b) custo do `/api/stream` quando o Vidsrc cai e a cascata percorre as outras fontes (com o CinePro raspando no mesmo CPU); (c) banda de saída do Render (o código assume 5 GB/mês; confira no painel).
+- **Limites de entrega de vídeo (resolvidos por quem adiciona mais nós, não pelo Render):** Vercels do pool (Hobby: 100 GB/mês por conta, ~40–55 sessões de filme/conta/mês); ffmpeg no Render (`ALLOW_RENDER_VIDEO=1`: `MAX_SESSIONS=1`, **1 espectador**; mantido bloqueado); Worker grátis só se o teste de 1 byte passar para o provedor (100 mil req/dia, 1.000 req/min).
 - Players alternativos ("Opção N", embeds de terceiros) não gastam nada nosso.
 
 Fontes dos limites: docs da Render (free: 512 MB / 0,1 CPU, spin-down 15 min), docs da Cloudflare Workers (Free: 100k req/dia, 1.000 req/min, 10 ms de CPU), docs da Vercel (Hobby: 100 GB de Fast Data Transfer, uso não comercial). Confirme os números de banda antes de decidir plano.
@@ -39,12 +40,13 @@ Fontes dos limites: docs da Render (free: 512 MB / 0,1 CPU, spin-down 15 min), d
 
 1. **Pré-comprimir e cachear** `index.html` e os JS grandes (hoje o `compression` recomprime a cada pedido): ~20 ms → ~1 ms por visita e `Cache-Control` de 5–10 min. Maior ganho pelo menor esforço.
 2. **Servir o site por host estático** (Cloudflare Pages ou Vercel) com `API_ONLY=1` (já suportado em `server.js`; `FRONTEND_URL` redireciona quem abrir a URL do Render). O Render fica só com a API.
-3. **Teste de carga no Render real** antes de divulgar: página, `/api/stream`, e um filme tocando de verdade com o pool/Worker configurados. Registrar aqui os números reais e trocar a estimativa acima.
-4. Conferir **quantas Vercels há no pool** e se o vídeo está saindo pelo Worker ou pelo pool (`EDGE_MEDIA`, `MEDIA_RELAY_URL`); isso define o teto real de simultâneos.
-5. Se passar de ~100 simultâneos: Worker pago (ou relay próprio em `deploy/media-relay`) e Render Starter (0,5 CPU).
+3. **Teste de carga no Render real** antes de divulgar: página, `/api/stream`, e um filme tocando de verdade com o pool configurado. Medir também a RAM com o CinePro de pé. Registrar aqui os números reais e trocar a estimativa acima.
+4. Conferir **quantas Vercels há no pool** e por qual caminho o vídeo sai (Diagnóstico do admin: Vercel, Worker, AdFallback ou embed).
+5. Se o CinePro não for fonte de reserva necessária, `CINEPRO_EMBEDDED=0` libera RAM e CPU (decisão do dono; não foi mexido).
+6. Se o teste mostrar CPU no limite: Render Starter (0,5 CPU). Rodízio de várias APIs no front (hoje há um `apiBase` só) só se ainda for preciso depois do cache do HTML.
 
 ## Como rodar e testar
 
-- `npm start` (porta `PORT`, padrão 3000) · `npm test` (183 testes, `node --test test/*.test.js`).
+- `npm start` (porta `PORT`, padrão 3000) · `npm test` (192 testes, `node --test test/*.test.js`).
 - Manutenção/"mudamos de URL": tela "Site" do admin (`lib/siteStatus.js`, `public/sitegate.js`, `public/site.js`; tabela `pix_settings` no Supabase).
 - Docs: `docs/DEPLOY-RENDER.md`, `docs/VERCEL-POOL.md`, `docs/TV-AO-VIVO.md`, `docs/VISITANTES.md`, `docs/API.md`.
