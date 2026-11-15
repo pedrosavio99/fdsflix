@@ -333,6 +333,10 @@
         why += ' · ' + blocked.map(function (s) { return s.site + ' HTTP ' + (s.status || '?'); }).join(', ') +
           ' — o site recusou o IP do servidor (o relay também não passou).';
       }
+      var tried = [].concat.apply([], (data.sites || []).map(function (s) {
+        return (s.attempts || []).map(function (a) { return a.slug + '→' + (a.status || (a.timeout ? 'tempo' : '?')); });
+      }));
+      if (tried.length) why += ' · slugs tentados: ' + tried.slice(0, 5).join(', ');
       if (data && data.relay === false) why += ' · relay desligado.';
       webNote.textContent = why;
       webNote.className = 'pix-note err';
@@ -340,7 +344,8 @@
     }
     var foundSites = (data.sites || []).filter(function (s) { return s.film; }).length;
     webNote.textContent = (foundSites ? foundSites + ' site(s) com o filme · ' : '') +
-      list.length + ' página(s) da busca · ' + (data.queries || []).join(' | ');
+      list.length + ' página(s) da busca · ' + (data.queries || []).join(' | ') +
+      (data.version ? ' · ' + data.version : '');
     webNote.className = 'pix-note ok';
 
     list.forEach(function (item) {
