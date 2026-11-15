@@ -3217,11 +3217,17 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
       }
     }
 
+    state.subAutoOff = false;
     if (index === -1 && saved !== 'off') {
-      for (var j = 0; j < captions.length; j++) {
-        if (captions[j].default) { index = j; break; }
+      if (state.langNow === 'dub' && !pref && !saved) {
+        // Dublado e a pessoa nunca mexeu na legenda: começa sem (continua no menu). Não conta como escolha.
+        state.subAutoOff = true;
+      } else {
+        for (var j = 0; j < captions.length; j++) {
+          if (captions[j].default) { index = j; break; }
+        }
+        if (index === -1 && captions.length) index = 0;
       }
-      if (index === -1 && captions.length) index = 0;
     }
 
     var select = $('subLangSelect');
@@ -3240,7 +3246,9 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
     if (select) select.value = index === -1 ? 'off' : String(index);
 
     state.subLang = index === -1 ? 'off' : (state.captions[index] ? state.captions[index].label : 'off');
-    if (state.subKey) saveSubLang(state.subKey, state.subLang);
+    if (index !== -1) state.subAutoOff = false;
+    // "Desligada sozinha" (dublado) não é uma escolha: não grava, para o original ligar normalmente depois.
+    if (state.subKey && !(state.subAutoOff && index === -1)) saveSubLang(state.subKey, state.subLang);
   }
 
   function rebuildCaptions() {
@@ -3928,7 +3936,7 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
 
   // Pergunta ao servidor quais versões existem (dublado/original) e, se forem duas, deixa a pessoa escolher.
   // Uma versão só: vai direto nela. Nenhuma ou erro: segue o caminho normal (cascata) sem atrapalhar.
-  function chooseLanguage(item, season, episode, playToken, controller) {
+  function chooseLanguage(item, season, episode, playToken, controller, useClient) {
     state.langOptions = [];
     state.langNow = '';
     refreshLangSwitch();
@@ -3938,6 +3946,10 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
     q.set('s', String(season));
     q.set('e', String(episode));
     if (item.title) q.set('title', item.title);
+    // Mesmos parâmetros que o /api/stream vai usar: assim só aparece versão que ele realmente entrega.
+    q.set('hevc', useClient || (state.hevc && !state.forceTranscode) ? '1' : '0');
+    if (directExtensionEnabled() && !state.forceTranscode && (useClient || state.hevc)) q.set('direct', '1');
+    if (state.freshNext) q.set('fresh', '1');
     state.langChecking = true;
     showOverlay('Conferindo as versões…', true);
     setStatus('working', 'Conferindo se tem dublado e original…');
@@ -3946,7 +3958,7 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
     var req = apiFetch('/api/stream/options?' + q.toString(), { signal: controller.signal })
       .then(function (r) { return r.ok ? r.json() : empty; })
       .catch(function (err) { if (err && err.name === 'AbortError') { state.langChecking = false; throw err; } return empty; });
-    var timeout = new Promise(function (resolve) { setTimeout(function () { resolve(empty); }, 26000); });
+    var timeout = new Promise(function (resolve) { setTimeout(function () { resolve(empty); }, 11000); });
 
     return Promise.race([req, timeout]).then(function (data) {
       state.langChecking = false;
@@ -4042,7 +4054,7 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
       if (playToken !== state.playToken) return;
       var cards = $('langPick');
       if (cards && !cards.hidden) return;
-      if (state.langChecking && Date.now() - wakeAt < 22000) { slowTimer = setTimeout(wakeCheck, 4000); return; }
+      if (state.langChecking && Date.now() - wakeAt < 12000) { slowTimer = setTimeout(wakeCheck, 3000); return; }
       showOverlay('Acordando o servidor… no Render gratuito isso pode levar até ~1 minuto.', true);
       setStatus('working', 'Acordando o servidor (Render gratuito)…');
     }, 6000);
@@ -4064,7 +4076,7 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
     var reqStart = Date.now();
     Promise.resolve(wantClient)
       .then(function (useClient) {
-        return chooseLanguage(item, season, episode, playToken, controller).then(function (pick) {
+        return chooseLanguage(item, season, episode, playToken, controller, useClient).then(function (pick) {
           state.curPick = pick || '';
           return useClient;
         });
@@ -4099,6 +4111,7 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
         }
         if (item.title) params.set('title', item.title);
         if (state.curPick) params.set('pick', state.curPick);
+        if (state.freshNext) { params.set('fresh', '1'); state.freshNext = false; }
 
         reqStart = Date.now();
         diag('step', 'Pedindo ao servidor: GET ' + apiUrl('/api/stream?' + params.toString()));
@@ -4769,6 +4782,7 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
       state.netRetries = 0;
       state.resumePending = false;
     }
+    state.freshNext = true; // "Recarregar" faz busca nova (ignora o que o servidor lembra)
     renderPlayer();
   });
   $('closeBtn').addEventListener('click', requestClose);
@@ -4814,7 +4828,7 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
       if (!$('syncPanel').hidden) syncRender();
     });
   });
-  $('subLangSelect').addEventListener('change', function () { state.subUserChose = true; subQualityCheckSoon(); });
+  $('subLangSelect').addEventListener('change', function () { state.subUserChose = true; state.subAutoOff = false; subQualityCheckSoon(); });
 
   // Atalhos (como no VLC): [ ou G adianta 0,1 s; ] ou H atrasa 0,1 s.
   document.addEventListener('keydown', function (ev) {

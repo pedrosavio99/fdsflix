@@ -208,6 +208,28 @@ variável própria dele.
   sempre por `textContent`. A busca reordena pelo título e marca "🎬 filme" a partir de 40 min;
   o checkbox "só filme" filtra na tela.
 
+## Cascata em paralelo (abrir o vídeo o mais rápido possível)
+
+`getFallbackStream` (`lib/fallbackCascade.js`) **não é mais em série**: as fontes leves partem juntas; as pesadas
+(`HEAVY`: CinePro, CineWinx, Stream-Winx, Consumet, MegaMoviesLibre, API5, KekikStream — poupam os 0,1 CPU) só
+entram aos 3 s ou quando as leves acabam sem nada. A ordem de `ALL_PROVIDERS` segue sendo a prioridade: vence a
+de maior prioridade que entregar; se uma menor entregar antes, as maiores ainda têm 5 s (`PRIORITY_GRACE_MS`) para
+chegar. Teto geral 40 s. Antes eram ~13 s só para chegar nas fontes novas (Vidsrc 8 s + Embed.su 2 s + …).
+- **`accept` / `onReject`**: o `/api/stream` veta DENTRO da corrida a fonte que gastaria a banda do Render
+  (`renderBound`) e a guarda em `boundCandidates` para o AdFallback — sem reiniciar a cascata (antes reiniciava e
+  refazia tudo). Com o disjuntor do Vidsrc aberto + AdFallback configurado, `onReject` devolve `'stop'` e vai direto ao resgate.
+- **`lib/providerMiss.js`**: fonte que respondeu "sem resultado" (nunca erro) fica 25 s marcada, e a etapa seguinte
+  (opções → stream) pula a busca repetida. `?fresh=1` ignora (o "↻ Recarregar" manda isso).
+- **Legendas de companhia**: `/api/stream` dispara `companionCaptions` (VidLink, cache 20 min) junto com a cascata e
+  anexa a qualquer fonte que venha sem legenda (Internet Archive, BitChute, TokyVideo, catálogo…). Sem isso o
+  original ficava sem legenda. No front, **dublado começa sem legenda** (só se a pessoa nunca escolheu; não grava
+  isso como escolha) e **original liga a legenda** (pt-BR primeiro).
+- `/api/stream/options` só oferece versão que o `/api/stream` realmente entrega (filtra `renderBound`; o front manda
+  os mesmos `hevc`/`direct`). Orçamento 9 s (`BUDGET_MS`) + 2,5 s de tolerância; o front desiste da checagem em 11 s
+  e segue a cascata normal. Testes: `test/parallelCascade.test.js`. Gancho de teste: `_setProviders()`.
+- `catalog.reachable`: tempo esgotado **não** mata o link (CDN do BitChute chega a demorar 10 s+ para 2 bytes);
+  só resposta HTTP de erro conta como morto.
+
 ## Dublado ou original (escolha antes de tocar)
 
 - `GET /api/stream/options?id&type&s&e&title` (`lib/streamOptions.js`): roda as fontes **em paralelo**
@@ -232,6 +254,6 @@ variável própria dele.
 
 ## Como rodar e testar
 
-- `npm start` (porta `PORT`, padrão 3000) · `npm test` (257 testes, `node --test test/*.test.js`).
+- `npm start` (porta `PORT`, padrão 3000) · `npm test` (265 testes, `node --test test/*.test.js`).
 - Manutenção/"mudamos de URL": tela "Site" do admin (`lib/siteStatus.js`, `public/sitegate.js`, `public/site.js`; tabela `pix_settings` no Supabase).
 - Docs: `docs/DEPLOY-RENDER.md`, `docs/VERCEL-POOL.md`, `docs/TV-AO-VIVO.md`, `docs/VISITANTES.md`, `docs/API.md`.

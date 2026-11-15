@@ -9,7 +9,7 @@ const fs = require('fs');
 const crypto = require('crypto');
 
 const { getVidLinkStream, probeVideo } = require('./lib/streamExtractor');
-const { getFallbackStream, getProviderList, getCineProReport, breakerOpen, breakerState, vidsrcHealth } = require('./lib/fallbackCascade');
+const { getFallbackStream, getProviderList, getCineProReport, breakerOpen, breakerState, vidsrcHealth, companionCaptions, formatCaptions } = require('./lib/fallbackCascade');
 const { getAnimeReport } = require('./lib/animeFire');
 const tokyoVideo = require('./lib/tokyoVideo');
 const audioLang = require('./lib/audioLang');
@@ -1623,9 +1623,12 @@ app.get('/api/stream/options', requireApiKey, async (req, res) => {
   const episode = Math.max(1, Number(req.query.e) || 1);
   const title = String(req.query.title || '').trim().slice(0, 160);
   const admin = statsKeyOK(req);
+  const hevcOk = String(req.query.hevc || '') === '1';
+  const direct = String(req.query.direct || '') === '1';
   try {
     const found = await streamOptions.discover({
       id, type, season, episode, title,
+      fresh: String(req.query.fresh || '') === '1',
       providers: getProviderList(),
       log: admin ? (row) => console.log('[opcoes] ' + JSON.stringify(row)) : null
     });
@@ -1633,6 +1636,11 @@ app.get('/api/stream/options', requireApiKey, async (req, res) => {
     for (const lang of ['dub', 'orig']) {
       const info = found[lang];
       if (!info) continue;
+      // Só oferece o que o /api/stream realmente vai entregar: fonte que gastaria a banda do Render é
+      // pulada lá (e a cascata rodaria de novo), então escolher esta versão não levaria a nada.
+      let bound = false;
+      try { bound = await renderBound(info, { hevcOk, direct }); } catch (err) { bound = true; }
+      if (bound && !ALLOW_RENDER_VIDEO) continue;
       options.push({
         lang,
         pick: registry.register('pick', info, 8 * 60 * 1000),
@@ -1665,6 +1673,12 @@ app.get('/api/stream', requireApiKey, streamGuard.middleware, async (req, res) =
   const title = String(req.query.title || '').trim();
   // Versão escolhida pelo ouvinte (dublado/original) em /api/stream/options; vale para a 1ª tentativa.
   const picked = registry.resolve('pick', String(req.query.pick || ''));
+  const fresh = String(req.query.fresh || '') === '1';
+  // Legendas de companhia (VidLink): começam a buscar já, junto com a cascata. Fontes sem legenda
+  // própria (Internet Archive, BitChute, TokyVideo, catálogo…) ganham estas — sem isso o filme
+  // original ficaria sem legenda nenhuma.
+  const capsStartedAt = Date.now();
+  const capsPromise = companionCaptions(id, type, season, episode).catch(() => []);
 
   console.log(
     `[stream] id=${id} type=${type} s=${season} e=${episode} res=${preferred || 'auto'} hevc=${hevcOk ? 'sim' : 'não'} start=${startAt}s${title ? ` title="${title}"` : ''}`
@@ -1707,42 +1721,51 @@ app.get('/api/stream', requireApiKey, streamGuard.middleware, async (req, res) =
     // Fontes que a cascata achou mas que gastariam a banda do Render. Guardadas para o último recurso
     // (AdShield de fallback), que só roda se nada mais entregar.
     const boundCandidates = [];
-    for (let attempt = 0; attempt < 12; attempt += 1) {
-      if (attempt === 0 && picked && picked.url && !forceDev) {
-        streamInfo = { ...picked };
-        trace.push({ provider: streamInfo.provider, outcome: 'USADO', ms: 0, notes: ['Versão escolhida pelo ouvinte (dublado/original).'] });
-      } else {
-        streamInfo = await getFallbackStream({ id, type, season, episode, title, trace, skip });
-      }
-      if (!streamInfo || !streamInfo.url || ALLOW_RENDER_VIDEO) break;
+    // A cascata roda em paralelo (lib/fallbackCascade.js). Fonte que gastaria a banda do Render é VETADA aqui
+    // dentro (`accept`) e guardada para o AdFallback; as demais fontes seguem na mesma corrida, sem reiniciar.
+    if (picked && picked.url && !forceDev) {
+      streamInfo = { ...picked };
+      trace.push({ provider: streamInfo.provider, outcome: 'USADO', ms: 0, notes: ['Versão escolhida pelo ouvinte (dublado/original).'] });
       let bound = false;
-      try { bound = forceDev ? true : await renderBound(streamInfo, { hevcOk, direct }); } catch (err) { bound = true; }
-      if (!bound) break;
-      console.log(`[stream] ${streamInfo.provider} ${forceDev ? 'forçado para o AdFallback (modo dev)' : 'passaria o vídeo pelo Render: pulada (ALLOW_RENDER_VIDEO desligado)'}`);
-      boundCandidates.push(streamInfo);
-      const used = trace.filter((t) => t.provider === streamInfo.provider && t.outcome === 'USADO').pop();
-      if (used) {
-        used.outcome = 'PULADA';
-        used.notes.push(forceDev
-          ? 'MODO DEV: forçado para o AdFallback (o caminho normal foi ignorado neste teste).'
-          : 'Passaria o vídeo pelo Render e gastaria a banda de 5 GB/mês; seguindo para a próxima fonte.');
+      try { bound = ALLOW_RENDER_VIDEO ? false : await renderBound(streamInfo, { hevcOk, direct }); } catch (err) { bound = true; }
+      if (bound) {
+        boundCandidates.push(streamInfo);
+        trace[trace.length - 1].outcome = 'PULADA';
+        trace[trace.length - 1].notes.push('Passaria o vídeo pelo Render; seguindo para a próxima fonte.');
+        skip.push(streamInfo.provider);
+        streamInfo = null;
       }
-      // Não repete quem já tentou e não achou nada: a próxima rodada começa depois do provedor pulado.
-      for (const t of trace) if (t.outcome === 'sem resultado' || t.outcome === 'erro') skip.push(t.provider);
-      skip.push(streamInfo.provider);
-      streamInfo = null;
-
-      // Disjuntor aberto + AdFallback configurado: não gasta os outros provedores (uns 5 s) — já
-      // temos uma fonte, então vai direto ao resgate. É o que corta a abertura de 23 s para ~1-2 s.
-      if (forceDev !== true && breakerOpen() && adshieldFallback.isEnabled()) {
-        trace.push({
-          provider: 'Disjuntor Vidsrc',
-          outcome: 'ABERTO',
-          ms: 0,
-          notes: ['Vidsrc pulado (falha sistêmica recente). Indo direto ao AdFallback para não esperar a cascata inteira.']
-        });
-        break;
-      }
+    }
+    if (!streamInfo) {
+      streamInfo = await getFallbackStream({
+        id, type, season, episode, title, trace, skip, fresh,
+        accept: async (info, entry) => {
+          if (ALLOW_RENDER_VIDEO && !forceDev) return true;
+          let bound = false;
+          try { bound = forceDev ? true : await renderBound(info, { hevcOk, direct }); } catch (err) { bound = true; }
+          if (!bound) return true;
+          console.log(`[stream] ${info.provider} ${forceDev ? 'forçado para o AdFallback (modo dev)' : 'passaria o vídeo pelo Render: pulada (ALLOW_RENDER_VIDEO desligado)'}`);
+          entry.notes.push(forceDev
+            ? 'MODO DEV: forçado para o AdFallback (o caminho normal foi ignorado neste teste).'
+            : 'Passaria o vídeo pelo Render e gastaria a banda de 5 GB/mês; seguindo para a próxima fonte.');
+          return false;
+        },
+        onReject: (info) => {
+          boundCandidates.push(info);
+          skip.push(info.provider);
+          // Disjuntor aberto + AdFallback configurado: não espera as outras fontes (corta a abertura de ~23 s para ~1-2 s).
+          if (forceDev !== true && breakerOpen() && adshieldFallback.isEnabled()) {
+            trace.push({
+              provider: 'Disjuntor Vidsrc',
+              outcome: 'ABERTO',
+              ms: 0,
+              notes: ['Vidsrc pulado (falha sistêmica recente). Indo direto ao AdFallback para não esperar a cascata inteira.']
+            });
+            return 'stop';
+          }
+          return undefined;
+        }
+      });
     }
 
     if (!streamInfo && boundCandidates.length && adshieldFallback.isEnabled()) {
@@ -1775,6 +1798,18 @@ app.get('/api/stream', requireApiKey, streamGuard.middleware, async (req, res) =
       return res.status(404).json({
         error: 'Nenhuma fonte encontrou o stream para este título. Tente outro filme/episódio ou verifique os serviços locais.'
       });
+    }
+
+    // Sem legenda da própria fonte? Usa as de companhia (espera só o que falta dos 7 s da busca).
+    if (!Array.isArray(streamInfo.captions) || !streamInfo.captions.length) {
+      try {
+        const left = Math.max(0, 7000 - (Date.now() - capsStartedAt));
+        const extra = await Promise.race([capsPromise, new Promise((resolve) => setTimeout(() => resolve([]), left))]);
+        if (extra && extra.length) {
+          streamInfo = { ...streamInfo, captions: formatCaptions(extra) };
+          trace.push({ provider: 'Legendas', outcome: 'USADO', ms: Date.now() - capsStartedAt, notes: [`${extra.length} faixa(s) de companhia anexada(s)`] });
+        }
+      } catch (err) { /* sem legenda extra: segue */ }
     }
 
     // VidLink Pro mantém sempre o fluxo original (proxy + sonda de codec + transcodificação).
