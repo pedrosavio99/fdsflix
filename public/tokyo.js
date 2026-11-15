@@ -268,6 +268,113 @@
       .then(function () { srcTesting = false; srcRun.disabled = false; });
   }
 
+  /* ---- extração pelo navegador (extensão fdsFlix Direct) ---- */
+  // O servidor (Render) leva 403 dos sites; o navegador do admin está em IP residencial.
+  // A extensão busca as páginas e devolve o HTML aqui; o painel faz o resto.
+
+  function extPing(timeout) {
+    return new Promise(function (resolve) {
+      var id = 'p' + Math.random().toString(36).slice(2);
+      var done = false;
+      function onMsg(e) {
+        if (e.source !== window || !e.data || e.data.type !== 'fdsflix-ext-pong' || e.data.id !== id) return;
+        done = true; window.removeEventListener('message', onMsg); resolve(true);
+      }
+      window.addEventListener('message', onMsg);
+      window.postMessage({ type: 'fdsflix-ext-ping', id: id }, '*');
+      setTimeout(function () { if (!done) { window.removeEventListener('message', onMsg); resolve(false); } }, timeout || 800);
+    });
+  }
+
+  function extFetch(url, timeout) {
+    return new Promise(function (resolve) {
+      var id = 'f' + Math.random().toString(36).slice(2);
+      var done = false;
+      function onMsg(e) {
+        if (e.source !== window || !e.data || e.data.type !== 'fdsflix-ext-fetch-res' || e.data.id !== id) return;
+        done = true; window.removeEventListener('message', onMsg);
+        resolve({ ok: Boolean(e.data.ok), status: e.data.status || 0, text: e.data.text || '', error: e.data.error });
+      }
+      window.addEventListener('message', onMsg);
+      window.postMessage({ type: 'fdsflix-ext-fetch-req', id: id, url: url }, '*');
+      setTimeout(function () {
+        if (done) return;
+        window.removeEventListener('message', onMsg);
+        resolve({ ok: false, status: 0, text: '', error: 'extensão não respondeu' });
+      }, timeout || 12000);
+    });
+  }
+
+  function slugify(text) {
+    return String(text || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+      .replace(/\((?:19|20)\d{2}\)/g, ' ')
+      .replace(/\b(dublado|legendado|online|completo|hd|filme|assistir)\b/g, ' ')
+      .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  }
+
+  function slugVariants(name, year) {
+    var base = slugify(name);
+    var out = [];
+    function push(value) {
+      var slug = String(value || '').replace(/^-+|-+$/g, '');
+      if (slug.length >= 3 && out.indexOf(slug) === -1) out.push(slug);
+    }
+    if (!base) return out;
+    push(base);
+    if (year) push(base + '-' + year);
+    push(base.replace(/^(a|o|as|os|the)-/, ''));
+    if (year) push(base.replace(/^(a|o|as|os|the)-/, '') + '-' + year);
+    return out.slice(0, 6);
+  }
+
+  /** Roda o caminho do redecanais no navegador: /filme/<slug>/ + API do player. */
+  function siteSearchClient(title, year) {
+    var base = 'https://www4.redecanais.vip';
+    var slugs = slugVariants(title, year);
+
+    function trySlug(i) {
+      if (i >= slugs.length) return Promise.resolve(null);
+      var url = base + '/filme/' + slugs[i] + '/';
+      return extFetch(url).then(function (res) {
+        if (!res.ok || !res.text) return trySlug(i + 1);
+        var found = /\(((?:19|20)\d{2})\)/.exec(res.text);
+        if (year && found && Math.abs(Number(found[1]) - year) > 1) return trySlug(i + 1);
+        var post = (/data-post=["'](\d+)["']/.exec(res.text) || [])[1] || '';
+        var numes = [];
+        var re = /data-nume=["'](\d+)["']/g;
+        var m;
+        while ((m = re.exec(res.text))) if (numes.indexOf(m[1]) === -1) numes.push(m[1]);
+        var titleTag = (/<title>([^<]*)/.exec(res.text) || [])[1] || title;
+        return { site: 'redecanais (seu navegador)', film: url, title: titleTag, post: post, numes: numes.slice(0, 6), servers: [] };
+      });
+    }
+
+    return trySlug(0).then(function (hit) {
+      if (!hit || !hit.post || !hit.numes.length) return hit;
+
+      var servers = [];
+      function next(k) {
+        if (k >= hit.numes.length) { hit.servers = servers; return hit; }
+        var api = base + '/wp-json/dooplayer/v1/' + hit.post + '/movie/' + hit.numes[k];
+        return extFetch(api).then(function (r) {
+          if (r.status === 429) { hit.servers = servers; return hit; }
+          try {
+            var j = JSON.parse(r.text || '{}');
+            if (j && j.embed_url) {
+              servers.push({
+                label: 'Servidor ' + hit.numes[k],
+                url: j.embed_url,
+                audio: /ds_lang=[^&]*pt|pob/i.test(j.embed_url) ? 'dublado' : ''
+              });
+            }
+          } catch (e) { /* servidor sem resposta */ }
+          return new Promise(function (res) { setTimeout(res, 250); }).then(function () { return next(k + 1); });
+        });
+      }
+      return next(0);
+    });
+  }
+
   /* ---- buscar na web ("assistir <título> online grátis") ---- */
 
   function chip(text, cls) {
@@ -424,8 +531,23 @@
       '&s=' + encodeURIComponent(context.season || 1) +
       '&e=' + encodeURIComponent(context.episode || 1);
 
-    json(url)
-      .then(paintWeb)
+    // Dois caminhos em paralelo: (1) o servidor (buscador + site, se o IP deixar) e
+    // (2) a EXTENSÃO, que busca pelo IP deste navegador — é o que fura o bloqueio do Render.
+    var fromBrowser = extPing().then(function (bridge) {
+      if (!bridge) return null;
+      webNote.textContent = 'Buscando pelo seu navegador (extensão)…';
+      return siteSearchClient(title, context.year);
+    });
+
+    Promise.all([json(url), fromBrowser])
+      .then(function (pair) {
+        var data = pair[0] || {};
+        var client = pair[1];
+        if (client && client.film) {
+          data.sites = [client].concat((data.sites || []).filter(function (s) { return s.site !== client.site; }));
+        }
+        paintWeb(data);
+      })
       .catch(function (err) {
         webNote.textContent = err.message || 'A busca falhou.';
         webNote.className = 'pix-note err';

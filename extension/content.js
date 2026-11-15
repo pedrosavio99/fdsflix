@@ -1,6 +1,28 @@
 (() => {
   'use strict';
 
+  /* ---- ponte com o painel do admin (busca pelo IP deste navegador) ---- */
+  // Só nas páginas do próprio fdsFlix: um site qualquer não pode usar isto.
+  (() => {
+    const FDS = new Set(['fdsflix-80ya.onrender.com', 'fdsflix.onrender.com', 'localhost', '127.0.0.1']);
+    if (!FDS.has(location.hostname)) return;
+
+    window.addEventListener('message', (event) => {
+      if (event.source !== window) return;
+      const data = event.data;
+      if (!data || !data.id) return;
+      if (data.type === 'fdsflix-ext-ping') {
+        window.postMessage({ type: 'fdsflix-ext-pong', id: data.id }, '*');
+        return;
+      }
+      if (data.type !== 'fdsflix-ext-fetch-req' || !data.url) return;
+      chrome.runtime.sendMessage({ type: 'fdsflix-ext-fetch', url: data.url }, (res) => {
+        const payload = res || { ok: false, error: 'sem resposta da extensão' };
+        window.postMessage({ type: 'fdsflix-ext-fetch-res', id: data.id, ...payload }, '*');
+      });
+    });
+  })();
+
   const FDS_HOSTS = new Set([
     'fdsflix-80ya.onrender.com',
     'fdsflix.onrender.com',

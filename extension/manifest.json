@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "fdsFlix Direct + AdShield",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Deixa o vídeo do fdsFlix ir direto do provedor ao navegador (0 Render) e remove anúncios dos players embutidos.",
   "minimum_chrome_version": "111",
   "permissions": [

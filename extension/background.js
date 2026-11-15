@@ -49,3 +49,48 @@ chrome.tabs.onCreated.addListener((tab) => {
     }, 1200);
   });
 });
+
+/* ------------------------------------------------------------------ */
+/* Ponte de extração: o painel do admin pede uma página e ela é buscada */
+/* pelo IP DESTE navegador (residencial), não pelo IP do servidor.      */
+/* Só hosts de extração — nunca serve de proxy para a internet inteira. */
+/* ------------------------------------------------------------------ */
+
+const EXTRACT_HOSTS = [
+  'redecanais.vip',
+  'redecanais.ceo',
+  'redecanais.gold',
+  'mgeb.lat',
+  'superflixapi.boats',
+  'myembed.biz',
+  'embedplay.vip',
+  'fembed1.lol',
+  'vidsrc.sh'
+];
+
+function extractAllowed(url) {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return false;
+    const host = parsed.hostname.toLowerCase();
+    return EXTRACT_HOSTS.some((item) => host === item || host.endsWith('.' + item));
+  } catch (err) {
+    return false;
+  }
+}
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (!msg || msg.type !== 'fdsflix-ext-fetch' || !msg.url) return undefined;
+  if (!extractAllowed(msg.url)) {
+    sendResponse({ ok: false, error: 'host não permitido pela extensão' });
+    return true;
+  }
+  fetch(msg.url, {
+    credentials: 'omit',
+    headers: { 'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.7' }
+  })
+    .then(async (res) => ({ ok: res.ok, status: res.status, text: await res.text() }))
+    .then((out) => sendResponse(out))
+    .catch((err) => sendResponse({ ok: false, error: String((err && err.message) || err) }));
+  return true; // resposta assíncrona
+});

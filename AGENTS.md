@@ -130,6 +130,13 @@ variável própria dele.
   mgeb e diz `ok`/`challenge`/`HTTP n` — é o teste que decide se o relay que você subiu serve.
   Relay pronto para Wasmer Edge/Worker/Deno/Bun: `deploy/edge-relay/worker.js` (`?u=` + `x-senha`,
   `?probe=1` para diagnóstico, `RELAY_KEY` no ambiente).
+- **Extensão como saída de rede (v1.1.0).** `extension/background.js` ganhou a ponte
+  `fdsflix-ext-fetch`: o painel pede uma URL (`postMessage` → content script → background) e a
+  extensão busca **pelo IP do navegador do admin** (residencial), devolvendo o HTML. É o que faz o
+  painel funcionar no Render quando o servidor leva 403: o conteúdo chega do IP do dono. Só vale em
+  páginas do fdsFlix e só para hosts de extração (`EXTRACT_HOSTS`), sem cookies. O painel mostra
+  `redecanais (seu navegador)` quando a ponte responde; se não responder, cai na rota do servidor.
+  **Ao atualizar a extensão, recarregue em `chrome://extensions` (↻).**
 - **Idioma do áudio** (`lib/audioLang.js`): o painel lê a faixa de áudio com `ffprobe`
   (`stream_tags=language`) e mostra **🇧🇷 dublado** quando aparece `por`. É a diferença entre
   "o site diz dublado" e "o arquivo é dublado". Best-effort: sem ffprobe, não mostra o selo.

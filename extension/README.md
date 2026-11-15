@@ -116,3 +116,17 @@ Deve retornar `"mode":"direct"`, `"via":"browser"` e uma URL do CDN
 (ex.: `bcdn.hakunaymatata.com`), não uma URL `/api/proxy` ou `/hls/` do
 fdsFlix. Sem a extensão, essa URL responde **429** no navegador; com a
 extensão, o `declarativeNetRequest` troca os headers e ela responde **206**.
+
+
+## Ponte de extração (v1.1.0) — para o painel "Outras fontes"
+
+O painel do admin consegue pedir páginas a esta extensão e recebê-las de volta. A busca sai
+pelo **IP deste navegador** (residencial), não pelo IP do servidor — é o que contorna o 403
+que o Render leva nos sites de filme.
+
+- Só funciona em páginas do próprio fdsFlix (`fdsflix*.onrender.com`, `localhost`, `127.0.0.1`).
+- Só busca hosts de extração (lista `EXTRACT_HOSTS` no `background.js`): redecanais, mgeb,
+  superflixapi, myembed, embedplay, fembed1, vidsrc.sh. Não é proxy geral.
+- Sem cookies (`credentials: 'omit'`).
+- **Depois de atualizar o arquivo, recarregue a extensão**: `chrome://extensions` → botão ↻.
+  O painel mostra `redecanais (seu navegador)` quando a ponte está ativa.
