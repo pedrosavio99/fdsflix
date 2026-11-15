@@ -100,6 +100,13 @@ variável própria dele.
   nenhuma fonte de API entrega. Faz duas coisas: (a) **busca dentro dos sites** — hoje o
   `redecanais` (`/search/<título>/` → `/filme/<slug>/` → `data-post` + `/wp-json/dooplayer/v1/
   <post>/movie/<n>` → 6 `embed_url`, todos por id do TMDB, e o servidor 6 vem com `ds_lang=pt`);
+  **A busca do site (`/search/...`) é a ÚNICA página barrada pelo Cloudflare** (403 de qualquer
+  UA; `/filme/<slug>/` e `/wp-json/dooplayer/...` respondem 200 até de datacenter — medido pelo
+  Worker). Por isso o caminho principal é **adivinhar o slug**: nomes do TMDB (pt-BR, original,
+  inglês) → `slugVariants()` (com/sem artigo, com/sem ano) → `GET /filme/<slug>/` → confere o ano
+  no `<title>` → `data-post`/`data-nume` → 6 `embed_url`. Só cai na busca do site se nenhum slug
+  casar. A API do Dooplay **rate-limita** (429 / "error code: 1015") em rajada: `serversOf()` vai
+  devagar (250 ms entre chamadas), para no primeiro 1015 e guarda 10 min de cache.
   (b) **busca no DuckDuckGo HTML + Bing** com as consultas "assistir <título> <ano> online
   grátis dublado", sonda as páginas e tira delas `data-tipo="dublado|legendado"` + `data-url`,
   `<iframe>`, `.m3u8/.mp4` e `data-post` do Dooplay. Sites de catálogo/crítica/loja (AdoroCinema,
@@ -118,7 +125,11 @@ variável própria dele.
   Motivo: os sites ficam atrás do Cloudflare e desafiam IP de datacenter; máscara pública não
   resolve (r.jina.ai, allorigins, corsproxy, codetabs, thingproxy, corsfix — todas testadas,
   todas barradas). O relay residencial é o `deploy/media-relay` rodando em casa e exposto por
-  `cloudflared` — passo a passo em `docs/RELAY-RESIDENCIAL.md`. O painel mostra a cadeia em uso.
+  `cloudflared` — passo a passo em `docs/RELAY-RESIDENCIAL.md`. O painel mostra a cadeia em uso
+  e tem **Testar relay** (`GET /api/admin/relay/test`), que mede cada saída contra redecanais e
+  mgeb e diz `ok`/`challenge`/`HTTP n` — é o teste que decide se o relay que você subiu serve.
+  Relay pronto para Wasmer Edge/Worker/Deno/Bun: `deploy/edge-relay/worker.js` (`?u=` + `x-senha`,
+  `?probe=1` para diagnóstico, `RELAY_KEY` no ambiente).
 - **Idioma do áudio** (`lib/audioLang.js`): o painel lê a faixa de áudio com `ffprobe`
   (`stream_tags=language`) e mostra **🇧🇷 dublado** quando aparece `por`. É a diferença entre
   "o site diz dublado" e "o arquivo é dublado". Best-effort: sem ffprobe, não mostra o selo.

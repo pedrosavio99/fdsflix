@@ -792,6 +792,18 @@ app.get('/api/admin/sources/test', requireApiKey, requireStatsKey, async (req, r
   res.json({ id, type, season, episode, title, relay: extractFetch.relayStatus(), results });
 });
 
+// Autoteste das saídas de rede (direto / residencial / worker): o admin vê em 15 s se o
+// relay que ele subiu (Wasmer, casa, Worker) passa nos sites que barram datacenter.
+app.get('/api/admin/relay/test', requireApiKey, requireStatsKey, async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  try {
+    res.json(await extractFetch.testAll());
+  } catch (err) {
+    console.warn('[relay] teste falhou:', err.message);
+    res.status(502).json({ error: 'O teste dos relays falhou.' });
+  }
+});
+
 // Busca na web: faz "assistir <título> online grátis dublado" e sonda as páginas achadas.
 // É o plano B quando nenhuma fonte de API entrega. Só administrador.
 app.get('/api/admin/websearch', requireApiKey, requireStatsKey, async (req, res) => {
@@ -804,6 +816,7 @@ app.get('/api/admin/websearch', requireApiKey, requireStatsKey, async (req, res)
       title,
       year: Number(req.query.year) || 0,
       type,
+      id: req.query.id,
       season: Math.max(1, Number(req.query.s) || 1),
       episode: Math.max(1, Number(req.query.e) || 1)
     }));

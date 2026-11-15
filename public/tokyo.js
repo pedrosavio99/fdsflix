@@ -34,6 +34,8 @@
   var srcNote = $('srcTestNote');
   var srcList = $('srcTestList');
   var srcRun = $('srcTestRun');
+  var relayBtn = $('relayTestBtn');
+  var relayList = $('relayList');
   var webRun = $('webRun');
   var webNote = $('webNote');
   var webList = $('webList');
@@ -411,6 +413,7 @@
     webNote.className = 'pix-note';
 
     var url = '/api/admin/websearch?title=' + encodeURIComponent(title) +
+      (context.id ? '&id=' + encodeURIComponent(context.id) : '') +
       (context.year ? '&year=' + encodeURIComponent(context.year) : '') +
       '&type=' + encodeURIComponent(context.type || 'movie') +
       '&s=' + encodeURIComponent(context.season || 1) +
@@ -448,6 +451,46 @@
     frame.style.display = 'block';
     frame.src = url;
     playerInfo.textContent = (label || 'player do site') + ' · tocando aqui dentro (o player é deles)';
+  }
+
+  /* ---- autoteste das saídas de rede (relay) ---- */
+
+  function runRelayTest() {
+    if (!relayBtn) return;
+    relayBtn.disabled = true;
+    relayList.textContent = '';
+    var note = document.createElement('p');
+    note.className = 'pix-note';
+    note.textContent = 'Testando as saídas (direto, residencial, worker)…';
+    relayList.appendChild(note);
+
+    json('/api/admin/relay/test')
+      .then(function (data) {
+        relayList.textContent = '';
+        (data.relays || []).forEach(function (relay) {
+          var row = document.createElement('div');
+          row.className = 'src-row';
+          var name = document.createElement('span');
+          name.className = 'src-name';
+          name.textContent = relay.relay;
+          row.appendChild(name);
+          (relay.targets || []).forEach(function (t) {
+            var chip = document.createElement('span');
+            if (t.ok) { chip.className = 'src-ok'; chip.textContent = t.name + ' ✅'; }
+            else { chip.className = 'src-no'; chip.textContent = t.name + (t.challenge ? ' 🚫' : ' ✕') + ' ' + (t.status || ''); }
+            row.appendChild(chip);
+          });
+          relayList.appendChild(row);
+        });
+      })
+      .catch(function (err) {
+        relayList.textContent = '';
+        var p = document.createElement('p');
+        p.className = 'pix-note err';
+        p.textContent = err.message || 'O teste falhou.';
+        relayList.appendChild(p);
+      })
+      .then(function () { relayBtn.disabled = false; });
   }
 
   function playSource(item, btn) {
@@ -557,6 +600,7 @@
   }
 
   if (webRun) webRun.addEventListener('click', runWebSearch);
+  if (relayBtn) relayBtn.addEventListener('click', runRelayTest);
 
   openBtn.addEventListener('click', function () {
     if (!dlg.open) dlg.showModal();
