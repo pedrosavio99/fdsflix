@@ -465,6 +465,15 @@
   details.cfg-sec{border:1px solid var(--line);border-radius:10px;margin:.6rem 0;background:rgba(0,0,0,.18)}
   details.cfg-sec>summary{cursor:pointer;padding:.55rem .8rem;font-weight:700;font-size:.9rem}
   details.cfg-sec>div{padding:0 .9rem .8rem}
+  .pix-badge{margin:0 0 .8rem;padding:.7rem .9rem;border-radius:10px;background:#12351f;color:#7ee2a8 !important;font-weight:800;font-size:1rem}
+  .pix-qr{display:flex;justify-content:center;margin:.7rem 0}
+  .pix-qr img{width:min(240px,70vw);height:auto;background:#fff;border-radius:10px;padding:6px}
+  .pix-hist{list-style:none;margin:.3rem 0;padding:0;font-size:.8rem;color:var(--muted)}
+  .pix-hist li{padding:.3rem 0;border-bottom:1px solid var(--line)}
+  .pix-hist b{color:var(--text)}
+  .pix-note{min-height:1.2em;font-size:.82rem}
+  .pix-note.ok{color:#7ee2a8 !important}
+  .pix-note.err{color:#ff9d9d !important}
   .cfg-card{border:1px solid var(--line);border-radius:10px;background:var(--panel-2);padding:.7rem .9rem;margin-bottom:.8rem}
   .cfg-card .usage-row{margin:.35rem 0}
   .cfg-calib{display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin:.5rem 0}
@@ -765,6 +774,10 @@
         <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20m6.9 6h-2.95a15.7 15.7 0 0 0-1.38-3.56A8.03 8.03 0 0 1 18.9 8M12 4.04c.83 1.2 1.48 2.53 1.91 3.96h-3.82c.43-1.43 1.08-2.76 1.91-3.96M4.26 14a8.2 8.2 0 0 1 0-4h3.38a16.5 16.5 0 0 0 0 4zm.82 2h2.95c.32 1.25.78 2.45 1.38 3.56A7.99 7.99 0 0 1 5.08 16m2.95-8H5.08a7.99 7.99 0 0 1 4.33-3.56A15.7 15.7 0 0 0 8.03 8M12 19.96c-.83-1.2-1.48-2.53-1.91-3.96h3.82c-.43 1.43-1.08 2.76-1.91 3.96M14.34 14H9.66a14.7 14.7 0 0 1 0-4h4.68a14.7 14.7 0 0 1 0 4m.25 5.56c.6-1.11 1.06-2.31 1.38-3.56h2.95a8.03 8.03 0 0 1-4.33 3.56M16.36 14a16.5 16.5 0 0 0 0-4h3.38a8.2 8.2 0 0 1 0 4z"/></svg>
         <span class="lbl">Acessos</span>
       </a>
+      <button id="pixOpen" class="nav-btn admin-only" type="button" title="Teste de permissão por pagamento Pix" aria-label="Pix">
+        <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.6 7.6 7a2 2 0 0 0 0 2.8l2 2-2 2a2 2 0 0 0 0 2.8L12 21.4l4.4-4.4a2 2 0 0 0 0-2.8l-2-2 2-2a2 2 0 0 0 0-2.8zm0 3.2 2.1 2.1a.6.6 0 0 1 0 .9L12 11l-2.1-2.2a.6.6 0 0 1 0-.9zm0 7.2 2.1 2.1a.6.6 0 0 1 0 .9L12 18.2l-2.1-2.2a.6.6 0 0 1 0-.9z"/></svg>
+        <span class="lbl">Pix</span>
+      </button>
       <button id="adminLogout" class="nav-btn admin-only" type="button" title="Sair da área do administrador" aria-label="Sair do modo administrador">
         <span class="lbl">Sair</span><span aria-hidden="true" class="lbl-ic">🔓</span>
       </button>
@@ -774,6 +787,49 @@
       </button>
     </div>
   </nav>
+
+  <dialog id="pixDialog" class="cfg" aria-labelledby="pixTitle" style="max-width:520px">
+    <div class="cfg-head">
+      <h3 id="pixTitle">Pix · teste de permissão</h3>
+      <button id="pixClose" class="ghost" type="button" aria-label="Fechar">✕</button>
+    </div>
+    <div class="cfg-body">
+      <p id="pixBadge" class="pix-badge" role="status" hidden></p>
+
+      <div class="cfg-card">
+        <h4>Pagar para liberar</h4>
+        <p>Gera uma cobrança para <b>este aparelho</b>. Quando o Nubank avisar por e-mail que o Pix chegou, o acesso é liberado por 10 min.</p>
+        <div class="cfg-row"><button id="pixGen" type="button" disabled>Gerar cobrança</button></div>
+        <div id="pixPay" hidden>
+          <div id="pixQr" class="pix-qr"></div>
+          <textarea id="pixCode" rows="3" readonly spellcheck="false" aria-label="Pix copia e cola"></textarea>
+          <div class="cfg-row"><button id="pixCopy" class="ghost" type="button">Copiar código</button></div>
+        </div>
+        <p id="pixWait" role="status"></p>
+      </div>
+
+      <details class="cfg-sec">
+        <summary>Configuração (uma vez)</summary>
+        <div>
+          <p>1) Cole o seu código Pix copia-e-cola (R$ 0,01) e salve. 2) Baixe o kit, suba no Wasmer e cole a URL do nó. 3) Baixe o script, cole no Google Apps Script e execute <code>install</code>.</p>
+          <textarea id="pixCodeIn" rows="3" spellcheck="false" placeholder="Código Pix copia e cola (000201…)"></textarea>
+          <p id="pixPixInfo"></p>
+          <div class="cfg-env"><label for="pixMicroUrl">URL do nó</label><input id="pixMicroUrl" type="url" spellcheck="false" placeholder="https://seu-no.wasmer.app"></div>
+          <div class="cfg-row">
+            <button id="pixSave" type="button">Salvar</button>
+            <button id="pixKit" class="ghost" type="button" disabled>⬇ Kit do nó (.zip)</button>
+            <button id="pixScript" class="ghost" type="button" disabled>⬇ Script do Gmail</button>
+            <button id="pixPing" class="ghost" type="button">Testar nó</button>
+          </div>
+          <p id="pixNodeInfo"></p>
+        </div>
+      </details>
+
+      <h4>Últimas cobranças</h4>
+      <ul id="pixHistory" class="pix-hist"></ul>
+      <p id="pixNote" class="pix-note" role="status"></p>
+    </div>
+  </dialog>
 
   <dialog id="adminDialog" class="cfg" aria-labelledby="adminTitle" style="max-width:380px">
     <div class="cfg-head">
@@ -1243,6 +1299,8 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
 <script src="https://cdn.jsdelivr.net/npm/hls.js@1.7.4/dist/hls.min.js" integrity="sha384-p9vgU/7IYJWd3I4STrtqxqR/2cAQlhIX7D/HrTnIMEjjcUox165b7se7sxmm3zDg" crossorigin="anonymous" onerror="document.write('&lt;script src=&quot;/vendor/hls.min.js&quot;&gt;&lt;\/script&gt;')"></script>
 <script src="/autosync.js"></script>
 <script src="/livetv.js"></script>
+<script src="/vendor/qrcode.js"></script>
+<script src="/pix.js"></script>
 <script>
 (function () {
   'use strict';

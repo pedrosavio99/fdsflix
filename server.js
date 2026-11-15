@@ -31,6 +31,8 @@ const visitors = require('./lib/visitors');
 const watchStats = require('./lib/watchStats');
 const egress = require('./lib/egressMeter');
 const poolKit = require('./lib/poolKit');
+const pixKit = require('./lib/pixKit');
+const pixAuth = require('./lib/pixAuth');
 const liveTv = require('./lib/liveTv');
 const liveEpg = require('./lib/liveEpg');
 const { relayFetch, getRelayConfig } = require('./lib/relayFetch');
@@ -963,6 +965,68 @@ app.get('/api/fallback/kit', requireApiKey, requireStatsKey, (req, res) => {
   } catch (err) {
     res.status(500).json({ error: `Não consegui montar o kit do AdFallback: ${err.message}` });
   }
+});
+
+/* ------------------------------------------------------------------ */
+/* Pix (teste de permissão por pagamento; só o administrador)           */
+/* ------------------------------------------------------------------ */
+
+const pix = pixAuth.createPix();
+
+function pixWho(req) {
+  return { device: visitors.parseDevice(req.headers['user-agent']), visitor: visitors.visitorId(visitors.clientIp(req)) };
+}
+const pixDeviceId = (req) => String((req.body && req.body.deviceId) || req.query.deviceId || '').slice(0, 64);
+const pixFail = (res, err) => res.status(400).json({ error: err.message || String(err) });
+
+app.get('/api/pix/state', requireApiKey, requireStatsKey, async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  try { res.json(await pix.getState(pixDeviceId(req))); } catch (err) { pixFail(res, err); }
+});
+
+app.post('/api/pix/settings', requireApiKey, requireStatsKey, async (req, res) => {
+  try { res.json({ settings: await pix.saveSettings({ microUrl: req.body.microUrl, pixCode: req.body.pixCode }) }); } catch (err) { pixFail(res, err); }
+});
+
+app.post('/api/pix/charge', requireApiKey, requireStatsKey, async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  try { res.json(await pix.createCharge({ deviceId: pixDeviceId(req), ...pixWho(req) })); } catch (err) { pixFail(res, err); }
+});
+
+app.get('/api/pix/status', requireApiKey, requireStatsKey, async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  try {
+    const out = await pix.poll(String(req.query.id || ''), pixDeviceId(req));
+    if (!out) return res.status(404).json({ error: 'Cobrança não encontrada.' });
+    res.json(out);
+  } catch (err) { pixFail(res, err); }
+});
+
+app.post('/api/pix/ping', requireApiKey, requireStatsKey, async (req, res) => {
+  try { res.json(await pix.pingMicro()); } catch (err) { pixFail(res, err); }
+});
+
+app.get('/api/pix/kit', requireApiKey, requireStatsKey, async (req, res) => {
+  try {
+    await pix.ready();
+    const kit = pixKit.buildKit({ secret: pix.getSecret() });
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="${kit.filename}"`);
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Content-Length', kit.zip.length);
+    res.end(kit.zip);
+  } catch (err) { pixFail(res, err); }
+});
+
+app.get('/api/pix/script', requireApiKey, requireStatsKey, async (req, res) => {
+  try {
+    await pix.ready();
+    const text = pixKit.buildGmailScript({ microUrl: pix.getMicroUrl(), secret: pix.getSecret() });
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="gmail-pix.gs"');
+    res.setHeader('Cache-Control', 'no-store');
+    res.end(text);
+  } catch (err) { pixFail(res, err); }
 });
 
 // Saúde da fonte principal: disjuntor + sucessos/falhas de cada nó (para o painel Configs).

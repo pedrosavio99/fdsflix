@@ -1,0 +1,9 @@
+{
+  "name": "fdsflix-pix",
+  "version": "1.0.0",
+  "private": true,
+  "description": "No do Pix do fdsFlix: guarda os avisos de Pix recebido que o Apps Script do Gmail envia.",
+  "main": "server.js",
+  "scripts": { "start": "node server.js" },
+  "engines": { "node": ">=18" }
+}
