@@ -787,6 +787,42 @@
   .sub-bar:has(.sub-adjust[open]) .sub-adjust{margin-left:0}
   /* para o público: o que não ajuda a assistir some (qualidade fica; início e sincronia fina ficam atrás de "Mais opções") */
   html:not(.is-admin) .sub-hint,html:not(.is-admin) #subScaleTag,html:not(.is-admin) .season-hint{display:none !important}
+
+  /* ---- tela "Carga" (só administrador) ---- */
+  .ld-navdot{position:absolute;top:.35rem;right:.35rem;width:.55rem;height:.55rem;border-radius:50%;background:#6b6f85;box-shadow:0 0 0 2px var(--bg,#0b0b12)}
+  .nav-btn{position:relative}
+  .ld-navdot.ok{background:#3ddc84}.ld-navdot.warn{background:#ffb43a;animation:ldPulse 1.4s ease-out infinite}.ld-navdot.bad{background:#ff5c5c;animation:ldPulse .8s ease-out infinite}
+  @keyframes ldPulse{0%{box-shadow:0 0 0 2px var(--bg,#0b0b12),0 0 0 2px rgba(255,92,92,.7)}100%{box-shadow:0 0 0 2px var(--bg,#0b0b12),0 0 0 .6rem rgba(255,92,92,0)}}
+  .ld-banner{display:flex;gap:.8rem;align-items:center;padding:.85rem 1rem;border-radius:12px;border:1px solid var(--line);background:var(--panel-2)}
+  .ld-banner strong{display:block;font-size:1.05rem}.ld-banner span{color:var(--muted);font-size:.84rem}
+  .ld-lamp{flex:none;width:1.1rem;height:1.1rem;border-radius:50%;background:#6b6f85}
+  .ld-banner.ok{border-color:rgba(61,220,132,.45);background:rgba(61,220,132,.07)}.ld-banner.ok .ld-lamp{background:#3ddc84}
+  .ld-banner.warn{border-color:rgba(255,180,58,.55);background:rgba(255,180,58,.09)}.ld-banner.warn .ld-lamp{background:#ffb43a}
+  .ld-banner.bad{border-color:rgba(255,92,92,.6);background:rgba(255,92,92,.1)}.ld-banner.bad .ld-lamp{background:#ff5c5c}
+  .ld-alerts{list-style:none;margin:.6rem 0 0;padding:0;display:grid;gap:.4rem}
+  .ld-alerts li{padding:.55rem .75rem;border-radius:10px;border:1px solid var(--line);font-size:.84rem;line-height:1.4}
+  .ld-alerts li b{display:block;color:var(--text)}.ld-alerts li span{color:var(--muted)}
+  .ld-alerts li.warn{border-left:4px solid #ffb43a}.ld-alerts li.bad{border-left:4px solid #ff5c5c}
+  .ld-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:.6rem;margin-top:.8rem}
+  .ld-tile{padding:.7rem .8rem;border-radius:12px;border:1px solid var(--line);background:var(--panel-2);display:flex;flex-direction:column;gap:.15rem}
+  .ld-tile.ld-wide{grid-column:1/-1}
+  .ld-k{font-size:.74rem;color:var(--muted);font-weight:600}
+  .ld-tile b{font-size:1.5rem;line-height:1.15;letter-spacing:-.01em}
+  .ld-tile small{color:var(--muted);font-size:.74rem;line-height:1.35}
+  .ld-tile.warn b{color:#ffcf7a}.ld-tile.bad b{color:#ff8c8c}
+  .ld-meter{height:7px;border-radius:99px;background:rgba(255,255,255,.1);overflow:hidden;margin:.2rem 0}
+  .ld-meter i{display:block;height:100%;width:0;border-radius:99px;background:#3ddc84;transition:width .6s ease,background .3s}
+  .ld-tile.warn .ld-meter i{background:#ffb43a}.ld-tile.bad .ld-meter i{background:#ff5c5c}
+  .ld-charts{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:.7rem}
+  .ld-charts figure{margin:0;padding:.55rem .65rem;border-radius:12px;border:1px solid var(--line);background:var(--panel-2)}
+  .ld-charts figcaption{font-size:.74rem;color:var(--muted);font-weight:600;display:flex;justify-content:space-between;gap:.5rem}
+  .ld-charts figcaption span{color:var(--text)}
+  .ld-charts svg{display:block;width:100%;height:70px;margin-top:.3rem}
+  .ld-note{font-size:.76rem;color:var(--muted);margin-top:.8rem}
+  .ld-float{position:fixed;left:50%;top:4.6rem;transform:translateX(-50%);z-index:2147482000;max-width:min(92vw,520px);padding:.7rem 1rem;border-radius:12px;font-weight:700;font-size:.9rem;box-shadow:0 12px 40px rgba(0,0,0,.6);cursor:pointer;color:#fff}
+  .ld-float.warn{background:#8a5a00}.ld-float.bad{background:#a3202a}
+  .ld-float[hidden]{display:none}
+  @media (prefers-reduced-motion:reduce){.ld-navdot{animation:none !important}}
   @media (max-width:640px){
     .player-header .controls{padding:.5rem}
     .tv-controls{width:100%;justify-content:space-between}
@@ -834,6 +870,10 @@
         <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20m6.9 6h-2.95a15.7 15.7 0 0 0-1.38-3.56A8.03 8.03 0 0 1 18.9 8M12 4.04c.83 1.2 1.48 2.53 1.91 3.96h-3.82c.43-1.43 1.08-2.76 1.91-3.96M4.26 14a8.2 8.2 0 0 1 0-4h3.38a16.5 16.5 0 0 0 0 4zm.82 2h2.95c.32 1.25.78 2.45 1.38 3.56A7.99 7.99 0 0 1 5.08 16m2.95-8H5.08a7.99 7.99 0 0 1 4.33-3.56A15.7 15.7 0 0 0 8.03 8M12 19.96c-.83-1.2-1.48-2.53-1.91-3.96h3.82c-.43 1.43-1.08 2.76-1.91 3.96M14.34 14H9.66a14.7 14.7 0 0 1 0-4h4.68a14.7 14.7 0 0 1 0 4m.25 5.56c.6-1.11 1.06-2.31 1.38-3.56h2.95a8.03 8.03 0 0 1-4.33 3.56M16.36 14a16.5 16.5 0 0 0 0-4h3.38a8.2 8.2 0 0 1 0 4z"/></svg>
         <span class="lbl">Acessos</span>
       </a>
+      <button id="loadOpen" class="nav-btn admin-only" type="button" title="Carga do servidor: o servidor está aguentando?" aria-label="Carga do servidor">
+        <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 13h3.2l2.3-6.5 4 12 2.6-8.2 1.4 2.7H21v-2h-3.4l-2.2-4.2-2.6 8.2-4-12L6.8 11H3z"/></svg>
+        <span class="lbl">Carga</span><i id="loadDot" class="ld-navdot" aria-hidden="true"></i>
+      </button>
       <button id="siteOpen" class="nav-btn admin-only" type="button" title="Manutenção e mudança de URL" aria-label="Site">
         <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M22.7 19 13.6 9.9a5.5 5.5 0 0 0-1.3-5.8 5.4 5.4 0 0 0-5.3-1.4l3.2 3.2-.9 3.4-3.4.9-3.2-3.2a5.4 5.4 0 0 0 1.4 5.3 5.5 5.5 0 0 0 5.8 1.3l9.1 9.1a1.5 1.5 0 0 0 2.1 0l1.3-1.3a1.5 1.5 0 0 0 0-2.2"/></svg>
         <span class="lbl">Site</span>
@@ -851,6 +891,39 @@
       </button>
     </div>
   </nav>
+
+  <dialog id="loadDialog" class="cfg" aria-labelledby="loadTitle" style="max-width:860px">
+    <div class="cfg-head">
+      <h3 id="loadTitle">Carga do servidor · ao vivo</h3>
+      <button id="loadClose" class="ghost" type="button" aria-label="Fechar">✕</button>
+    </div>
+    <div class="cfg-body">
+      <div id="ldBanner" class="ld-banner wait" role="status" aria-live="polite">
+        <i class="ld-lamp" aria-hidden="true"></i>
+        <div><strong id="ldHead">Carregando…</strong><span id="ldSub"></span></div>
+      </div>
+      <ul id="ldAlerts" class="ld-alerts"></ul>
+
+      <div class="ld-grid">
+        <div class="ld-tile"><span class="ld-k">Online agora</span><b id="ldOnline">–</b><small id="ldOnlineSub"></small></div>
+        <div class="ld-tile"><span class="ld-k">Plays no último minuto</span><b id="ldPlays">–</b><small id="ldPlaysSub"></small></div>
+        <div class="ld-tile"><span class="ld-k">CPU (do limite do plano)</span><b id="ldCpu">–</b><div class="ld-meter"><i id="ldCpuBar"></i></div><small id="ldCpuSub"></small></div>
+        <div class="ld-tile"><span class="ld-k">Atraso do servidor</span><b id="ldLag">–</b><small id="ldLagSub">normal: abaixo de 50 ms · ruim: acima de 200 ms</small></div>
+        <div class="ld-tile"><span class="ld-k">Memória</span><b id="ldMem">–</b><div class="ld-meter"><i id="ldMemBar"></i></div><small id="ldMemSub"></small></div>
+        <div class="ld-tile"><span class="ld-k">Fila de buscas de filme</span><b id="ldQueue">–</b><small id="ldQueueSub"></small></div>
+        <div class="ld-tile ld-wide"><span class="ld-k">Teto estimado de gente online</span><b id="ldCap">–</b><small id="ldCapSub"></small></div>
+      </div>
+
+      <h4>Últimos 30 minutos</h4>
+      <div class="ld-charts">
+        <figure><figcaption>Online <span id="ldChOnlineNow"></span></figcaption><svg id="ldChOnline" viewBox="0 0 300 70" preserveAspectRatio="none" role="img" aria-label="Gente online nos últimos 30 minutos"></svg></figure>
+        <figure><figcaption>CPU do limite (%) <span id="ldChCpuNow"></span></figcaption><svg id="ldChCpu" viewBox="0 0 300 70" preserveAspectRatio="none" role="img" aria-label="CPU nos últimos 30 minutos"></svg></figure>
+        <figure><figcaption>Atraso do servidor (ms) <span id="ldChLagNow"></span></figcaption><svg id="ldChLag" viewBox="0 0 300 70" preserveAspectRatio="none" role="img" aria-label="Atraso do servidor nos últimos 30 minutos"></svg></figure>
+        <figure><figcaption>Memória (MB) <span id="ldChMemNow"></span></figcaption><svg id="ldChMem" viewBox="0 0 300 70" preserveAspectRatio="none" role="img" aria-label="Memória nos últimos 30 minutos"></svg></figure>
+      </div>
+      <p id="ldNote" class="ld-note"></p>
+    </div>
+  </dialog>
 
   <dialog id="siteDialog" class="cfg" aria-labelledby="siteTitle" style="max-width:520px">
     <div class="cfg-head">
@@ -1405,6 +1478,7 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
 <script src="/vendor/qrcode.js"></script>
 <script src="/pix.js"></script>
 <script src="/site.js"></script>
+<script src="/load.js"></script>
 <script>
 (function () {
   'use strict';

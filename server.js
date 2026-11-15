@@ -35,6 +35,7 @@ const pixKit = require('./lib/pixKit');
 const pixAuth = require('./lib/pixAuth');
 const siteStatus = require('./lib/siteStatus');
 const { createStreamGuard } = require('./lib/streamGuard');
+const { createLoadMonitor } = require('./lib/loadMonitor');
 const liveTv = require('./lib/liveTv');
 const liveEpg = require('./lib/liveEpg');
 const { relayFetch, getRelayConfig } = require('./lib/relayFetch');
@@ -94,6 +95,17 @@ app.use((req, res, next) => {
   try { watchStats.record(req); } catch (err) { /* idem: o que o público assiste (lib/watchStats.js) */ }
   next();
 });
+
+// Monitor de carga do administrador (tela "Carga"): CPU/memória/atraso do servidor, online, plays. Só lê; ver lib/loadMonitor.js.
+const loadMonitor = createLoadMonitor({
+  getGuard: () => streamGuard.stats(),
+  getBreaker: () => breakerState(),
+  getChildPid: () => cineproRunner.getStatus().pid,
+  isBot: visitors.isBot,
+  visitorOf: (req) => visitors.visitorId(visitors.clientIp(req))
+});
+loadMonitor.start();
+app.use(loadMonitor.middleware);
 
 // Manutenção (tela do administrador "Site"): com o switch ligado a API e o /hls/ recusam os visitantes com 503; o admin
 // (senha 118111) passa direto. O estado e a saúde nunca são bloqueados. Falha na leitura do estado = deixa passar.
@@ -707,6 +719,12 @@ app.get('/api/config', (req, res) => {
 app.get('/api/egress', requireStatsKey, (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   res.json(egress.snapshot());
+});
+
+// Tela "Carga" do administrador: o servidor está aguentando? (números reais, alertas e histórico de ~30 min)
+app.get('/api/admin/load', requireApiKey, requireStatsKey, (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.json(loadMonitor.snapshot({ lite: String(req.query.lite || '') === '1' }));
 });
 
 app.get('/api/health', (req, res) => {

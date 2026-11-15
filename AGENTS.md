@@ -45,8 +45,17 @@ Fontes dos limites: docs da Render (free: 512 MB / 0,1 CPU, spin-down 15 min), d
 5. Se o CinePro não for fonte de reserva necessária, `CINEPRO_EMBEDDED=0` libera RAM e CPU (decisão do dono; não foi mexido).
 6. Se o teste mostrar CPU no limite: Render Starter (0,5 CPU). Rodízio de várias APIs no front (hoje há um `apiBase` só) só se ainda for preciso depois do cache do HTML.
 
+## Tela "Carga" (admin): o servidor está aguentando?
+
+Botão **Carga** na barra do admin (`#loadOpen`, `public/load.js`; servidor em `lib/loadMonitor.js`; rota `GET /api/admin/load`, só com a senha). Mostra ao vivo (3 s com a tela aberta): online agora (visitantes vistos no último minuto; cada aba aberta avisa a API a cada ~45 s), assistindo, plays/min com tempo p50/p95 e falhas, **CPU em % do limite do plano**, atraso do servidor (event loop), memória do contêiner (com a parte do CinePro), fila do `streamGuard`, **teto estimado de gente online** (projeção pela CPU de agora, só com 8+ online) e gráficos dos últimos 30 min. Com a tela fechada, o ponto no botão muda de cor (a cada 15 s), o título da aba ganha 🟡/🔴 e, quando piora, aparece um aviso no topo. Transições também vão para o log do Render (`[carga] ...`).
+
+- **Sem variável de ambiente:** o limite real (Render Free = 0,1 CPU / 512 MB) é lido do cgroup (`/sys/fs/cgroup`); fora do Docker usa a máquina inteira. O "throttle" (tempo que o Render segurou o servidor por falta de CPU) é o sinal mais claro de saturação.
+- **Limiares** (`evaluate()` em `lib/loadMonitor.js`): CPU 70% amarelo / 90% vermelho; throttle 20% / 50%; atraso p99 200 ms / 600 ms; memória 75% / 90%; abrir filme p95 6 s / 15 s; plays com falha 20% / 50% (só com 5+ plays no minuto); fila do `streamGuard` 1+ / 15+; disjuntor do Vidsrc aberto = amarelo.
+- O atraso do servidor desconta o piso de 20 ms do medidor do Node. Histórico só em memória (zera quando o Render dorme/reinicia).
+- Para o **teste de carga no Render real** (próximo passo 3): deixe esta tela aberta durante o teste; ela já mostra a RAM do CinePro e a CPU real, que eram as incógnitas.
+
 ## Como rodar e testar
 
-- `npm start` (porta `PORT`, padrão 3000) · `npm test` (192 testes, `node --test test/*.test.js`).
+- `npm start` (porta `PORT`, padrão 3000) · `npm test` (204 testes, `node --test test/*.test.js`).
 - Manutenção/"mudamos de URL": tela "Site" do admin (`lib/siteStatus.js`, `public/sitegate.js`, `public/site.js`; tabela `pix_settings` no Supabase).
 - Docs: `docs/DEPLOY-RENDER.md`, `docs/VERCEL-POOL.md`, `docs/TV-AO-VIVO.md`, `docs/VISITANTES.md`, `docs/API.md`.
