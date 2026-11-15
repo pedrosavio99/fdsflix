@@ -210,8 +210,10 @@
         tag.textContent = (item.kind || 'mp4') + ' · ' + item.quality;
       } else {
         tag.className = 'src-no';
-        tag.textContent = item.error ? 'erro' : 'sem vídeo';
-        if (item.error) row.title = item.error;
+        // Mostra o motivo (curto) em vez de "sem vídeo": é o que diz POR QUE falhou.
+        var reason = item.error || '';
+        tag.textContent = reason ? reason.slice(0, 28) : 'sem vídeo';
+        if (reason) row.title = reason;
       }
       row.appendChild(tag);
 
@@ -320,8 +322,15 @@
     });
 
     var list = (data && data.results) || [];
+    var blocked = (data.sites || []).filter(function (s) { return s.ok === false; });
     if (!list.length && !(data.sites || []).some(function (s) { return s.film; })) {
-      webNote.textContent = data && data.error ? data.error : 'Nada encontrado na busca.';
+      var why = data && data.error ? data.error : 'Nada encontrado na busca.';
+      if (blocked.length) {
+        why += ' · ' + blocked.map(function (s) { return s.site + ' HTTP ' + (s.status || '?'); }).join(', ') +
+          ' — o site recusou o IP do servidor (o relay também não passou).';
+      }
+      if (data && data.relay === false) why += ' · relay desligado.';
+      webNote.textContent = why;
       webNote.className = 'pix-note err';
       return;
     }

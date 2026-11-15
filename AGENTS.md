@@ -105,8 +105,14 @@ variável própria dele.
   `<iframe>`, `.m3u8/.mp4` e `data-post` do Dooplay. Sites de catálogo/crítica/loja (AdoroCinema,
   JustWatch, Filmelier, Disney+, Prime, YouTube…) são **excluídos** — não são fonte. Rota
   `GET /api/admin/websearch?title=&year=&type=&s=&e=` (admin). O DDG rate-limita (HTTP 202) às
-  vezes; o Bing é o que segura. Resultado só entra se tiver **alguma palavra do título** em
-  `matchesTitle()` — sem isso o Bing devolve Baidu/calculadora para título ambíguo ("A Odisseia").
+  vezes; o Bing é o que segura. Resultado só entra se tiver **as palavras do título** em
+  `matchesTitle()` (2+ palavras exigem 2) — sem isso o Bing devolve Baidu/calculadora para título
+  ambíguo ("A Odisseia") ou pacote de viagem para "A Viagem de Chihiro".
+  **Tudo aqui tenta direto e cai no relay** (`fetchText` → `fetchOnce(relay)`), porque no Render o
+  IP de datacenter é barrado. Medido pelo relay: **Bing passa, mgeb.lat passa, redecanais NÃO**
+  (403/challenge — o Worker também é barrado). Ou seja: busca por buscador funciona no Render,
+  busca dentro do redecanais só de IP residencial. O painel mostra o motivo por site
+  (`HTTP 403`) em vez de só "sem vídeo".
 - **Idioma do áudio** (`lib/audioLang.js`): o painel lê a faixa de áudio com `ffprobe`
   (`stream_tags=language`) e mostra **🇧🇷 dublado** quando aparece `por`. É a diferença entre
   "o site diz dublado" e "o arquivo é dublado". Best-effort: sem ffprobe, não mostra o selo.
@@ -117,6 +123,8 @@ variável própria dele.
   painel lista "X de 14 entregaram", com ▶ para tocar ali mesmo (mp4 no `<video>`; HLS via hls.js,
   que já vem na página). A parte de baixo é a busca no acervo do TokyVideo.
   O vídeo toca num `<video>` dentro do painel (não mexe no player nem nas estatísticas).
+  Falha de fonte mostra o **motivo** (`tempo esgotado`, `HTTP 403`, `sem stream`) — é o que
+  permite diagnosticar o Render sem abrir o log.
   Com um título aberto, `#tokyoFindBtn` chama `window.fdsFlixTokyo.openFor({id, type, title})`:
   a busca então usa os nomes do TMDB em vários idiomas (pt-BR primeiro) e a duração do filme, e
   marca "✅ confere" no resultado cuja duração bate com o runtime — é assim que se acha a versão
