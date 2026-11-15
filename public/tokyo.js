@@ -185,7 +185,9 @@
     srcList.textContent = '';
     var list = (data && data.results) || [];
     var okCount = list.filter(function (r) { return r.ok; }).length;
-    srcNote.textContent = 'Fontes que entregaram vídeo: ' + okCount + ' de ' + list.length;
+    var relay = data && data.relay;
+    var via = relay ? ' · saída: ' + (relay.home ? 'residencial + worker' : (relay.worker ? 'worker' : 'só direto')) : '';
+    srcNote.textContent = 'Fontes que entregaram vídeo: ' + okCount + ' de ' + list.length + via;
     srcNote.className = 'pix-note' + (okCount ? ' ok' : ' err');
 
     list.forEach(function (item) {

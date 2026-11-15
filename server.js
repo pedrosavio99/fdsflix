@@ -14,6 +14,7 @@ const { getAnimeReport } = require('./lib/animeFire');
 const tokyoVideo = require('./lib/tokyoVideo');
 const audioLang = require('./lib/audioLang');
 const websearch = require('./lib/websearch');
+const extractFetch = require('./lib/extractFetch');
 const cineproRunner = require('./lib/cineproRunner');
 const { normalizeCineProUrl } = require('./lib/cineproUrl');
 const {
@@ -787,7 +788,8 @@ app.get('/api/admin/sources/test', requireApiKey, requireStatsKey, async (req, r
     return entry;
   }));
 
-  res.json({ id, type, season, episode, title, results });
+  // Diagnóstico: por onde o servidor tenta sair (direto → residencial → worker).
+  res.json({ id, type, season, episode, title, relay: extractFetch.relayStatus(), results });
 });
 
 // Busca na web: faz "assistir <título> online grátis dublado" e sonda as páginas achadas.

@@ -113,6 +113,12 @@ variável própria dele.
   (403/challenge — o Worker também é barrado). Ou seja: busca por buscador funciona no Render,
   busca dentro do redecanais só de IP residencial. O painel mostra o motivo por site
   (`HTTP 403`) em vez de só "sem vídeo".
+- **Saída de rede (máscara de IP): `lib/extractFetch.js`.** A extração (mgeb, redecanais, busca na
+  web) tenta **direto → relay residencial (`EXTRACT_RELAY_URL`) → Worker (`VIDEO_RELAY_URL`)**.
+  Motivo: os sites ficam atrás do Cloudflare e desafiam IP de datacenter; máscara pública não
+  resolve (r.jina.ai, allorigins, corsproxy, codetabs, thingproxy, corsfix — todas testadas,
+  todas barradas). O relay residencial é o `deploy/media-relay` rodando em casa e exposto por
+  `cloudflared` — passo a passo em `docs/RELAY-RESIDENCIAL.md`. O painel mostra a cadeia em uso.
 - **Idioma do áudio** (`lib/audioLang.js`): o painel lê a faixa de áudio com `ffprobe`
   (`stream_tags=language`) e mostra **🇧🇷 dublado** quando aparece `por`. É a diferença entre
   "o site diz dublado" e "o arquivo é dublado". Best-effort: sem ffprobe, não mostra o selo.
