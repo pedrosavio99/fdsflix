@@ -6,7 +6,7 @@ Player de filmes, séries e TV ao vivo (Node/Express + front estático em `publi
 
 - **O público só vê o vídeo.** Visitante comum (sem a senha admin) escolhe filme, episódio e legenda, e só. Nada de servidor, Render, Vercel, fonte, ffmpeg, banda, nome de provedor ou motivo técnico de falha. Vale para filmes **e** para o modo TV.
 - **Detalhe técnico só para o admin (senha `118111`).** No front: elementos com a classe `.admin-only` e o filtro "seguro por padrão" (`publicText`/`PUBLIC_OK` em `public/index.html`, `publicMsg` em `public/livetv.js`). Na API: só quando `statsKeyOK(req)` for verdadeiro.
-- **Admin entra sem engrenagem visível:** `Ctrl+Shift+L`, `#admin` na URL, ou segurar o logo por 2 s (celular). Botões de admin: Acessos, Site, Pix, Configs, Sair.
+- **Admin entra sem engrenagem visível:** `Ctrl+Shift+L`, `#admin` na URL, ou segurar o logo por 2 s (celular). Botões de admin: Acessos, Carga, Site, Pix, Configs, TokyVideo, Sair.
 - Texto novo para o usuário final: escreva neutro. Se for técnico, é `.admin-only`.
 
 ## Capacidade estimada (PENDENTE de teste de carga real)
@@ -54,8 +54,36 @@ Botão **Carga** na barra do admin (`#loadOpen`, `public/load.js`; servidor em `
 - O atraso do servidor desconta o piso de 20 ms do medidor do Node. Histórico só em memória (zera quando o Render dorme/reinicia).
 - Para o **teste de carga no Render real** (próximo passo 3): deixe esta tela aberta durante o teste; ela já mostra a RAM do CinePro e a CPU real, que eram as incógnitas.
 
+## Fontes de vídeo (onde mexer)
+
+A cascata é `ALL_PROVIDERS` em `lib/fallbackCascade.js`: cada provedor é uma função
+`(id, type, s, e, title, { note })` que devolve `{ url, provider, quality, isHls, ... }` ou `null`.
+Para desligar um provedor de teste, use `FALLBACK_ORDER` (só afeta a ordem/ lista exibida) ou a
+variável própria dele.
+
+- **TokyVideo** (`lib/tokyoVideo.js`, `TOKYOVIDEO_ENABLED=0` desliga): busca por título no
+  tokyvideo.com, casa pelos nomes do TMDB e **confirma pela duração** contra o runtime (é o que
+  separa filme inteiro de trailer/clipe). Só filmes (`type=movie`); em série devolve `null` sem
+  requisição, porque as "series" do site não têm temporada/episódio confiáveis. Fica por último na
+  cascata e só age quando nada mais entregou. O MP4 vem assinado (vale ~24 h, não é preso ao IP) e
+  o CDN aceita qualquer origem: devolve `browserDirect: true` e o `/api/stream` responde
+  `mode:"direct", via:"direct"` — **0 byte no Render e 0 conversão**. Não use `ffprobe` nesse
+  acervo: os arquivos têm o `moov` no fim e a sonda lê dezenas de MB (o codec sai de um `Range`
+  de 2 KB no `ftyp`). Teste: `test/tokyoVideo.test.js`.
+- **Painel "TokyVideo" do admin** (`public/tokyo.js`, botões `#tokyoOpen` na barra e `#tokyoFindBtn`
+  nos controles do player, diálogo `#tokyoDialog`): busca livre no acervo e toca o vídeo ali mesmo,
+  num `<video>` dentro do próprio painel (não mexe no player nem nas estatísticas de audiência).
+  Com um título aberto, `#tokyoFindBtn` chama `window.fdsFlixTokyo.openFor({id, type, title})`:
+  a busca então usa os nomes do TMDB em vários idiomas (pt-BR primeiro) e a duração do filme, e
+  marca "✅ confere" no resultado cuja duração bate com o runtime — é assim que se acha a versão
+  em pt-BR do acervo. Sem contexto (aberto pela barra), é busca livre. Rotas `GET /api/admin/tokyo/search?q=` e
+  `GET /api/admin/tokyo/play?id=` exigem `requireApiKey` + `requireStatsKey`; tudo (botão, diálogo,
+  CSS `.tk-*`) é `.admin-only` e o módulo não roda sem `html.is-admin`. Texto vindo do site entra
+  sempre por `textContent`. A busca reordena pelo título e marca "🎬 filme" a partir de 40 min;
+  o checkbox "só filme" filtra na tela.
+
 ## Como rodar e testar
 
-- `npm start` (porta `PORT`, padrão 3000) · `npm test` (204 testes, `node --test test/*.test.js`).
+- `npm start` (porta `PORT`, padrão 3000) · `npm test` (221 testes, `node --test test/*.test.js`).
 - Manutenção/"mudamos de URL": tela "Site" do admin (`lib/siteStatus.js`, `public/sitegate.js`, `public/site.js`; tabela `pix_settings` no Supabase).
 - Docs: `docs/DEPLOY-RENDER.md`, `docs/VERCEL-POOL.md`, `docs/TV-AO-VIVO.md`, `docs/VISITANTES.md`, `docs/API.md`.

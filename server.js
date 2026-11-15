@@ -11,6 +11,7 @@ const crypto = require('crypto');
 const { getVidLinkStream, probeVideo } = require('./lib/streamExtractor');
 const { getFallbackStream, getProviderList, getCineProReport, breakerOpen, breakerState, vidsrcHealth } = require('./lib/fallbackCascade');
 const { getAnimeReport } = require('./lib/animeFire');
+const tokyoVideo = require('./lib/tokyoVideo');
 const cineproRunner = require('./lib/cineproRunner');
 const { normalizeCineProUrl } = require('./lib/cineproUrl');
 const {
@@ -727,6 +728,39 @@ app.get('/api/admin/load', requireApiKey, requireStatsKey, (req, res) => {
   res.json(loadMonitor.snapshot({ lite: String(req.query.lite || '') === '1' }));
 });
 
+// Busca no acervo do TokyVideo (ferramenta do administrador: achar título que as outras fontes
+// não têm). Nada disto aparece para o visitante — a rota exige a senha.
+app.get('/api/admin/tokyo/search', requireApiKey, requireStatsKey, async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const q = String(req.query.q || '').trim();
+  if (!q) return res.status(400).json({ error: 'Informe ?q=título.' });
+  try {
+    res.json(await tokyoVideo.searchVideos(q, {
+      limit: Number(req.query.limit) || 12,
+      id: req.query.id,     // id do TMDB, quando a busca parte de um filme aberto
+      type: req.query.type
+    }));
+  } catch (err) {
+    console.warn('[tokyvideo] busca falhou:', err.message);
+    res.status(502).json({ error: 'A busca no acervo não respondeu agora.' });
+  }
+});
+
+// Abre um vídeo específico do acervo: devolve o MP4 assinado para tocar no navegador do admin.
+app.get('/api/admin/tokyo/play', requireApiKey, requireStatsKey, async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const id = String(req.query.id || '').trim();
+  if (!/^\d{1,12}$/.test(id)) return res.status(400).json({ error: 'id inválido.' });
+  try {
+    const out = await tokyoVideo.streamById(id);
+    if (out.error) return res.status(404).json({ error: out.error });
+    res.json(out);
+  } catch (err) {
+    console.warn('[tokyvideo] abrir falhou:', err.message);
+    res.status(502).json({ error: 'Não foi possível abrir este vídeo agora.' });
+  }
+});
+
 app.get('/api/health', (req, res) => {
   if (!statsKeyOK(req)) return res.json({ ok: true }); // o Render só precisa do 200; o resto é do administrador
   res.json({
@@ -1288,6 +1322,9 @@ function outageMessage(trace) {
 /** true se entregar esta fonte ao navegador gastaria banda de saída do Render. */
 async function renderBound(info, { hevcOk, direct }) {
   if (direct) return false; // extensão fdsFlix Direct: o navegador busca no CDN
+  // Fonte que já vem pronta para o navegador (CDN aceita qualquer origem e não exige Referer,
+  // ex.: TokyVideo): o navegador busca sozinho, sem proxy e sem Worker.
+  if (info && info.browserDirect) return false;
   const isHls = info.provider !== 'VidLink Pro' && (info.isHls || /\.m3u8(\?|$)/i.test(info.url));
   if (isHls) {
     const profile = info.viaCinePro ? { kind: 'cinepro' } : (info.bridge || null);
@@ -1654,6 +1691,24 @@ app.get('/api/stream', requireApiKey, streamGuard.middleware, async (req, res) =
       }
 
       // Arquivo original sem recodificar: se der, o Worker entrega e o Render só assina o token.
+      // Fontes `browserDirect` (ex.: TokyVideo) já são servidas pelo CDN para qualquer origem:
+      // não precisa de Worker, de proxy nem de token — o navegador busca direto.
+      if (streamInfo.browserDirect) {
+        console.log(`[stream] modo direto no navegador ${qualityKey || 'auto'} (${streamInfo.provider}, CDN liberado)`);
+        return res.json({
+          mode: 'direct',
+          via: 'direct',
+          url: qualityUrl,
+          quality: Number(qualityKey) || streamInfo.quality || 'auto',
+          codec: codec || 'desconhecido',
+          sourceCodec: codec || 'desconhecido',
+          transcoded: false,
+          provider: streamInfo.provider,
+          captions,
+          note: null
+        });
+      }
+
       const edge = await edgeDecision(qualityUrl);
       const viaEdge = edge.use;
       const edgeNote = edge.reason;
