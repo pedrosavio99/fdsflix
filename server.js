@@ -736,6 +736,50 @@ app.get('/api/admin/load', requireApiKey, requireStatsKey, (req, res) => {
   res.json(loadMonitor.snapshot({ lite: String(req.query.lite || '') === '1' }));
 });
 
+// Testa TODAS as fontes da cascata para um título e devolve quem entregou o quê (painel "Outras
+// fontes"). Roda em paralelo, com teto por fonte, e é só do administrador.
+app.get('/api/admin/sources/test', requireApiKey, requireStatsKey, async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const id = String(req.query.id || '');
+  const type = String(req.query.type || 'movie');
+  if (!/^\d{1,12}$/.test(id) || (type !== 'movie' && type !== 'tv')) {
+    return res.status(400).json({ error: 'id/type inválidos.' });
+  }
+  const season = Math.max(1, Number(req.query.s) || 1);
+  const episode = Math.max(1, Number(req.query.e) || 1);
+  const title = String(req.query.title || '').slice(0, 120);
+  const limit = 15000;
+
+  const withTimeout = (promise) => new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('tempo esgotado')), limit);
+    if (timer.unref) timer.unref();
+    promise.then((value) => { clearTimeout(timer); resolve(value); },
+      (err) => { clearTimeout(timer); reject(err); });
+  });
+
+  const results = await Promise.all(getProviderList().map(async (provider) => {
+    const started = Date.now();
+    const entry = { name: provider.name, ok: false, ms: 0 };
+    try {
+      const out = await withTimeout(provider.fn(id, type, season, episode, title, { note: () => {} }));
+      entry.ms = Date.now() - started;
+      if (out && out.url) {
+        entry.ok = true;
+        entry.kind = out.isHls || /\.m3u8(\?|$)/i.test(out.url) ? 'hls' : 'mp4';
+        entry.url = out.url;
+        entry.cors = out.cors === true;
+        entry.quality = out.quality || 'auto';
+      }
+    } catch (err) {
+      entry.ms = Date.now() - started;
+      entry.error = String(err.message || err).replace(/https?:\/\/\S+/g, '[url]').slice(0, 120);
+    }
+    return entry;
+  }));
+
+  res.json({ id, type, season, episode, title, results });
+});
+
 // Busca no acervo do TokyVideo (ferramenta do administrador: achar título que as outras fontes
 // não têm). Nada disto aparece para o visitante — a rota exige a senha.
 app.get('/api/admin/tokyo/search', requireApiKey, requireStatsKey, async (req, res) => {
@@ -1711,6 +1755,8 @@ app.get('/api/stream', requireApiKey, streamGuard.middleware, async (req, res) =
           codec: codec || 'desconhecido',
           sourceCodec: codec || 'desconhecido',
           transcoded: false,
+          // true = <video crossorigin> (o CDN exige CORS); false = sem crossorigin (CDN sem CORS).
+          ...(typeof streamInfo.cors === 'boolean' ? { cors: streamInfo.cors } : {}),
           provider: streamInfo.provider,
           captions,
           note: null

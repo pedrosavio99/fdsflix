@@ -30,8 +30,14 @@
   var player = $('tokyoPlayer');
   var playerInfo = $('tokyoPlayerInfo');
   var onlyFilms = $('tokyoOnlyFilms');
+  var srcTitle = $('srcTestTitle');
+  var srcNote = $('srcTestNote');
+  var srcList = $('srcTestList');
+  var srcRun = $('srcTestRun');
   var seq = 0;
   var lastData = null;
+  var hls = null;        // player HLS do painel (quando a fonte entrega .m3u8)
+  var srcTesting = false;
   // Filme aberto no player no momento em que o painel foi chamado (id do TMDB + tipo).
   var context = { id: '', type: '' };
 
@@ -64,6 +70,7 @@
 
   function stopPlayback() {
     try { player.pause(); } catch (e) { /* sem vídeo */ }
+    if (hls) { try { hls.destroy(); } catch (e) { /* ignore */ } hls = null; }
     player.removeAttribute('src');
     try { player.load(); } catch (e) { /* ignore */ }
     playerBox.hidden = true;
@@ -166,6 +173,117 @@
     });
   }
 
+  /* ---- teste de todas as fontes (é o "ver o que funciona") ---- */
+
+  function paintSources(data) {
+    srcList.textContent = '';
+    var list = (data && data.results) || [];
+    var okCount = list.filter(function (r) { return r.ok; }).length;
+    srcNote.textContent = 'Fontes que entregaram vídeo: ' + okCount + ' de ' + list.length;
+    srcNote.className = 'pix-note' + (okCount ? ' ok' : ' err');
+
+    list.forEach(function (item) {
+      var row = document.createElement('div');
+      row.className = 'src-row';
+
+      var name = document.createElement('span');
+      name.className = 'src-name';
+      name.textContent = item.name;
+      row.appendChild(name);
+
+      var tag = document.createElement('span');
+      if (item.ok) {
+        tag.className = 'src-ok';
+        tag.textContent = (item.kind || 'mp4') + ' · ' + item.quality;
+      } else {
+        tag.className = 'src-no';
+        tag.textContent = item.error ? 'erro' : 'sem vídeo';
+        if (item.error) row.title = item.error;
+      }
+      row.appendChild(tag);
+
+      var ms = document.createElement('span');
+      ms.className = 'src-ms';
+      ms.textContent = item.ms ? (item.ms > 1000 ? (item.ms / 1000).toFixed(1) + 's' : item.ms + 'ms') : '';
+      row.appendChild(ms);
+
+      if (item.ok) {
+        var play = document.createElement('button');
+        play.type = 'button';
+        play.className = 'ghost';
+        play.textContent = '▶';
+        play.title = 'Tocar este resultado no painel';
+        play.addEventListener('click', function () { playSource(item, play); });
+        row.appendChild(play);
+      }
+
+      srcList.appendChild(row);
+    });
+  }
+
+  function runSources() {
+    if (srcTesting) return;
+    if (!context.id) {
+      srcNote.textContent = 'Abra um filme (ou episódio) primeiro — o teste usa o id do TMDB.';
+      srcNote.className = 'pix-note err';
+      return;
+    }
+    srcTesting = true;
+    srcRun.disabled = true;
+    srcList.textContent = '';
+    srcNote.textContent = 'Testando as fontes… (pode levar alguns segundos)';
+    srcNote.className = 'pix-note';
+
+    var url = '/api/admin/sources/test?id=' + encodeURIComponent(context.id) +
+      '&type=' + encodeURIComponent(context.type || 'movie') +
+      '&s=' + encodeURIComponent(context.season || 1) +
+      '&e=' + encodeURIComponent(context.episode || 1) +
+      '&title=' + encodeURIComponent(context.title || input.value || '');
+
+    json(url)
+      .then(paintSources)
+      .catch(function (err) {
+        srcNote.textContent = err.message || 'O teste falhou.';
+        srcNote.className = 'pix-note err';
+      })
+      .then(function () { srcTesting = false; srcRun.disabled = false; });
+  }
+
+  function playSource(item, btn) {
+    stopPlayback();
+    playerBox.hidden = false;
+    playerInfo.textContent = 'Abrindo ' + item.name + '…';
+    btn.disabled = true;
+
+    // CORS: o CDN de uns exige, o de outros quebra com ele.
+    if (item.cors) player.crossOrigin = 'anonymous';
+    else player.removeAttribute('crossorigin');
+
+    if (item.kind === 'hls' && window.Hls && window.Hls.isSupported()) {
+      hls = new window.Hls({ enableWorker: true, lowLatencyMode: false });
+      hls.attachMedia(player);
+      hls.on(window.Hls.Events.MANIFEST_PARSED, function () {
+        player.play().catch(function () { /* autoplay bloqueado */ });
+      });
+      hls.on(window.Hls.Events.ERROR, function (evt, data) {
+        if (!data || !data.fatal) return;
+        playerInfo.textContent = item.name + ' · o stream HLS não abriu (' + (data.details || data.type) + ')';
+      });
+      hls.loadSource(item.url);
+    } else {
+      player.src = item.url;
+      player.play().catch(function () {
+        playerInfo.textContent = 'Toque no ▶ do vídeo para começar (o navegador bloqueou o autoplay).';
+      });
+    }
+
+    var parts = [item.name];
+    if (item.quality) parts.push(String(item.quality));
+    parts.push(item.kind === 'hls' ? 'stream HLS' : 'arquivo direto');
+    playerInfo.textContent = parts.join(' · ');
+    btn.disabled = false;
+  }
+
   function playItem(item, btn) {
     stopPlayback();
     playerBox.hidden = false;
@@ -215,7 +333,14 @@
 
   // Chamado pelo player quando o filme está aberto: já busca aquele título.
   function openFor(item) {
-    context = { id: String((item && item.id) || ''), type: String((item && item.type) || '') };
+    context = {
+      id: String((item && item.id) || ''),
+      type: String((item && item.type) || ''),
+      season: Number(item && item.season) || 1,
+      episode: Number(item && item.episode) || 1,
+      title: String((item && item.title) || '')
+    };
+    if (srcTitle) srcTitle.textContent = context.title || 'Título aberto';
     if (!dlg.open) dlg.showModal();
     if (item && item.title) input.value = item.title;
     resultsEl.textContent = '';
@@ -223,13 +348,19 @@
     input.focus();
     if (input.value.trim()) search();
     else say('Este título não tem nome para buscar — digite um.', 'err');
+    runSources();
   }
 
   openBtn.addEventListener('click', function () {
-    context = { id: '', type: '' };  // aberto pela barra: busca livre
     if (!dlg.open) dlg.showModal();
     input.focus();
-    if (input.value.trim() && !resultsEl.children.length) search();
+    // Sem contexto (nenhum filme aberto no player), o teste de fontes não tem o que testar.
+    if (context.id) runSources();
+    else if (input.value.trim() && !resultsEl.children.length) search();
+    else {
+      srcNote.textContent = 'Abra um filme e use o botão 🎬 nos controles do player para testar as fontes.';
+      srcNote.className = 'pix-note';
+    }
   });
   $('tokyoClose').addEventListener('click', function () { dlg.close(); });
   form.addEventListener('submit', function (e) { e.preventDefault(); search(); });

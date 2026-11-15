@@ -6,7 +6,7 @@ Player de filmes, séries e TV ao vivo (Node/Express + front estático em `publi
 
 - **O público só vê o vídeo.** Visitante comum (sem a senha admin) escolhe filme, episódio e legenda, e só. Nada de servidor, Render, Vercel, fonte, ffmpeg, banda, nome de provedor ou motivo técnico de falha. Vale para filmes **e** para o modo TV.
 - **Detalhe técnico só para o admin (senha `118111`).** No front: elementos com a classe `.admin-only` e o filtro "seguro por padrão" (`publicText`/`PUBLIC_OK` em `public/index.html`, `publicMsg` em `public/livetv.js`). Na API: só quando `statsKeyOK(req)` for verdadeiro.
-- **Admin entra sem engrenagem visível:** `Ctrl+Shift+L`, `#admin` na URL, ou segurar o logo por 2 s (celular). Botões de admin: Acessos, Carga, Site, Pix, Configs, TokyVideo, Sair.
+- **Admin entra sem engrenagem visível:** `Ctrl+Shift+L`, `#admin` na URL, ou segurar o logo por 2 s (celular). Botões de admin: Acessos, Carga, Site, Pix, Configs, Outras fontes, Sair.
 - Texto novo para o usuário final: escreva neutro. Se for técnico, é `.admin-only`.
 
 ## Capacidade estimada (PENDENTE de teste de carga real)
@@ -83,20 +83,34 @@ variável própria dele.
   passar a exigir Referer; (b) o `<video>` precisa de `crossorigin="anonymous"` (o `#nativePlayer`
   já tinha; o do painel ganhou). **Não use redirect 302 para o CDN**: o Chrome perde o `Origin`
   nos `Range` depois do redirect e o vídeo morre com `MissingAllowOriginHeader`.
-- **Painel "TokyVideo" do admin** (`public/tokyo.js`, botões `#tokyoOpen` na barra e `#tokyoFindBtn`
-  nos controles do player, diálogo `#tokyoDialog`): busca livre no acervo e toca o vídeo ali mesmo,
-  num `<video>` dentro do próprio painel (não mexe no player nem nas estatísticas de audiência).
+- **MGEB** (`lib/mgeb.js`, `MGEB_ENABLED=0` desliga): fonte **por ID do TMDB, sem busca** —
+  `https://mgeb.lat/embed/<tmdbId>` devolve um MP4 direto (`zip` de CDN tipo
+  `www-fontedecanais-bz.<hash>.com`). É um dos 6 players que o **redecanais** usa
+  (`/wp-json/dooplayer/v1/<post>/movie/<n>` → `embed_url`); todos os seis são por id do TMDB, ou
+  seja, para esses provedores não existe "refinar busca": o id já está no app. O MP4 é
+  **faststart** (moov no começo, começa na hora), H.264, aceita Range e não exige Referer.
+  O CDN **não manda `Access-Control-Allow-Origin`**, então o resultado vem com `cors: false` e o
+  `/api/stream` repassa isso; o front tira o `crossorigin` do `<video>` (TokyVideo, que exige CORS,
+  vem com `cors: true`). Série: `/embed/<tmdbId>/<temporada>/<episódio>` (o seletor da página só troca o
+  caminho; conferido: GoT S1E2 → 94049.mp4, S2E5 → 94062.mp4). Teste: `test/mgeb.test.js`.
+- **Painel "Outras fontes" do admin** (`public/tokyo.js`, botões `#tokyoOpen` na barra e
+  `#tokyoFindBtn` nos controles do player, diálogo `#tokyoDialog`): a parte de cima é o **teste de
+  todas as fontes** — `GET /api/admin/sources/test?id=&type=&s=&e=&title=` roda a cascata inteira em
+  paralelo (teto de 15 s por fonte), devolve por fonte `ok/kind(mp4|hls)/quality/ms/url/cors` e o
+  painel lista "X de 14 entregaram", com ▶ para tocar ali mesmo (mp4 no `<video>`; HLS via hls.js,
+  que já vem na página). A parte de baixo é a busca no acervo do TokyVideo.
+  O vídeo toca num `<video>` dentro do painel (não mexe no player nem nas estatísticas).
   Com um título aberto, `#tokyoFindBtn` chama `window.fdsFlixTokyo.openFor({id, type, title})`:
   a busca então usa os nomes do TMDB em vários idiomas (pt-BR primeiro) e a duração do filme, e
   marca "✅ confere" no resultado cuja duração bate com o runtime — é assim que se acha a versão
-  em pt-BR do acervo. Sem contexto (aberto pela barra), é busca livre. Rotas `GET /api/admin/tokyo/search?q=` e
-  `GET /api/admin/tokyo/play?id=` exigem `requireApiKey` + `requireStatsKey`; tudo (botão, diálogo,
+  em pt-BR do acervo. Sem contexto (aberto pela barra), é busca livre. Rotas `GET /api/admin/tokyo/search?q=`,
+  `GET /api/admin/tokyo/play?id=` e `GET /api/admin/sources/test` exigem `requireApiKey` + `requireStatsKey`; tudo (botão, diálogo,
   CSS `.tk-*`) é `.admin-only` e o módulo não roda sem `html.is-admin`. Texto vindo do site entra
   sempre por `textContent`. A busca reordena pelo título e marca "🎬 filme" a partir de 40 min;
   o checkbox "só filme" filtra na tela.
 
 ## Como rodar e testar
 
-- `npm start` (porta `PORT`, padrão 3000) · `npm test` (224 testes, `node --test test/*.test.js`).
+- `npm start` (porta `PORT`, padrão 3000) · `npm test` (229 testes, `node --test test/*.test.js`).
 - Manutenção/"mudamos de URL": tela "Site" do admin (`lib/siteStatus.js`, `public/sitegate.js`, `public/site.js`; tabela `pix_settings` no Supabase).
 - Docs: `docs/DEPLOY-RENDER.md`, `docs/VERCEL-POOL.md`, `docs/TV-AO-VIVO.md`, `docs/VISITANTES.md`, `docs/API.md`.

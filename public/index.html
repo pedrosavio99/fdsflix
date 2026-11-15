@@ -505,6 +505,15 @@
   .pix-note.ok{color:#7ee2a8 !important}
   .pix-note.err{color:#ff9d9d !important}
   /* TokyVideo (admin): busca no acervo e toca ali mesmo */
+  .src-head{display:flex;align-items:center;justify-content:space-between;gap:.6rem;flex-wrap:wrap}
+  .src-head b{font-size:.9rem}
+  .src-list{display:flex;flex-direction:column;gap:.35rem;margin-top:.35rem}
+  .src-row{display:flex;align-items:center;gap:.5rem;padding:.35rem .5rem;border:1px solid var(--line);border-radius:8px;background:rgba(0,0,0,.18)}
+  .src-name{flex:1;min-width:0;font-size:.82rem;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .src-ms{font-size:.7rem;color:var(--muted);white-space:nowrap}
+  .src-ok{font-size:.7rem;padding:.08rem .4rem;border-radius:999px;background:#12351f;color:#7ee2a8;white-space:nowrap}
+  .src-no{font-size:.7rem;padding:.08rem .4rem;border-radius:999px;background:#2a2a3a;color:var(--muted);white-space:nowrap}
+  .src-row button{padding:.22rem .5rem;font-size:.72rem}
   .tk-form{display:flex;gap:.5rem;flex-wrap:wrap;margin:0 0 .55rem}
   .tk-form input{flex:1;min-width:200px;padding:.55rem .7rem;border:1px solid var(--line);border-radius:8px;background:var(--panel-2);color:var(--text);font:inherit;font-size:.88rem}
   .tk-only{display:inline-flex;align-items:center;gap:.35rem;font-size:.8rem;color:var(--muted);white-space:nowrap;cursor:pointer}
@@ -910,7 +919,7 @@
         <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M19.14 12.94c.04-.31.06-.63.06-.94s-.02-.63-.07-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.61-.22l-2.39.96a7 7 0 0 0-1.62-.94l-.36-2.54a.49.49 0 0 0-.48-.41h-3.84a.49.49 0 0 0-.48.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.49.49 0 0 0-.61.22L2.74 8.84a.48.48 0 0 0 .12.64l2.03 1.58c-.05.31-.08.63-.08.94s.03.63.08.94l-2.03 1.58a.5.5 0 0 0-.12.64l1.92 3.32c.12.22.37.29.61.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.26.41.48.41h3.84c.24 0 .44-.17.48-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.49 0 .61-.22l1.92-3.32a.5.5 0 0 0-.12-.64zM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2"/></svg>
         <span class="lbl">Configs</span>
       </button>
-      <button id="tokyoOpen" class="nav-btn admin-only" type="button" title="TokyVideo: buscar no acervo (clássicos, documentários, cult)" aria-label="Buscar no acervo do TokyVideo">
+      <button id="tokyoOpen" class="nav-btn admin-only" type="button" title="Outras fontes: testar este título em todas as fontes e buscar no acervo" aria-label="Outras fontes">
         <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 4l2 4h-3l-2-4h-2l2 4h-3l-2-4H8l2 4H7L5 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V4z"/></svg>
       </button>
     </div>
@@ -1028,10 +1037,20 @@
 
   <dialog id="tokyoDialog" class="cfg admin-only" aria-labelledby="tokyoTitle" style="max-width:760px">
     <div class="cfg-head">
-      <h3 id="tokyoTitle">TokyVideo · busca no acervo</h3>
+      <h3 id="tokyoTitle">Outras fontes · teste e acervo</h3>
       <button id="tokyoClose" class="ghost" type="button" aria-label="Fechar">✕</button>
     </div>
     <div class="cfg-body">
+      <div class="cfg-card" id="srcTestBox">
+        <div class="src-head">
+          <b id="srcTestTitle">Nenhum título aberto</b>
+          <button id="srcTestRun" class="ghost" type="button">Testar fontes</button>
+        </div>
+        <p id="srcTestNote" class="pix-note" role="status"></p>
+        <div id="srcTestList" class="src-list"></div>
+      </div>
+
+      <h4 style="margin:.2rem 0 .3rem">Acervo do TokyVideo</h4>
       <p>Busca só neste site e toca o vídeo direto do CDN deles (0 byte no Render). Serve para achar clássico, documentário e cult que as outras fontes não têm — confira a duração: 40 min+ indica filme inteiro.</p>
       <form id="tokyoForm" class="tk-form" autocomplete="off">
         <input id="tokyoQ" type="search" placeholder="Título (ex.: The Stranger, 1946)" aria-label="Título para buscar no TokyVideo" required>
@@ -1392,7 +1411,7 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
                     </select>
                   </label>
                   <button id="reloadBtn" class="ghost" type="button">↻ Recarregar</button>
-                  <button id="tokyoFindBtn" class="ghost admin-only" type="button" title="Procurar este título no acervo do TokyVideo (às vezes tem em pt-BR)">🎬 TokyVideo</button>
+                  <button id="tokyoFindBtn" class="ghost admin-only" type="button" title="Outras fontes: ver o que toca para este título (e o acervo em pt-BR)">🎬 TokyVideo</button>
                   <details class="opts">
                     <summary>⚙ Mais opções</summary>
                     <div class="opts-body">
@@ -3898,8 +3917,11 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
         } else if (clientPlay) {
           startClientHevc(apiUrl(data.url), startSeconds, video, playToken, data.quality + 'p · decodificado no seu navegador');
         } else if (data.mode === 'direct') {
-          // O <video id="nativePlayer"> já tem crossorigin="anonymous": é o que deixa o Chrome
-          // buscar os pedaços (Range) do MP4 de outro domínio sem o bloqueio do ORB.
+          // Fonte que pede CORS (ex.: acervo com moov no fim) precisa de crossorigin="anonymous";
+          // fonte cujo CDN não manda Access-Control-Allow-Origin precisa ir SEM ele. O servidor
+          // diz qual é o caso; sem o campo, fica como está (comportamento antigo).
+          if (data.cors === true) video.crossOrigin = 'anonymous';
+          else if (data.cors === false) video.removeAttribute('crossorigin');
           video.src = apiUrl(data.url);
           startDirectMeter(video, apiUrl(data.url), playToken);
           video.play().catch(function () {
@@ -4518,7 +4540,13 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
     var item = state.selected;
     if (!item) { toast('Abra um filme e clique de novo para procurar no acervo.'); return; }
     if (!window.fdsFlixTokyo) { toast('Painel indisponível — recarregue a página.'); return; }
-    window.fdsFlixTokyo.openFor({ id: item.id, type: item.type, title: item.title });
+    window.fdsFlixTokyo.openFor({
+      id: item.id,
+      type: item.type,
+      title: item.title,
+      season: state.curS,
+      episode: state.curE
+    });
   });
 
   $('subLangSelect').addEventListener('change', function () {
