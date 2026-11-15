@@ -70,6 +70,19 @@ variável própria dele.
   `mode:"direct", via:"direct"` — **0 byte no Render e 0 conversão**. Não use `ffprobe` nesse
   acervo: os arquivos têm o `moov` no fim e a sonda lê dezenas de MB (o codec sai de um `Range`
   de 2 KB no `ftyp`). Teste: `test/tokyoVideo.test.js`.
+- **Busca: o acervo vem dos CANAIS, não da busca do site.** A busca do tokyvideo devolve
+  clipe/música para quase tudo ("um sonho de liberdade" → 69 resultados, nenhum o filme), então
+  `lib/tokyoVideo.js` monta um índice com `/user/<canal>` (dá o id) + `/channel/<id>/videos?offset=N`
+  (24 por página, com título e duração), guarda 6 h na memória, aquece no boot (`prewarm()`) e casa
+  localmente por título + duração. Canais em `TOKYOVIDEO_CHANNELS` (padrão `matrizoculta,cinetel`;
+  hoje ~202 vídeos, quase todos filmes). Busca direta (sem relay, ~3x mais rápida) com o relay de
+  reserva. Canal que não responde encurta o cache para 10 min.
+- **O CDN do acervo recusa Referer de fora (403) e o Chrome bloqueia os `Range` sem CORS (ORB).**
+  Por isso: (a) as páginas HTML saem com `Referrer-Policy: no-referrer` (header em `server.js` +
+  `<meta name="referrer">` no `index.html`) — decisão de app inteiro, avalie se algum provedor
+  passar a exigir Referer; (b) o `<video>` precisa de `crossorigin="anonymous"` (o `#nativePlayer`
+  já tinha; o do painel ganhou). **Não use redirect 302 para o CDN**: o Chrome perde o `Origin`
+  nos `Range` depois do redirect e o vídeo morre com `MissingAllowOriginHeader`.
 - **Painel "TokyVideo" do admin** (`public/tokyo.js`, botões `#tokyoOpen` na barra e `#tokyoFindBtn`
   nos controles do player, diálogo `#tokyoDialog`): busca livre no acervo e toca o vídeo ali mesmo,
   num `<video>` dentro do próprio painel (não mexe no player nem nas estatísticas de audiência).
@@ -84,6 +97,6 @@ variável própria dele.
 
 ## Como rodar e testar
 
-- `npm start` (porta `PORT`, padrão 3000) · `npm test` (221 testes, `node --test test/*.test.js`).
+- `npm start` (porta `PORT`, padrão 3000) · `npm test` (224 testes, `node --test test/*.test.js`).
 - Manutenção/"mudamos de URL": tela "Site" do admin (`lib/siteStatus.js`, `public/sitegate.js`, `public/site.js`; tabela `pix_settings` no Supabase).
 - Docs: `docs/DEPLOY-RENDER.md`, `docs/VERCEL-POOL.md`, `docs/TV-AO-VIVO.md`, `docs/VISITANTES.md`, `docs/API.md`.

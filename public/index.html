@@ -3,6 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Sem Referer: o CDN do acervo recusa Referer de fora e o vídeo toca direto no navegador. -->
+<meta name="referrer" content="no-referrer">
 <title>fdsFlix — Filmes e Séries</title>
 <!-- O player canvas (HEVC decodificado no navegador; carregado só quando preciso) importa "mp4box" por nome. -->
 <script type="importmap">{"imports":{"mp4box":"./vendor/mp4box/mp4box.all.mjs"}}</script>
@@ -1039,7 +1041,7 @@
       <p id="tokyoNote" class="pix-note" role="status"></p>
       <div id="tokyoResults" class="tk-results"></div>
       <div id="tokyoPlayerBox" class="tk-player" hidden>
-        <video id="tokyoPlayer" controls playsinline preload="metadata"></video>
+        <video id="tokyoPlayer" controls playsinline preload="auto" crossorigin="anonymous"></video>
         <p id="tokyoPlayerInfo"></p>
       </div>
     </div>
@@ -3896,6 +3898,8 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
         } else if (clientPlay) {
           startClientHevc(apiUrl(data.url), startSeconds, video, playToken, data.quality + 'p · decodificado no seu navegador');
         } else if (data.mode === 'direct') {
+          // O <video id="nativePlayer"> já tem crossorigin="anonymous": é o que deixa o Chrome
+          // buscar os pedaços (Range) do MP4 de outro domínio sem o bloqueio do ORB.
           video.src = apiUrl(data.url);
           startDirectMeter(video, apiUrl(data.url), playToken);
           video.play().catch(function () {

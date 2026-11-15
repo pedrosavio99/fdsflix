@@ -154,6 +154,14 @@ app.get('/config.js', (req, res, next) => {
 
 // vendor/ quase não muda (7 dias) e cv/ é do app (1 dia): evita rebaixar ~1 MB (hls.js, wasm, mp4box) a cada
 // visita e a cada deploy. O resto (index.html etc.) continua revalidando, então atualizações chegam.
+// A página vai sem Referer: o CDN do acervo (TokyVideo) recusa qualquer Referer de fora (403)
+// e o vídeo toca do CDN direto no navegador. Sem isso o player levaria 403 no MP4.
+app.use((req, res, next) => {
+  if (req.method === 'GET' && (req.path === '/' || /\.html$/i.test(req.path))) {
+    res.setHeader('Referrer-Policy', 'no-referrer');
+  }
+  next();
+});
 app.use('/vendor', express.static(path.join(__dirname, 'public', 'vendor'), { maxAge: '7d' }));
 app.use('/cv', express.static(path.join(__dirname, 'public', 'cv'), { maxAge: '1d' }));
 app.use(express.static(path.join(__dirname, 'public')));
@@ -2312,6 +2320,8 @@ liveEpg.ensure(); // já deixa a programação pronta antes do primeiro espectad
 const server = app.listen(PORT, () => {
   console.log('');
   console.log('🎬 fdsFlix rodando em http://localhost:' + PORT);
+  // Monta o índice dos canais do TokyVideo em segundo plano (a busca do site não acha filme).
+  try { tokyoVideo.prewarm(); } catch (err) { /* melhor esforço */ }
   console.log('   TMDB API : ' + (TMDB_API_KEY ? 'configurada' : 'NÃO configurada'));
   console.log('   ffmpeg   : ' + (FFMPEG_OK ? 'disponível (transcodificação ativa)' : 'NÃO encontrado'));
   console.log('   Fallbacks: ' + getProviderList().map((p) => p.name).join(' → '));

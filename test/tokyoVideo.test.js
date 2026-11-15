@@ -289,3 +289,30 @@ test('busca a partir de série não inventa duração de filme', async () => {
   assert.equal(data.runtimeMinutes, 0);
   assert.ok(data.results.every((r) => r.matchesRuntime === null));
 });
+
+/* ------------------------------------------------------------------ */
+/* Índice dos canais (o acervo): casa título + duração                  */
+/* ------------------------------------------------------------------ */
+
+const acervo = [
+  { id: '905629', title: 'Um Sonho De Liberdade 1994', durationSec: 8553, duration: '02:22:33', minutes: 143, channel: 'ULTRA IMAX', thumb: '', page: '' },
+  { id: '922130', title: 'Um Mundo Perfeito 1993', durationSec: 8294, duration: '02:18:14', minutes: 138, channel: 'ULTRA IMAX', thumb: '', page: '' },
+  { id: '1', title: 'Um Sonho de Liberdade - Trailer', durationSec: 120, duration: '02:00', minutes: 2, channel: 'x', thumb: '', page: '' }
+];
+
+test('acervo: acha o filme pelo título em pt-BR e confirma pela duração', () => {
+  const hits = tokyo.searchCatalog(acervo, ['Um Sonho de Liberdade'], 142 * 60, 1994);
+  assert.equal(hits.length, 1);
+  assert.equal(hits[0].id, '905629');
+});
+
+test('acervo: sem a duração certa não devolve o trailer', () => {
+  // O trailer só bateria se o runtime fosse de 2 min; com 142 min ele cai fora.
+  const hits = tokyo.searchCatalog(acervo, ['Um Sonho de Liberdade'], 142 * 60, 1994);
+  assert.ok(hits.every((h) => h.id !== '1'));
+});
+
+test('acervo: título que não existe não vira resultado', () => {
+  const hits = tokyo.searchCatalog(acervo, ['O Poderoso Chefão'], 175 * 60, 1972);
+  assert.equal(hits.length, 0);
+});

@@ -101,6 +101,7 @@
     var extra = data.runtimeMinutes
       ? ' · o filme aberto tem ' + data.runtimeMinutes + ' min: o ✅ é o que confere'
       : ' · confira a duração antes de usar';
+    if (data.catalog) extra += ' · acervo: ' + data.catalog + ' vídeo(s)';
     say(filtered.length + ' vídeo(s)' + total + extra, 'ok');
 
     filtered.forEach(function (item) {
@@ -129,6 +130,7 @@
       meta.className = 'tk-meta';
       if (item.duration) meta.appendChild(chip(item.duration));
       if (item.minutes) meta.appendChild(chip(item.minutes + ' min'));
+      if (item.via === 'acervo') meta.appendChild(chip('📚 acervo', 'ok'));
       if (item.full) meta.appendChild(chip('🎬 filme', 'ok'));
       if (item.matchesRuntime === true) meta.appendChild(chip('✅ confere', 'ok'));
       else if (item.matchesRuntime === false) meta.appendChild(chip('duração diferente'));
@@ -173,6 +175,7 @@
     json('/api/admin/tokyo/play?id=' + encodeURIComponent(item.id))
       .then(function (data) {
         player.src = data.url;
+        try { player.load(); } catch (e) { /* ignore */ }
         player.play().catch(function () {
           playerInfo.textContent = 'Toque no ▶ do vídeo para começar (o navegador bloqueou o autoplay).';
         });
