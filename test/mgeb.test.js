@@ -36,8 +36,8 @@ before(async () => {
     }
     if (url.pathname === '/cdn/a.mp4' || url.pathname === '/cdn/ep1.mp4' || url.pathname === '/cdn/ep2.mp4') {
       if (req.headers.range) {
-        res.writeHead(206, { 'Content-Type': 'video/mp4', 'Content-Range': 'bytes 0-0/1000' });
-        return res.end('x');
+        res.writeHead(206, { 'Content-Type': 'video/mp4', 'Content-Range': 'bytes 0-40/1000' });
+        return res.end('\u0000\u0000\u0000 ftypisom\u0000\u0000\u0002\u0000isomiso2avc1mp41');
       }
       res.writeHead(200, { 'Content-Type': 'video/mp4' });
       return res.end('\u0000\u0000\u0000 ftypisom\u0000\u0000\u0002\u0000isomiso2avc1mp41');
@@ -97,4 +97,26 @@ test('entra na cascata e MGEB_ENABLED=0 tira', () => {
   } finally {
     delete process.env.MGEB_ENABLED;
   }
+});
+
+test('cota do CDN estourada: usa a opção sem token que for filme inteiro', async () => {
+  const sources = [
+    { file: `${base}/quota/a.mp4?username=x&token=abc`, type: 'mp4', label: 'Opção 1' },
+    { file: `${base}/short/clip.mp4`, type: 'mp4', label: 'Opção 2' },
+    { file: `${base}/full/film.mp4`, type: 'mp4', label: 'Opção 3' },
+    { file: `${base}/x/master.m3u8`, type: 'hls', label: 'Opção 4' }
+  ];
+  const html = `<script>var sources = ${JSON.stringify(sources)};\n</script>`;
+  const list = mgeb.extractMp4Candidates(html);
+  assert.deepEqual(list.map((c) => c.tokened), [true, false, false]);
+
+  const mvhd = (timescale, duration) => {
+    const b = Buffer.alloc(120);
+    b.write('ftypisom', 4, 'latin1');
+    b.write('mvhd', 32, 'latin1');
+    b.writeUInt32BE(timescale, 32 + 16);
+    b.writeUInt32BE(duration, 32 + 20);
+    return b;
+  };
+  assert.equal(mgeb.mp4DurationSec(mvhd(1000, 7474000)), 7474);
 });
