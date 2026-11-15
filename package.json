@@ -10,7 +10,8 @@
     "test:adproxy": "npm --prefix adproxy test",
     "pool:check": "node scripts/pool-check.js",
     "test": "node --test test/*.test.js",
-    "fallback:check": "node scripts/adshield-check.js"
+    "fallback:check": "node scripts/adshield-check.js",
+    "harvest": "node scripts/harvest.js"
   },
   "engines": {
     "node": ">=18"

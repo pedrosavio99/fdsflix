@@ -1082,6 +1082,25 @@
       <button id="tokyoClose" class="ghost" type="button" aria-label="Fechar">✕</button>
     </div>
     <div class="cfg-body">
+      <div class="cfg-card" id="catBox">
+        <div class="src-head">
+          <b>Catálogo de links <span id="catCount" class="src-no">…</span></b>
+          <span>
+            <button id="catHarvest" class="ghost" type="button" title="Procura MP4 estável no BitChute e no mgeb para os filmes populares e guarda no Supabase. Vai devagar de propósito.">Colher agora</button>
+            <button id="catStop" class="ghost" type="button" hidden>Parar</button>
+          </span>
+        </div>
+        <p id="catNote" class="pix-note" role="status"></p>
+        <div class="cfg-row" style="flex-wrap:wrap;gap:.4rem">
+          <input id="catId" type="text" inputmode="numeric" placeholder="id TMDB" aria-label="Id do TMDB" style="width:7rem">
+          <input id="catUrl" type="url" placeholder="https://…/filme.mp4 (sem token)" aria-label="Link do MP4" style="flex:1;min-width:12rem">
+          <label class="tk-only"><input id="catDub" type="checkbox"> dublado</label>
+          <button id="catAdd" class="ghost" type="button">Adicionar</button>
+        </div>
+        <pre id="catLog" class="pix-note" style="max-height:9rem;overflow:auto;white-space:pre-wrap;margin:.4rem 0 0" hidden></pre>
+        <div id="catList" class="src-list"></div>
+      </div>
+
       <div class="cfg-card" id="webBox">
         <div class="src-head">
           <b>Buscar na web</b>

@@ -1,0 +1,21 @@
+{
+ "version": 1,
+ "note": "Catalogo colhido em casa por scripts/harvest.js (IP residencial). Links estaveis, sem token. Nao edite a mao.",
+ "movies": {
+  "129": {
+   "title": "A Viagem de Chihiro",
+   "year": "2001",
+   "entries": [
+    {
+     "source": "bitchute",
+     "url": "https://seed131b.bitchute.com/myIfdiKTQAvU/BcyQtkDHdZQA.mp4",
+     "quality": "auto",
+     "cors": false,
+     "audioLang": "por",
+     "harvestedAt": "2026-11-15T22:23:13.953Z"
+    }
+   ]
+  }
+ },
+ "misses": {}
+}

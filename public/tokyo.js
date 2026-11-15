@@ -727,6 +727,7 @@
     if (srcTitle) srcTitle.textContent = context.title || 'Título aberto';
     extPing(1200).then(function (ok) { extReady = ok; paintExtState(); });
     if (!dlg.open) dlg.showModal();
+    loadCatalog(false);
     if (item && item.title) input.value = item.title;
     resultsEl.textContent = '';
     lastData = null;
@@ -745,6 +746,7 @@
 
   openBtn.addEventListener('click', function () {
     if (!dlg.open) dlg.showModal();
+    loadCatalog(false);
     input.focus();
     // Sem contexto (nenhum filme aberto no player), o teste de fontes não tem o que testar.
     if (context.id) runSources();
@@ -758,6 +760,104 @@
   form.addEventListener('submit', function (e) { e.preventDefault(); search(); });
   if (onlyFilms) onlyFilms.addEventListener('change', paint);
   dlg.addEventListener('close', stopPlayback);
+
+
+  // ---------- Catálogo de links (Supabase) ----------
+  var catCount = $('catCount');
+  var catNote = $('catNote');
+  var catLog = $('catLog');
+  var catList = $('catList');
+  var catHarvest = $('catHarvest');
+  var catStop = $('catStop');
+  var catTimer = null;
+
+  function catSay(text, kind) {
+    if (!catNote) return;
+    catNote.textContent = text || '';
+    catNote.className = 'pix-note' + (kind ? ' ' + kind : '');
+  }
+
+  function paintCatalog(data) {
+    var c = data.catalog || {};
+    var h = data.harvest || {};
+    if (catCount) {
+      catCount.textContent = (c.movies || 0) + ' filme(s) · ' + (c.dubbed || 0) + ' dublado(s) · ' + (c.storage === 'supabase' ? 'Supabase' : 'arquivo local');
+    }
+    var msg = '';
+    if (c.storage !== 'supabase') msg = 'Supabase não configurado: o catálogo fica só neste servidor (some quando o Render reinicia).';
+    else if (c.supabaseOk === false) msg = 'Supabase não respondeu: ' + (c.supabaseError || 'erro') + '.';
+    if (h.running) {
+      msg = 'Colhendo… ' + h.done + '/' + h.total + (h.current ? ' · ' + h.current : '') + ' · novos ' + h.added + ' · sem fonte ' + h.nothing + (h.pending ? ' · pendentes ' + h.pending : '');
+    } else if (h.endReason) {
+      msg = (msg ? msg + ' ' : '') + 'Última colheita: ' + h.endReason + ' (novos ' + h.added + ').';
+    }
+    if (data.relay) msg += ' Saída: ' + (data.relay.chain || []).join(' → ') + '.';
+    catSay(msg, c.supabaseOk === false ? 'err' : '');
+    if (catHarvest) catHarvest.disabled = Boolean(h.running);
+    if (catStop) catStop.hidden = !h.running;
+    if (catLog) {
+      catLog.hidden = !(h.log && h.log.length);
+      catLog.textContent = (h.log || []).join('\n');
+      catLog.scrollTop = catLog.scrollHeight;
+    }
+    if (catList) {
+      catList.textContent = '';
+      (c.recent || []).forEach(function (m) {
+        var row = document.createElement('div');
+        row.className = 'src-row';
+        var label = document.createElement('span');
+        label.textContent = m.title + (m.year ? ' (' + m.year + ')' : '') + ' · #' + m.id + ' · ' + (m.sources || []).join('+') + (m.dub ? ' · 🇧🇷 dublado' : '');
+        var del = document.createElement('button');
+        del.type = 'button';
+        del.className = 'ghost';
+        del.textContent = 'Remover';
+        del.addEventListener('click', function () {
+          if (!window.confirm('Remover "' + m.title + '" do catálogo?')) return;
+          json('/api/admin/catalog/' + encodeURIComponent(m.id), { method: 'DELETE' })
+            .then(function () { loadCatalog(true); })
+            .catch(function (err) { catSay(err.message, 'err'); });
+        });
+        row.appendChild(label);
+        row.appendChild(del);
+        catList.appendChild(row);
+      });
+    }
+    // Enquanto colhe e o painel está aberto, acompanha a cada 3 s.
+    clearTimeout(catTimer);
+    if (h.running && dlg.open) catTimer = setTimeout(function () { loadCatalog(false); }, 3000);
+  }
+
+  function loadCatalog(refresh) {
+    if (!catCount) return Promise.resolve();
+    return json('/api/admin/catalog' + (refresh ? '?refresh=1' : ''))
+      .then(paintCatalog)
+      .catch(function (err) { catSay('Catálogo indisponível: ' + err.message, 'err'); });
+  }
+
+  if (catHarvest) catHarvest.addEventListener('click', function () {
+    catHarvest.disabled = true;
+    json('/api/admin/catalog/harvest', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lists: 'popular,top_rated', pages: 3 }) })
+      .then(function () { return loadCatalog(false); })
+      .catch(function (err) { catSay(err.message, 'err'); catHarvest.disabled = false; });
+  });
+  if (catStop) catStop.addEventListener('click', function () {
+    json('/api/admin/catalog/stop', { method: 'POST' }).then(function () { return loadCatalog(false); }).catch(function (err) { catSay(err.message, 'err'); });
+  });
+  var catAdd = $('catAdd');
+  if (catAdd) catAdd.addEventListener('click', function () {
+    var id = ($('catId').value || '').trim();
+    var url = ($('catUrl').value || '').trim();
+    if (!id || !url) { catSay('Informe o id do TMDB e o link do MP4.', 'err'); return; }
+    catAdd.disabled = true;
+    catSay('Conferindo o link…');
+    json('/api/admin/catalog/add', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: id, url: url, audioLang: $('catDub').checked ? 'por' : '', title: context.id === id ? context.title : '' })
+    }).then(function () { $('catId').value = ''; $('catUrl').value = ''; return loadCatalog(true); })
+      .catch(function (err) { catSay(err.message, 'err'); })
+      .then(function () { catAdd.disabled = false; });
+  });
+  dlg.addEventListener('close', function () { clearTimeout(catTimer); });
 
   // Ponte para o player (index.html): "buscar este filme no acervo".
   window.fdsFlixTokyo = { openFor: openFor };

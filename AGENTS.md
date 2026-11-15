@@ -87,6 +87,34 @@ variável própria dele.
   Ex.: Chihiro (129) → "Opção 3", MP4 no bitchute, 125 min, áudio `por`. Poucos títulos têm essa opção
   (1 de 96 populares). A **página** do mgeb ainda é barrada de datacenter (Render/Worker 403): isso
   segue exigindo saída residencial/BR (`docs/RELAY-RESIDENCIAL.md`).
+- **Catálogo de links** (`lib/catalog.js`, `lib/catalogHarvest.js`, `scripts/harvest.js`, `CATALOG_ENABLED=0`
+  desliga): **a saída para sites que barram datacenter.** BitChute (API) e mgeb ficam atrás de Cloudflare,
+  mas o MP4 que apontam (`seedNNN.bitchute.com/.../id.mp4`) é **estável, sem token e abre de qualquer IP**.
+  O resultado `tmdbId → MP4` fica **no Supabase** (tabela `pix_settings`, uma linha por filme:
+  `catalog:<tmdbId>`; "procurei e não achei" em `catalogmiss:<tmdbId>`, refeito após 7 dias). O servidor
+  lê tudo na memória (renova a cada 5 min) e `data/catalog.json` é só semente/reserva (sem Supabase a
+  gravação vai para o arquivo, que some quando o Render reinicia). Link morto é descartado na hora
+  (`Range` cacheado); só entra URL sem token/assinatura (`isStableUrl`).
+  **Colher pelo painel:** Admin → Outras fontes → cartão "Catálogo" (Colher agora / Parar / Adicionar link à
+  mão / Remover). Rotas (admin): `GET /api/admin/catalog` (status + andamento), `POST .../harvest`
+  (`{ids,lists,pages,force,delay}`), `POST .../stop`, `POST .../add` (`{id,url,audioLang,title}`),
+  `DELETE .../:id`. A colheita roda no servidor, uma por vez, com pausa mínima de 2,5 s entre títulos, e
+  para sozinha após 4 desafios seguidos do Cloudflare. As buscas do BitChute saem por
+  `extractFetch.postJsonSmart` (direto → relay residencial/Wasmer `EXTRACT_RELAY_URL` → Worker), então do
+  Render o relay entra automaticamente se estiver configurado. **Não rode em rajada** (uma varredura de
+  ~300 chamadas fez o Cloudflare desafiar o IP de casa por horas). Pelo terminal: `npm run harvest --
+  --pages=3 --delay=4000` (mesmo job; grava no Supabase se o `.env` tiver as chaves). Testes:
+  `test/catalog.test.js`, `test/catalogStore.test.js`. **Ainda não medido:** se o Render consegue colher
+  direto do BitChute (do PC de casa passa; do Render depende do Cloudflare/relay) — veja `relay` no status.
+- **BitChute ao vivo** (`lib/bitchute.js`, `BITCHUTE_ENABLED=0` desliga): `POST api.bitchute.com/api/beta/
+  search/videos` (`sort` válido: `new|old|views`; **`relevance` dá HTTP 400**) + `/api/beta/video/media`
+  (devolve o MP4). Do Render o Cloudflare costuma desafiar; por isso existe o catálogo.
+- **PeerTube** (`lib/peertube.js`, `PEERTUBE_ENABLED=0` desliga): SepiaSearch (busca federada) +
+  `/api/v1/videos/<uuid>` da instância; MP4 com CORS aberto e `language.id` (pt ⇒ dublado). Aberto, sem
+  Cloudflare, mas filme recente quase não existe lá (2 de 116 populares).
+- **Descartadas (medido):** Dailymotion (busca aberta, mas o manifesto responde 403 `E005` — trava
+  deliberada, não contornar), Odysee (busca aberta; CDN exige Referer do site e devolve 429), ok.ru
+  (login), Rumble (sem resposta).
 - **Busca: o acervo vem dos CANAIS, não da busca do site.** A busca do tokyvideo devolve
   clipe/música para quase tudo ("um sonho de liberdade" → 69 resultados, nenhum o filme), então
   `lib/tokyoVideo.js` monta um índice com `/user/<canal>` (dá o id) + `/channel/<id>/videos?offset=N`
@@ -204,6 +232,6 @@ variável própria dele.
 
 ## Como rodar e testar
 
-- `npm start` (porta `PORT`, padrão 3000) · `npm test` (247 testes, `node --test test/*.test.js`).
+- `npm start` (porta `PORT`, padrão 3000) · `npm test` (257 testes, `node --test test/*.test.js`).
 - Manutenção/"mudamos de URL": tela "Site" do admin (`lib/siteStatus.js`, `public/sitegate.js`, `public/site.js`; tabela `pix_settings` no Supabase).
 - Docs: `docs/DEPLOY-RENDER.md`, `docs/VERCEL-POOL.md`, `docs/TV-AO-VIVO.md`, `docs/VISITANTES.md`, `docs/API.md`.

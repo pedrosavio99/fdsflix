@@ -16,6 +16,8 @@ const audioLang = require('./lib/audioLang');
 const streamOptions = require('./lib/streamOptions');
 const websearch = require('./lib/websearch');
 const extractFetch = require('./lib/extractFetch');
+const catalogStore = require('./lib/catalog');
+const catalogHarvest = require('./lib/catalogHarvest');
 const cineproRunner = require('./lib/cineproRunner');
 const { normalizeCineProUrl } = require('./lib/cineproUrl');
 const {
@@ -804,6 +806,61 @@ app.get('/api/admin/relay/test', requireApiKey, requireStatsKey, async (req, res
   } catch (err) {
     console.warn('[relay] teste falhou:', err.message);
     res.status(502).json({ error: 'O teste dos relays falhou.' });
+  }
+});
+
+// Catálogo de links resolvidos (Supabase): status, colheita em segundo plano, adicionar/remover.
+// Só administrador. A colheita vai devagar de propósito e sai pela cadeia direto → relay → Worker.
+app.get('/api/admin/catalog', requireApiKey, requireStatsKey, async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  try {
+    res.json({ catalog: await catalogStore.status({ refresh: req.query.refresh === '1' }), harvest: catalogHarvest.state(), relay: extractFetch.relayStatus() });
+  } catch (err) {
+    res.status(502).json({ error: 'Não consegui ler o catálogo agora.' });
+  }
+});
+
+app.post('/api/admin/catalog/harvest', requireApiKey, requireStatsKey, (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const r = catalogHarvest.start(req.body || {}, { onLog: (line) => console.log(`[catalogo] ${line}`) });
+  res.status(r.started ? 202 : 409).json(r);
+});
+
+app.post('/api/admin/catalog/stop', requireApiKey, requireStatsKey, (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.json(catalogHarvest.stop());
+});
+
+// Adiciona um link à mão: { id: <tmdb>, url: <mp4>, title?, year?, audioLang?: "por" }.
+app.post('/api/admin/catalog/add', requireApiKey, requireStatsKey, async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const id = String((req.body && req.body.id) || '').trim();
+  const url = String((req.body && req.body.url) || '').trim();
+  if (!/^\d{1,9}$/.test(id)) return res.status(400).json({ error: 'Informe o id do TMDB (só números).' });
+  if (!catalogStore.isStableUrl(url)) return res.status(400).json({ error: 'O link precisa ser https e sem token/assinatura.' });
+  if (!(await catalogStore.reachable(url, 8000))) return res.status(422).json({ error: 'Esse link não abriu (precisa responder a Range).' });
+  const dub = /^(por|pt|pt-br|dub)/i.test(String((req.body && req.body.audioLang) || ''));
+  try {
+    const where = await catalogStore.putMovie(id, {
+      title: String((req.body && req.body.title) || '').slice(0, 120) || `TMDB ${id}`,
+      year: String((req.body && req.body.year) || '').slice(0, 4),
+      entries: [{ source: 'manual', url, quality: 'auto', cors: req.body && req.body.cors === true, ...(dub ? { audioLang: 'por' } : {}), harvestedAt: new Date().toISOString() }]
+    });
+    res.json({ ok: true, id, storage: where });
+  } catch (err) {
+    res.status(502).json({ error: `Não consegui gravar: ${err.message}` });
+  }
+});
+
+app.delete('/api/admin/catalog/:id', requireApiKey, requireStatsKey, async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const id = String(req.params.id || '');
+  if (!/^\d{1,9}$/.test(id)) return res.status(400).json({ error: 'id inválido' });
+  try {
+    await catalogStore.removeMovie(id);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(502).json({ error: `Não consegui remover: ${err.message}` });
   }
 });
 
