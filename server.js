@@ -59,7 +59,7 @@ const TMDB_BASE = 'https://api.themoviedb.org/3';
 // API pública (opcional): se API_KEY estiver definida, /api/search, /api/popular
 // e /api/stream exigem o header x-api-key (ou ?key=). Sem ela, a API fica aberta.
 const API_KEY = String(process.env.API_KEY || '').trim();
-// URL pública do backend (ex.: https://fdsflix.onrender.com). Se vazia, é
+// URL pública do backend (ex.: https://fdsflix-80ya.onrender.com). Se vazia, é
 // derivada do próprio request — necessário para devolver URLs absolutas.
 const PUBLIC_BASE_URL = String(
   process.env.PUBLIC_BASE_URL ||
@@ -1187,7 +1187,7 @@ app.get('/api/pool/info', requireApiKey, requireStatsKey, (req, res) => {
 // nunca precisa ser refeito (só quando a interface do app mudar). O .zip sai com o endereço deste servidor.
 app.get('/api/admin/devices', requireApiKey, requireStatsKey, (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
-  const api = publicOrigin(req);
+  const { api, local } = rokuKit.resolveApi(publicOrigin(req), PORT);
   res.json({
     devices: [
       {
@@ -1197,6 +1197,7 @@ app.get('/api/admin/devices', requireApiKey, requireStatsKey, (req, res) => {
         file: 'fdsflix-roku.zip',
         download: '/api/admin/devices/roku.zip',
         api,
+        local,
         https: /^https:\/\//i.test(api)
       }
     ]
@@ -1206,7 +1207,7 @@ app.get('/api/admin/devices', requireApiKey, requireStatsKey, (req, res) => {
 app.get('/api/admin/devices/roku.zip', requireApiKey, requireStatsKey, (req, res) => {
   if (!rokuKit.kitAvailable()) return res.status(404).json({ error: 'A pasta roku/ não está neste servidor.' });
   try {
-    const kit = rokuKit.buildKit({ api: publicOrigin(req), key: API_KEY });
+    const kit = rokuKit.buildKit({ api: rokuKit.resolveApi(publicOrigin(req), PORT).api, key: API_KEY });
     res.setHeader('Content-Type', 'application/zip');
     res.setHeader('Content-Disposition', `attachment; filename="${kit.filename}"`);
     res.setHeader('Cache-Control', 'no-store');

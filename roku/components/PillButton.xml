@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<component name="PillButton" extends="Group">
+  <interface>
+    <field id="text" type="string" onChange="layout" />
+    <field id="width" type="float" value="240" onChange="layout" />
+    <field id="primary" type="boolean" value="true" onChange="refresh" />
+    <field id="selected" type="boolean" alwaysNotify="true" />
+  </interface>
+  <script type="text/brightscript" uri="pkg:/components/api.brs" />
+  <script type="text/brightscript" uri="pkg:/components/PillButton.brs" />
+  <children>
+    <Poster id="bg" uri="pkg:/images/pill_dark.9.png" width="240" height="58" />
+    <Label id="label" width="240" height="58" horizAlign="center" vertAlign="center" color="0xF2F2F7FF" />
+  </children>
+</component>

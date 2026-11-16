@@ -2,16 +2,21 @@ sub init()
   m.title = m.top.findNode("title")
   m.meta = m.top.findNode("meta")
   m.overview = m.top.findNode("overview")
-  m.poster = m.top.findNode("poster")
   m.backdrop = m.top.findNode("backdrop")
-  m.actions = m.top.findNode("actions")
+  m.playBtn = m.top.findNode("playBtn")
   m.seasons = m.top.findNode("seasons")
   m.eps = m.top.findNode("eps")
-  m.busy = m.top.findNode("busy")
+  m.spinner = m.top.findNode("spinner")
+  m.note = m.top.findNode("note")
+  m.panel = m.top.findNode("panel")
+  m.title.font = makeFont("pkg:/fonts/Inter-Black.ttf", 46)
+  m.meta.font = makeFont("pkg:/fonts/Inter-Regular.ttf", 20)
+  m.overview.font = makeFont("pkg:/fonts/Inter-Regular.ttf", 22)
+  m.note.font = makeFont("pkg:/fonts/Inter-Regular.ttf", 20)
   m.cur = invalid
   m.curSeason = 0
-  m.focusOn = "actions"
-  m.actions.observeField("buttonSelected", "onPlayMovie")
+  m.focusOn = "play"
+  m.playBtn.observeField("selected", "onPlayMovie")
   m.seasons.observeField("itemFocused", "onSeasonFocus")
   m.seasons.observeField("itemSelected", "onSeasonPick")
   m.eps.observeField("itemSelected", "onEpisodePick")
@@ -22,21 +27,24 @@ sub onItem()
   if it = invalid then return
   m.cur = it
   m.title.text = it.title
-  m.meta.text = it.year
+  m.meta.text = it.meta
   m.overview.text = it.overview
-  m.poster.uri = it.poster
-  m.backdrop.uri = ""
-  m.actions.visible = false
+  m.backdrop.uri = it.backdrop
+  m.playBtn.visible = false
+  m.panel.visible = false
   m.seasons.visible = false
   m.eps.visible = false
-  m.busy.visible = true
+  m.note.visible = false
+  m.spinner.visible = true
+  m.spinner.control = "start"
   m.curSeason = 0
   apiGet("/api/details?id=" + it.id + "&type=" + it.type, "onDetails")
 end sub
 
 sub onDetails(event as object)
   res = event.getData()
-  m.busy.visible = false
+  m.spinner.control = "stop"
+  m.spinner.visible = false
   d = invalid
   if res <> invalid and res.ok then d = res.data
   if d <> invalid
@@ -47,30 +55,34 @@ sub onDetails(event as object)
     if d.runtime <> invalid and d.runtime > 0 then parts.push(d.runtime.toStr() + " min")
     if d.rating <> invalid and d.rating > 0 then parts.push("★ " + Str(d.rating).trim())
     if d.genres <> invalid and d.genres.count() > 0 then parts.push(joinList(d.genres, ", "))
-    m.meta.text = joinList(parts, "  ·  ")
+    m.meta.text = joinList(parts, "   ·   ")
     if d.overview <> invalid and d.overview <> "" then m.overview.text = d.overview
-    if d.backdrop <> invalid and d.backdrop <> "" then m.backdrop.uri = posterUrl(d.backdrop, "w780")
+    if d.backdrop <> invalid and d.backdrop <> "" then m.backdrop.uri = posterUrl(d.backdrop, "w1280")
   end if
 
   if m.cur.type = "movie"
-    m.actions.visible = true
-    m.actions.setFocus(true)
-    m.focusOn = "actions"
+    m.playBtn.visible = true
+    m.playBtn.setFocus(true)
+    m.focusOn = "play"
+    if d = invalid and m.global.debug = true
+      m.note.text = failText("Detalhes indisponíveis.", res)
+      m.note.visible = true
+    end if
     return
   end if
 
   ' série: temporadas à esquerda, episódios à direita
   seasonList = []
   if d <> invalid and d.seasons <> invalid then seasonList = d.seasons
-  if seasonList.count() = 0 then seasonList = [{ n: 1, name: "Temporada 1" }]
+  if seasonList.count() = 0 then seasonList = [{ n: 1 }]
   root = CreateObject("roSGNode", "ContentNode")
   for each s in seasonList
     node = root.createChild("ContentNode")
     node.id = s.n.toStr()
-    nm = "Temporada " + s.n.toStr()
-    node.title = nm
+    node.title = "Temporada " + s.n.toStr()
   end for
   m.seasons.content = root
+  m.panel.visible = true
   m.seasons.visible = true
   m.eps.visible = true
   m.seasons.setFocus(true)
@@ -97,10 +109,18 @@ sub onSeason(event as object)
     for each ep in res.data.episodes
       node = root.createChild("ContentNode")
       node.id = ep.e.toStr()
-      label = ep.e.toStr() + ".  " + ep.name
-      if ep.runtime <> invalid and ep.runtime > 0 then label = label + "  (" + ep.runtime.toStr() + " min)"
-      node.title = label
+      node.title = ep.e.toStr() + ".  " + ep.name
+      runtime = ""
+      if ep.runtime <> invalid and ep.runtime > 0 then runtime = ep.runtime.toStr() + " min"
+      node.ShortDescriptionLine2 = runtime
+      ov = ""
+      if ep.overview <> invalid then ov = ep.overview
+      node.Description = ov
+      node.HDPosterUrl = posterUrl(ep.still, "w300")
     end for
+  else
+    m.note.text = failText("Não foi possível carregar os episódios.", res)
+    m.note.visible = true
   end if
   m.eps.content = root
 end sub
@@ -139,8 +159,14 @@ function onKeyEvent(key as string, press as boolean) as boolean
   return false
 end function
 
-' Chamado pela cena para devolver o foco ao abrir de novo.
+' Chamado pela cena para devolver o foco depois do vídeo.
 sub focusMain()
   if m.cur = invalid then return
-  if m.cur.type = "movie" then m.actions.setFocus(true) else m.seasons.setFocus(true)
+  if m.cur.type = "movie"
+    m.playBtn.setFocus(true)
+  else if m.focusOn = "eps"
+    m.eps.setFocus(true)
+  else
+    m.seasons.setFocus(true)
+  end if
 end sub

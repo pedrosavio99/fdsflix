@@ -50,3 +50,7 @@ código dele neste projeto; o adaptador em `lib/fallbackCascade.js` só funciona
   `public/vendor/mp4box/LICENSE-mp4box`.
 - Como é usado: copiado em `public/vendor/mp4box/` e mapeado por importmap (`mp4box`) em `public/index.html`.
   Lê o índice do MP4, extrai as amostras de vídeo (para o decodificador) e corta o áudio em fragmentos para o MediaSource.
+
+## Inter (fonte do app Roku)
+
+`roku/fonts/Inter-*.ttf` — Inter (Rasmus Andersson), SIL Open Font License 1.1, obtida do pacote `@fontsource/inter` (subconjunto latin, convertido de WOFF para TTF).

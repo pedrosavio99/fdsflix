@@ -274,10 +274,28 @@ e `GET /api/admin/devices/roku.zip` (monta na hora com `lib/rokuKit.js`, embute 
   (options) = "Outra versão" (usa `skip`/`src`/`sv` como no site, retoma a posição); troca sozinha se o vídeo errar ou a duração diferir de
   `expectMin`; TV ao vivo pula fonte `mode:"page"` (página de player, que o Roku não renderiza).
 - Legenda: o app pede `/api/subtitle.srt` (o Roku lê SRT externo; o servidor converte o WebVTT com `vttToSrt` em `lib/subtitles.js`).
+- **Design do app (pesquisado nas diretrizes do Roku):** 1280x720; zona segura de ação 64,35 → 1216,685 (nada importante fora dela; textos a
+  96 px da borda nas telas de detalhe); texto de 20–22 px no mínimo, títulos 44–46 px, fonte **Inter** (a do site, TTF convertido de
+  `@fontsource/inter`, `roku/fonts/`, licença OFL); cores = variáveis do site (`#0b0b10`, `#14141d`, `#a9a9bd`, `#e50914`). Padrão da home =
+  **painel de destaque do título em foco** (fundo = backdrop do item com gradiente `overlay_hero.png`, título/ano/nota/gêneros/sinopse que mudam
+  ao navegar, backdrop com debounce de 0,45 s) + UMA fileira de pôsteres 160x240 por vez, título da fileira desenhado por nós (não pelo RowList).
+  Componentes próprios: `NavBar` (abas: atual sublinhada, foco em pílula vermelha), `PillButton`, `PosterItem`, `LiveItem` (cartão de canal),
+  `EpisodeItem` (miniatura + título + sinopse), `SearchScreen` (MiniKeyboard + resultados ao digitar, com atraso de 0,8 s). Painel escuro atrás da
+  lista de episódios (o backdrop claro deixava o texto ilegível). Simulação do layout (HTML com as mesmas coordenadas) conferida; NÃO foi vista numa TV.
+- **Diagnóstico na tela:** o zip do admin sai com `"debug": true` em `config.json` e, se uma chamada falhar, o app mostra `[erro · status · URL]`
+  (`failText` em `api.brs`). Para um build público use `buildKit({ debug:false })`: o público nunca vê detalhe técnico. Tela vazia/"não foi possível
+  carregar" quase sempre é endereço errado no `config.json`. **Baixado de `localhost`, o zip embute o IP do PC na rede (`resolveApi`)**; a TV precisa
+  estar no mesmo Wi-Fi e o servidor ligado. O mais seguro é baixar pelo site publicado (https).
 - Texto do app é neutro (regra do público só vê o vídeo; teste em `test/roku.test.js` varre as frases do app).
+- **Bugs que só o emulador mostrou (v1 do app, "não carregou nada"):** (1) `LoadConfig` usava `type(parsed.api)="roString"` e caía no endereço
+  padrão (`fdsflix.onrender.com`, **suspenso**: HTTP 503 "Service Suspended"; o endereço atual do backend é `https://fdsflix-80ya.onrender.com`, que agora é o padrão do app); (2)
+  `scene.setFocus(true)` no `main.brs` tirava o foco da barra de abas: tela abria e o controle não fazia nada; (3) `Dialog.message = [texto]`
+  (no `Dialog` clássico é texto) → erro em qualquer mensagem; (4) logo de canal é objeto `{u,a,d}`, não texto. Corrigidos, com testes de
+  regressão em `test/roku.test.js`. Rode o app no emulador antes de entregar (ver `roku/LEIA-ME.md`). Com `debug:true` o app mostra no rodapé
+  "servidor: <endereço> · config ok" — se aparecer "CONFIG NAO LIDO", o `config.json` não foi lido.
 - **Validação feita:** `bsc` (BrighterScript 0.73.8) compila o pacote sem erro (`bsc --rootDir roku --files "manifest" "source/**/*"
   "components/**/*" "config.json" --createPackage false --copyToStaging false`), e o zip gerado também. **NÃO foi executado num Roku**
-  (sem aparelho; o emulador `brs-node` não rodou aqui). Incertezas a conferir na TV: nome do campo de legenda externa (`SubtitleTracks`
+  (sem aparelho), mas foi **executado no emulador `brs-node`** (home, detalhe, séries/episódios, busca, TV ao vivo, pedido de vídeo; sem erros no log). Incertezas a conferir na TV: nome do campo de legenda externa (`SubtitleTracks`
   + `subtitleTrack`), `streamFormat "ts"` na TV ao vivo e o visual do 9-patch de foco (`roku/images/focus.9.png`).
 - Instalar: modo desenvolvedor da TV (Home×3, ↑↑, →←→←→), `http://IP-DA-TV` (usuário `rokudev`) → Upload → Install. Só um canal de
   desenvolvedor por vez (instalar substitui o anterior).
@@ -306,6 +324,6 @@ e `GET /api/admin/devices/roku.zip` (monta na hora com `lib/rokuKit.js`, embute 
 
 ## Como rodar e testar
 
-- `npm start` (porta `PORT`, padrão 3000) · `npm test` (283 testes, `node --test test/*.test.js`).
+- `npm start` (porta `PORT`, padrão 3000) · `npm test` (289 testes, `node --test test/*.test.js`).
 - Manutenção/"mudamos de URL": tela "Site" do admin (`lib/siteStatus.js`, `public/sitegate.js`, `public/site.js`; tabela `pix_settings` no Supabase).
 - Docs: `docs/DEPLOY-RENDER.md`, `docs/VERCEL-POOL.md`, `docs/TV-AO-VIVO.md`, `docs/VISITANTES.md`, `docs/API.md`.

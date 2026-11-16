@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<component name="SearchScreen" extends="Group">
+  <interface>
+    <field id="picked" type="assocarray" alwaysNotify="true" />
+    <field id="closed" type="boolean" alwaysNotify="true" />
+    <function name="reset" />
+  </interface>
+  <script type="text/brightscript" uri="pkg:/components/api.brs" />
+  <script type="text/brightscript" uri="pkg:/components/SearchScreen.brs" />
+  <children>
+    <Rectangle id="bg" width="1280" height="720" color="0x0B0B10FF" />
+    <Poster id="logo" translation="[64,30]" width="170" height="56" loadDisplayMode="scaleToFit" uri="pkg:/images/logo.png" />
+    <Label id="head" translation="[96,112]" width="700" height="52" vertAlign="center" text="Buscar" color="0xFFFFFFFF" />
+    <MiniKeyboard id="kb" translation="[96,184]" />
+    <Label id="hint" translation="[560,640]" width="656" height="40" wrap="true" color="0x6F6F85FF" text="Para ver os resultados, aperte Play/Pause ou a seta para a direita." />
+    <Label id="msg" translation="[560,184]" width="656" height="100" wrap="true" color="0xA9A9BDFF" text="Digite o nome de um filme ou série." />
+    <MarkupGrid id="grid" translation="[560,170]" itemComponentName="PosterItem" itemSize="[136,204]" itemSpacing="[16,16]" numColumns="4" numRows="2" focusBitmapUri="pkg:/images/focus.9.png" visible="false" />
+    <BusySpinner id="spinner" translation="[860,300]" uri="pkg:/images/spinner.png" spinInterval="1.2" visible="false" />
+    <Timer id="debounce" duration="0.8" repeat="false" />
+  </children>
+</component>

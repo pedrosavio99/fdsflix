@@ -1,29 +1,60 @@
-' Cena principal: menu, fileiras, detalhe, busca, TV ao vivo e player.
-' Regra do dono: o público só vê o vídeo. Nenhuma mensagem aqui cita servidor, fonte ou motivo técnico.
+' Cena principal: abas, destaque do título em foco, fileiras, detalhe, busca, TV ao vivo e player.
+' Regra do dono: o público só vê o vídeo. Nenhuma mensagem aqui cita servidor, fonte ou motivo técnico
+' (só com debug=true no config.json, que vem no zip baixado pelo admin).
 
 sub init()
-  m.menu = m.top.findNode("menu")
+  m.nav = m.top.findNode("nav")
   m.rows = m.top.findNode("rows")
+  m.liveRows = m.top.findNode("liveRows")
   m.detail = m.top.findNode("detail")
+  m.search = m.top.findNode("search")
   m.player = m.top.findNode("player")
-  m.loading = m.top.findNode("loading")
+  m.spinner = m.top.findNode("spinner")
   m.empty = m.top.findNode("empty")
   m.busyLayer = m.top.findNode("busyLayer")
   m.busyText = m.top.findNode("busyText")
+  m.busySpinner = m.top.findNode("busySpinner")
+  m.heroBg = m.top.findNode("heroBg")
+  m.heroOverlay = m.top.findNode("heroOverlay")
+  m.heroTitle = m.top.findNode("heroTitle")
+  m.heroMeta = m.top.findNode("heroMeta")
+  m.heroOverview = m.top.findNode("heroOverview")
+  m.rowTitle = m.top.findNode("rowTitle")
+  m.heroTimer = m.top.findNode("heroTimer")
+  if m.global.debug = true
+    info = m.top.findNode("debugInfo")
+    info.font = makeFont("pkg:/fonts/Inter-Regular.ttf", 15)
+    cfgState = "config ok"
+    if m.global.configLoaded <> true then cfgState = "CONFIG NAO LIDO (usando endereco padrao)"
+    info.text = "servidor: " + m.global.apiBase + "  ·  " + cfgState
+    info.visible = true
+  end if
 
-  m.menu.buttons = ["Início", "Filmes", "Séries", "TV ao vivo", "Buscar"]
-  m.menu.observeField("buttonSelected", "onMenu")
+  m.heroTitle.font = makeFont("pkg:/fonts/Inter-Black.ttf", 44)
+  m.heroMeta.font = makeFont("pkg:/fonts/Inter-Regular.ttf", 20)
+  m.heroOverview.font = makeFont("pkg:/fonts/Inter-Regular.ttf", 22)
+  m.rowTitle.font = makeFont("pkg:/fonts/Inter-Bold.ttf", 24)
+  m.empty.font = makeFont("pkg:/fonts/Inter-Regular.ttf", 24)
+  m.busyText.font = makeFont("pkg:/fonts/Inter-Bold.ttf", 24)
+
+  m.nav.tabs = ["Início", "Filmes", "Séries", "TV ao vivo", "Buscar"]
+  m.nav.observeField("activated", "onNav")
   m.rows.observeField("rowItemSelected", "onItemPick")
   m.rows.observeField("rowItemFocused", "onRowFocus")
+  m.liveRows.observeField("rowItemSelected", "onItemPick")
+  m.liveRows.observeField("rowItemFocused", "onRowFocus")
   m.detail.observeField("playRequest", "onPlayRequest")
   m.detail.observeField("closed", "onDetailClosed")
+  m.search.observeField("picked", "onSearchPicked")
+  m.search.observeField("closed", "onSearchClosed")
   m.player.observeField("state", "onPlayerState")
   m.player.observeField("duration", "onPlayerDuration")
+  m.heroTimer.observeField("fire", "onHeroTimer")
 
   m.movieRows = { "popular-movies": 1, "top-movies": 1, "now-playing": 1, "g-action": 1, "g-comedy": 1, "g-horror": 1, "g-scifi": 1, "upcoming": 1, "g-animation": 1, "g-romance": 1, "g-thriller": 1, "g-crime": 1, "g-adventure": 1, "g-family": 1, "g-docs": 1 }
   m.tvRows = { "popular-tv": 1, "top-tv": 1, "airing": 1, "tv-drama": 1, "tv-comedy": 1, "tv-anime": 1 }
 
-  m.mode = "browse"        ' browse | detail | player
+  m.mode = "browse"        ' browse | detail | search | player
   m.tab = 0
   m.loadToken = 0
   m.rowQueue = []
@@ -32,19 +63,27 @@ sub init()
   m.rowsShown = 0
   m.homeRows = invalid
   m.play = invalid
+  m.active = m.rows
+  m.pendingBackdrop = ""
   m.langByTitle = {}
-  m.menu.setFocus(true)
+  m.nav.setFocus(true)
   loadTab(0)
 end sub
 
 ' ---------------------------------------------------------------- abas
 
-sub onMenu()
-  loadTab(m.menu.buttonSelected)
+sub onNav()
+  idx = m.nav.activated
+  if idx = 4
+    openSearch()
+  else
+    loadTab(idx)
+  end if
 end sub
 
 sub loadTab(idx as integer)
   m.tab = idx
+  m.nav.selected = idx
   m.loadToken = m.loadToken + 1
   m.rowQueue = []
   m.rowNext = 0
@@ -52,23 +91,26 @@ sub loadTab(idx as integer)
   m.rowsShown = 0
   m.rowRoot = CreateObject("roSGNode", "ContentNode")
   m.rows.visible = false
+  m.liveRows.visible = false
   m.empty.visible = false
-  m.focusRowsWhenReady = (m.mode = "browse")
+  clearHero()
+  m.rowTitle.text = ""
+  if idx = 3 then m.active = m.liveRows else m.active = m.rows
+  m.focusRowsWhenReady = (m.mode = "browse" and not m.nav.isInFocusChain())
+  showSpinner(true)
 
-  if idx = 4
-    m.loading.visible = false
-    openSearch()
-  else if idx = 3
-    m.loading.visible = true
+  if idx = 3
     apiGet("/api/live/channels", "onLive", m.loadToken.toStr())
+  else if m.homeRows = invalid
+    apiGet("/api/home", "onHome", m.loadToken.toStr())
   else
-    m.loading.visible = true
-    if m.homeRows = invalid
-      apiGet("/api/home", "onHome", m.loadToken.toStr())
-    else
-      buildQueue()
-    end if
+    buildQueue()
   end if
+end sub
+
+sub showSpinner(on as boolean)
+  m.spinner.visible = on
+  if on then m.spinner.control = "start" else m.spinner.control = "stop"
 end sub
 
 sub onHome(event as object)
@@ -78,7 +120,7 @@ sub onHome(event as object)
     m.homeRows = res.data.rows
     buildQueue()
   else
-    showEmpty("Não foi possível carregar agora. Aperte OK em uma aba para tentar de novo.")
+    showEmpty(failText("Não foi possível carregar agora. Escolha a aba de novo para tentar outra vez.", res))
   end if
 end sub
 
@@ -95,7 +137,6 @@ sub buildQueue()
   end for
   m.rowQueue = q
   m.rowNext = 0
-  loadNextRow()
   loadNextRow()
 end sub
 
@@ -119,18 +160,20 @@ sub onRow(event as object)
     row = CreateObject("roSGNode", "ContentNode")
     row.title = title
     for each it in res.data.results
-      big = posterUrl(it.poster, "w342")
-      small = posterUrl(it.poster, "w185")
       year = ""
       if it.year <> invalid then year = it.year
       ov = ""
       if it.overview <> invalid then ov = it.overview
-      row.appendChild(makeItem(it.type, it.id, it.title, small, big, year, ov, it.rating))
+      back = ""
+      if it.backdrop <> invalid and it.backdrop <> "" then back = posterUrl(it.backdrop, "w780")
+      row.appendChild(makeItem(it.type, it.id, it.title, posterUrl(it.poster, "w185"), posterUrl(it.poster, "w342"), back, year, ov, it.rating, genreText(it.genres)))
     end for
     addRow(row)
+  else if m.rowsShown = 0 and m.rowNext >= m.rowQueue.count()
+    showEmpty(failText("Nada para mostrar agora.", res))
   end if
+  ' carrega 3 fileiras logo de cara; as outras vêm conforme a pessoa desce
   if m.rowNext < m.rowQueue.count() and m.rowsShown < 3 then loadNextRow()
-  if m.rowsShown = 0 and m.rowNext >= m.rowQueue.count() then showEmpty("Nada para mostrar agora.")
 end sub
 
 sub addRow(row as object)
@@ -139,24 +182,66 @@ sub addRow(row as object)
   if m.rowsShown = 1
     m.rows.content = m.rowRoot
     m.rows.visible = true
-    m.loading.visible = false
+    showSpinner(false)
     m.empty.visible = false
+    m.heroBg.visible = true
+    m.heroOverlay.visible = true
+    showHero(row.getChild(0), row.title)
     if m.focusRowsWhenReady and m.mode = "browse" then m.rows.setFocus(true)
   end if
 end sub
 
 sub showEmpty(text as string)
-  m.loading.visible = false
+  showSpinner(false)
   m.rows.visible = false
+  m.liveRows.visible = false
   m.empty.text = text
   m.empty.visible = true
 end sub
 
-' Carrega mais fileiras conforme a pessoa desce.
+' ---------------------------------------------------------------- destaque (título em foco)
+
+sub clearHero()
+  m.heroBg.visible = false
+  m.heroBg.uri = ""
+  m.heroOverlay.visible = false
+  m.heroTitle.text = ""
+  m.heroMeta.text = ""
+  m.heroOverview.text = ""
+  m.pendingBackdrop = ""
+end sub
+
+sub showHero(node as object, rowTitleText as string)
+  if node = invalid then return
+  m.rowTitle.text = rowTitleText
+  m.heroTitle.text = node.title
+  if m.tab = 3
+    m.heroMeta.text = rowTitleText
+    m.heroOverview.text = ""
+    return
+  end if
+  rating = invalid
+  if node.StarRating > 0 then rating = node.StarRating / 10.0
+  m.heroMeta.text = metaLine(node.ReleaseDate, rating, node.ShortDescriptionLine2)
+  m.heroOverview.text = node.Description
+  m.pendingBackdrop = node.HDBackgroundImageUrl
+  m.heroTimer.control = "stop"
+  m.heroTimer.control = "start"
+end sub
+
+sub onHeroTimer()
+  if m.pendingBackdrop <> "" and m.pendingBackdrop <> m.heroBg.uri then m.heroBg.uri = m.pendingBackdrop
+end sub
+
+' Carrega mais fileiras conforme a pessoa desce e atualiza o destaque.
 sub onRowFocus()
-  f = m.rows.rowItemFocused
-  if f = invalid then return
-  if f[0] >= m.rowsShown - 2 and m.tab < 3 then loadNextRow()
+  rl = m.active
+  f = rl.rowItemFocused
+  if f = invalid or rl.content = invalid then return
+  rowNode = rl.content.getChild(f[0])
+  if rowNode = invalid then return
+  showHero(rowNode.getChild(f[1]), rowNode.title)
+  if m.tab < 3 and f[0] >= m.rowsShown - 2 then loadNextRow()
 end sub
 
 ' ---------------------------------------------------------------- TV ao vivo
@@ -165,7 +250,7 @@ sub onLive(event as object)
   res = event.getData()
   if res = invalid or res.tag <> m.loadToken.toStr() then return
   if not res.ok or res.data = invalid or res.data.channels = invalid
-    showEmpty("Não foi possível carregar agora.")
+    showEmpty(failText("Não foi possível carregar agora. Escolha a aba de novo para tentar outra vez.", res))
     return
   end if
   root = CreateObject("roSGNode", "ContentNode")
@@ -177,11 +262,14 @@ sub onLive(event as object)
     for each ch in res.data.channels
       if ch.group = g and ch.status <> "down"
         logo = ""
-        if type(ch.logo) = "roString" or type(ch.logo) = "String"
-          logo = ch.logo
-          if Left(logo, 4) <> "http" then logo = m.global.apiBase + logo
+        bg = ""
+        lg = ch.logo
+        if lg <> invalid and type(lg) = "roAssociativeArray"
+          if lg.u <> invalid then logo = lg.u
+          if lg.a <> invalid and lg.a.count() > 0 then bg = lg.a[0]
+          if logo <> "" and Left(logo, 4) <> "http" then logo = m.global.apiBase + logo
         end if
-        row.appendChild(makeItem("live", ch.id, ch.name, logo, logo, "", "", invalid))
+        row.appendChild(makeItem("live", ch.id, ch.name, logo, logo, "", "", "", invalid, bg))
       end if
     end for
     if row.getChildCount() > 0 then root.appendChild(row)
@@ -191,79 +279,51 @@ sub onLive(event as object)
     return
   end if
   m.rowsShown = root.getChildCount()
-  m.rows.content = root
-  m.rows.visible = true
-  m.loading.visible = false
-  if m.focusRowsWhenReady and m.mode = "browse" then m.rows.setFocus(true)
+  m.liveRows.content = root
+  m.liveRows.visible = true
+  showSpinner(false)
+  showHero(root.getChild(0).getChild(0), root.getChild(0).title)
+  if m.focusRowsWhenReady and m.mode = "browse" then m.liveRows.setFocus(true)
 end sub
 
 ' ---------------------------------------------------------------- busca
 
 sub openSearch()
-  dlg = CreateObject("roSGNode", "KeyboardDialog")
-  dlg.title = "Buscar filmes e séries"
-  dlg.buttons = ["Buscar", "Cancelar"]
-  dlg.observeFieldScoped("buttonSelected", "onSearchButton")
-  m.top.dialog = dlg
+  m.mode = "search"
+  m.nav.visible = false
+  m.rows.visible = false
+  m.liveRows.visible = false
+  m.search.visible = true
+  m.search.callFunc("reset")
 end sub
 
-sub onSearchButton(event as object)
-  dlg = event.getRoSGNode()
-  idx = event.getData()
-  text = dlg.text
-  dlg.close = true
-  if idx = 0 and Len(text) > 0
-    m.loading.visible = true
-    m.loadToken = m.loadToken + 1
-    apiGet("/api/search?q=" + urlEnc(text), "onSearch", m.loadToken.toStr() + "|" + text)
-  else
-    m.menu.setFocus(true)
-  end if
+sub onSearchClosed()
+  m.search.visible = false
+  m.nav.visible = true
+  m.mode = "browse"
+  if m.active.visible then m.active.setFocus(true) else m.nav.setFocus(true)
+  m.rows.visible = (m.active = m.rows and m.rowsShown > 0)
+  m.liveRows.visible = (m.active = m.liveRows and m.rowsShown > 0)
+  m.nav.selected = m.tab
 end sub
 
-sub onSearch(event as object)
-  res = event.getData()
-  if res = invalid then return
-  sep = Instr(1, res.tag, "|")
-  if sep < 1 or Left(res.tag, sep - 1) <> m.loadToken.toStr() then return
-  m.loading.visible = false
-  movies = CreateObject("roSGNode", "ContentNode")
-  movies.title = "Filmes"
-  shows = CreateObject("roSGNode", "ContentNode")
-  shows.title = "Séries"
-  if res.ok and res.data <> invalid and res.data.results <> invalid
-    for each it in res.data.results
-      if it.poster <> invalid and it.poster <> ""
-        year = ""
-        if it.year <> invalid then year = it.year
-        ov = ""
-        if it.overview <> invalid then ov = it.overview
-        node = makeItem(it.type, it.id, it.title, posterUrl(it.poster, "w185"), posterUrl(it.poster, "w342"), year, ov, it.rating)
-        if it.type = "tv" then shows.appendChild(node) else movies.appendChild(node)
-      end if
-    end for
-  end if
-  root = CreateObject("roSGNode", "ContentNode")
-  if movies.getChildCount() > 0 then root.appendChild(movies)
-  if shows.getChildCount() > 0 then root.appendChild(shows)
-  if root.getChildCount() = 0
-    showEmpty("Nada encontrado para " + Mid(res.tag, sep + 1) + ".")
-    m.menu.setFocus(true)
-    return
-  end if
-  m.rowsShown = root.getChildCount()
-  m.rows.content = root
-  m.rows.visible = true
-  m.empty.visible = false
-  m.rows.setFocus(true)
+sub onSearchPicked(event as object)
+  it = event.getData()
+  if it = invalid then return
+  m.search.visible = false
+  m.mode = "detail"
+  m.detail.visible = true
+  m.detail.item = it
+  m.detail.setFocus(true)
 end sub
 
 ' ---------------------------------------------------------------- escolher um item
 
 sub onItemPick()
-  sel = m.rows.rowItemSelected
-  if sel = invalid or m.rows.content = invalid then return
-  node = m.rows.content.getChild(sel[0]).getChild(sel[1])
+  rl = m.active
+  sel = rl.rowItemSelected
+  if sel = invalid or rl.content = invalid then return
+  node = rl.content.getChild(sel[0]).getChild(sel[1])
   if node = invalid then return
   colon = Instr(1, node.id, ":")
   kind = Left(node.id, colon - 1)
@@ -271,21 +331,35 @@ sub onItemPick()
   if kind = "live"
     startLive(id, node.title)
   else
+    rating = invalid
+    if node.StarRating > 0 then rating = node.StarRating / 10.0
     m.mode = "detail"
-    m.menu.visible = false
+    m.nav.visible = false
     m.rows.visible = false
+    m.heroBg.visible = false
+    m.heroOverlay.visible = false
+    m.heroTitle.visible = false
+    m.heroMeta.visible = false
+    m.heroOverview.visible = false
+    m.rowTitle.visible = false
     m.detail.visible = true
-    m.detail.item = { type: kind, id: id, title: node.title, year: node.ReleaseDate, overview: node.Description, poster: node.HDBackgroundImageUrl }
+    m.detail.item = { type: kind, id: id, title: node.title, year: node.ReleaseDate, overview: node.Description, backdrop: node.HDBackgroundImageUrl, meta: metaLine(node.ReleaseDate, rating, node.ShortDescriptionLine2) }
     m.detail.setFocus(true)
   end if
 end sub
 
 sub onDetailClosed()
   m.detail.visible = false
-  m.menu.visible = true
-  m.rows.visible = true
+  m.nav.visible = true
+  m.rows.visible = (m.active = m.rows)
+  m.heroBg.visible = (m.tab < 3)
+  m.heroOverlay.visible = (m.tab < 3)
+  m.heroTitle.visible = true
+  m.heroMeta.visible = true
+  m.heroOverview.visible = true
+  m.rowTitle.visible = true
   m.mode = "browse"
-  m.rows.setFocus(true)
+  if m.active.visible then m.active.setFocus(true) else m.nav.setFocus(true)
 end sub
 
 ' ---------------------------------------------------------------- tocar (filme / episódio)
@@ -560,17 +634,19 @@ end sub
 sub showBusy(text as string)
   m.busyText.text = text
   m.busyLayer.visible = true
+  m.busySpinner.control = "start"
 end sub
 
 sub hideBusy()
   m.busyLayer.visible = false
+  m.busySpinner.control = "stop"
 end sub
 
 sub showDialog(title as string, text as string, buttons as object, callback as string)
   hideBusy()
   dlg = CreateObject("roSGNode", "Dialog")
   dlg.title = title
-  dlg.message = [text]
+  dlg.message = text
   dlg.buttons = buttons
   dlg.observeFieldScoped("buttonSelected", callback)
   m.top.dialog = dlg
@@ -598,18 +674,17 @@ function onKeyEvent(key as string, press as boolean) as boolean
   end if
 
   if m.mode = "browse"
-    if key = "down" and m.menu.isInFocusChain() and m.rows.visible
-      m.rows.setFocus(true)
+    if key = "down" and m.nav.isInFocusChain() and m.active.visible
+      m.active.setFocus(true)
       return true
-    else if key = "up" and m.rows.isInFocusChain()
-      m.menu.setFocus(true)
+    else if key = "up" and m.active.isInFocusChain()
+      m.nav.setFocus(true)
       return true
     else if key = "back"
-      if m.rows.isInFocusChain()
-        m.menu.setFocus(true)
+      if m.active.isInFocusChain()
+        m.nav.setFocus(true)
         return true
       else if m.tab > 0
-        m.menu.focusButton = 0
         loadTab(0)
         return true
       end if

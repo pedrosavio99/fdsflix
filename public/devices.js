@@ -79,8 +79,10 @@
       dl.appendChild(el('span', 'Servidor embutido: ' + d.api, 'dev-api'));
       card.appendChild(dl);
       if (!d.available) card.appendChild(el('p', 'A pasta do app não está neste servidor.'));
-      if (!d.https) {
-        card.appendChild(el('p', 'Atenção: este endereço não é HTTPS (parece teste local). Baixe pelo site publicado para o app apontar para o servidor certo.', 'cfg-note'));
+      if (d.local) {
+        card.appendChild(el('p', 'Teste local: o app vai falar com este PC (' + d.api + '). A TV precisa estar no mesmo Wi-Fi e o servidor precisa continuar rodando; se o firewall bloquear, libere a porta. Para uso normal, baixe pelo site publicado.', 'cfg-note'));
+      } else if (!d.https) {
+        card.appendChild(el('p', 'Atenção: este endereço não é HTTPS. Baixe pelo site publicado para o app apontar para o servidor certo.', 'cfg-note'));
       }
 
       var man = el('details', null, 'dev-manual');

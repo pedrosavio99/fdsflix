@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<component name="LiveItem" extends="Group">
+  <interface>
+    <field id="itemContent" type="node" onChange="onContent" />
+    <field id="width" type="float" />
+    <field id="height" type="float" />
+  </interface>
+  <script type="text/brightscript" uri="pkg:/components/api.brs" />
+  <script type="text/brightscript" uri="pkg:/components/LiveItem.brs" />
+  <children>
+    <Rectangle id="card" color="0x1B1B27FF" width="200" height="112" />
+    <Poster id="logo" translation="[20,12]" width="160" height="88" loadDisplayMode="scaleToFit" />
+    <Label id="name" translation="[0,118]" width="200" height="28" color="0xF2F2F7FF" />
+  </children>
+</component>

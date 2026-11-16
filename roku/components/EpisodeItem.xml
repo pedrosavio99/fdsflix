@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<component name="EpisodeItem" extends="Group">
+  <interface>
+    <field id="itemContent" type="node" onChange="onContent" />
+    <field id="width" type="float" />
+    <field id="height" type="float" />
+  </interface>
+  <script type="text/brightscript" uri="pkg:/components/api.brs" />
+  <script type="text/brightscript" uri="pkg:/components/EpisodeItem.brs" />
+  <children>
+    <Rectangle id="thumbBg" translation="[8,8]" width="128" height="72" color="0x1B1B27FF" />
+    <Poster id="thumb" translation="[8,8]" width="128" height="72" loadDisplayMode="scaleToZoom" />
+    <Label id="title" translation="[152,8]" width="700" height="30" color="0xF2F2F7FF" />
+    <Label id="info" translation="[152,40]" width="700" height="44" wrap="true" maxLines="2" lineSpacing="2" color="0xA9A9BDFF" />
+  </children>
+</component>

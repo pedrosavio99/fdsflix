@@ -72,15 +72,49 @@ function srtUrl(u as string) as string
   return u
 end function
 
-' Item de lista (id = "movie:603" | "tv:1396" | "live:globo"). `big` é o pôster maior, usado na tela de detalhes.
-function makeItem(kind as string, id as dynamic, title as string, poster as string, big as string, year as string, overview as string, rating as dynamic) as object
+' Texto de falha: só aparece com debug=true no config.json (zip baixado pelo admin). O público nunca vê detalhe técnico.
+function failText(base as string, res as dynamic) as string
+  if m.global.debug <> true then return base
+  if res = invalid then return base + "  [sem resposta]"
+  info = "  [" + res.error
+  if res.status <> invalid then info = info + " · status " + res.status.toStr()
+  if res.url <> invalid then info = info + " · " + res.url
+  return base + info + "]"
+end function
+
+function makeFont(uri as string, size as integer) as object
+  f = CreateObject("roSGNode", "Font")
+  f.uri = uri
+  f.size = size
+  return f
+end function
+
+' "2024  ·  ★ 7.8  ·  Ação, Aventura"
+function metaLine(year as dynamic, rating as dynamic, genres as dynamic) as string
+  parts = []
+  if year <> invalid and year <> "" then parts.push(year)
+  if rating <> invalid
+    t = type(rating)
+    if (t = "roFloat" or t = "Float" or t = "roDouble" or t = "Double" or t = "roInt" or t = "Integer") and rating > 0
+      parts.push("★ " + Str(rating).trim())
+    end if
+  end if
+  if genres <> invalid and genres <> "" then parts.push(genres)
+  return joinList(parts, "   ·   ")
+end function
+
+' Item de lista (id = "movie:603" | "tv:1396" | "live:globo").
+'   poster = miniatura da fileira, big = pôster da tela de detalhes, backdrop = fundo do destaque
+function makeItem(kind as string, id as dynamic, title as string, poster as string, big as string, backdrop as string, year as string, overview as string, rating as dynamic, genres as string) as object
   item = CreateObject("roSGNode", "ContentNode")
   item.id = kind + ":" + id.toStr()
   item.title = title
   item.HDPosterUrl = poster
-  item.HDBackgroundImageUrl = big
+  item.FHDPosterUrl = big
+  item.HDBackgroundImageUrl = backdrop
   item.ReleaseDate = year
   item.Description = overview
+  item.ShortDescriptionLine2 = genres
   if rating <> invalid
     t = type(rating)
     if t = "roFloat" or t = "Float" or t = "roInt" or t = "Integer" or t = "roDouble" or t = "Double"
@@ -88,4 +122,9 @@ function makeItem(kind as string, id as dynamic, title as string, poster as stri
     end if
   end if
   return item
+end function
+
+function genreText(list as dynamic) as string
+  if list = invalid then return ""
+  return joinList(list, ", ")
 end function

@@ -4,7 +4,7 @@ API HTTP para buscar filmes/séries (TMDB) e obter uma URL de vídeo pronta para
 tocar (HLS em H.264 ou arquivo direto).
 
 - **Base:** `https://SEU-BACKEND` (Render/Railway/Fly/VPS)
-- **Produção atual:** <https://fdsflix.onrender.com> (interface + API no mesmo host)
+- **Produção atual:** <https://fdsflix-80ya.onrender.com> (interface + API no mesmo host)
 - **CORS:** liberado (`Access-Control-Allow-Origin: *`)
 - **Formato:** JSON
 - **Autenticação:** opcional — se o backend tiver `API_KEY`, envie
@@ -203,7 +203,7 @@ Para ajuste manual, acrescente `&shift=` em segundos (positivo = legenda mais
 tarde, negativo = mais cedo):
 
 ```bash
-curl "https://fdsflix.onrender.com/api/subtitle?t=TOKEN&shift=1.5"
+curl "https://fdsflix-80ya.onrender.com/api/subtitle?t=TOKEN&shift=1.5"
 ```
 
 O player faz isso pela barra **Sincronia da legenda** e salva o valor por título

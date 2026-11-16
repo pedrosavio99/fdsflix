@@ -7,11 +7,11 @@ sub Main()
 
   cfg = LoadConfig()
   globalNode = screen.getGlobalNode()
-  globalNode.addFields({ apiBase: cfg.api, apiKey: cfg.key })
+  globalNode.addFields({ apiBase: cfg.api, apiKey: cfg.key, debug: cfg.debug, configLoaded: cfg.loaded })
 
   scene = screen.CreateScene("MainScene")
   screen.Show()
-  scene.setFocus(true)
+  ' o foco inicial é dado pela própria cena (barra de abas); scene.setFocus(true) aqui TIRARIA o foco dela
 
   while true
     msg = wait(0, port)
@@ -22,13 +22,20 @@ sub Main()
 end sub
 
 function LoadConfig() as object
-  cfg = { api: "https://fdsflix.onrender.com", key: "" }
+  cfg = { api: "https://fdsflix-80ya.onrender.com", key: "", debug: false, loaded: false }
   raw = ReadAsciiFile("pkg:/config.json")
   if raw <> invalid and raw <> ""
     parsed = ParseJson(raw)
-    if type(parsed) = "roAssociativeArray"
-      if type(parsed.api) = "roString" and parsed.api <> "" then cfg.api = parsed.api
-      if type(parsed.key) = "roString" then cfg.key = parsed.key
+    if parsed <> invalid
+      ' ParseJson devolve strings como "String" ou "roString" conforme o firmware: não dependa de type().
+      api = parsed.api
+      if api <> invalid and Len(api) > 0
+        cfg.api = api
+        cfg.loaded = true
+      end if
+      key = parsed.key
+      if key <> invalid then cfg.key = key
+      if parsed.debug = true then cfg.debug = true
     end if
   end if
   while Right(cfg.api, 1) = "/"

@@ -20,3 +20,6 @@ lib/live-sources.plain.json
 
 # kits gerados para download (o site gera na hora; não versionar)
 fdsflix-*-kit.zip
+
+# sobras do emulador/node (xhr síncrono)
+.node-xhr-sync-*

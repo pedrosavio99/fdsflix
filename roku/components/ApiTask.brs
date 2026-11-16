@@ -3,7 +3,7 @@ sub init()
 end sub
 
 sub doRequest()
-  res = { ok: false, status: 0, data: invalid, error: "", tag: m.top.tag }
+  res = { ok: false, status: 0, data: invalid, error: "", tag: m.top.tag, url: m.top.url }
   xfer = CreateObject("roUrlTransfer")
   port = CreateObject("roMessagePort")
   xfer.SetMessagePort(port)

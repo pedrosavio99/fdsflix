@@ -10,16 +10,17 @@
   <script type="text/brightscript" uri="pkg:/components/DetailScreen.brs" />
   <children>
     <Rectangle id="bg" width="1280" height="720" color="0x0B0B10FF" />
-    <Poster id="backdrop" width="1280" height="720" opacity="0.18" loadDisplayMode="scaleToZoom" />
-    <Poster id="poster" translation="60,70" width="300" height="450" loadDisplayMode="scaleToFit" />
-    <Label id="title" translation="400,64" width="820" height="56" font="font:LargeBoldSystemFont" color="0xF2F2F7FF" />
-    <Label id="meta" translation="400,126" width="820" height="32" font="font:SmallSystemFont" color="0xA9A9BDFF" />
-    <Label id="overview" translation="400,168" width="820" height="150" wrap="true" lineSpacing="4" font="font:SmallSystemFont" color="0xF2F2F7FF" />
-    <ButtonGroup id="actions" translation="400,340" visible="false" color="0x14141DFF" focusedColor="0xE50914FF" textColor="0xF2F2F7FF" focusedTextColor="0xFFFFFFFF" focusBitmapUri="pkg:/images/focus.9.png">
-      <Button id="playBtn" text="Assistir" />
-    </ButtonGroup>
-    <LabelList id="seasons" translation="400,332" itemSize="[230,40]" numRows="7" visible="false" color="0xA9A9BDFF" focusedColor="0xFFFFFFFF" focusBitmapUri="pkg:/images/focus.9.png" />
-    <LabelList id="eps" translation="650,332" itemSize="[570,40]" numRows="7" visible="false" color="0xA9A9BDFF" focusedColor="0xFFFFFFFF" focusBitmapUri="pkg:/images/focus.9.png" />
-    <Label id="busy" translation="400,340" width="820" height="40" text="Carregando…" font="font:SmallSystemFont" color="0xA9A9BDFF" />
+    <Poster id="backdrop" width="1280" height="720" loadDisplayMode="scaleToZoom" />
+    <Poster id="overlay" uri="pkg:/images/overlay_detail.png" width="1280" height="720" />
+    <Poster id="logo" translation="[64,30]" width="170" height="56" loadDisplayMode="scaleToFit" uri="pkg:/images/logo.png" />
+    <Label id="title" translation="[96,112]" width="820" height="64" vertAlign="center" color="0xFFFFFFFF" />
+    <Label id="meta" translation="[96,182]" width="820" height="30" color="0xA9A9BDFF" />
+    <Label id="overview" translation="[96,224]" width="640" height="112" wrap="true" maxLines="4" lineSpacing="6" color="0xF2F2F7FF" />
+    <Rectangle id="panel" translation="[0,344]" width="1280" height="376" color="0x0B0B10D9" visible="false" />
+    <PillButton id="playBtn" translation="[96,372]" text="Assistir" width="240" visible="false" />
+    <LabelList id="seasons" translation="[96,364]" itemSize="[200,44]" numRows="5" visible="false" color="0xA9A9BDFF" focusedColor="0xFFFFFFFF" focusBitmapUri="pkg:/images/focus.9.png" />
+    <MarkupList id="eps" translation="[330,360]" itemComponentName="EpisodeItem" itemSize="[886,88]" itemSpacing="[0,8]" numRows="3" visible="false" focusBitmapUri="pkg:/images/focus.9.png" />
+    <BusySpinner id="spinner" translation="[592,420]" uri="pkg:/images/spinner.png" spinInterval="1.2" visible="false" />
+    <Label id="note" translation="[96,372]" width="820" height="60" wrap="true" color="0xA9A9BDFF" visible="false" />
   </children>
 </component>

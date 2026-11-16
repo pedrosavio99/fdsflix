@@ -9,11 +9,11 @@ Player de filmes e séries: busca no **TMDB** e reprodução do stream via
 
 | O quê | URL |
 | :--- | :--- |
-| App + API (Render) | <https://fdsflix.onrender.com> |
-| Documentação viva | <https://fdsflix.onrender.com/api> |
+| App + API (Render) | <https://fdsflix-80ya.onrender.com> |
+| Documentação viva | <https://fdsflix-80ya.onrender.com/api> |
 
 O **mesmo serviço do Render** entrega a interface e a API — a Vercel é opcional.
-Basta abrir <https://fdsflix.onrender.com> para usar o site.
+Basta abrir <https://fdsflix-80ya.onrender.com> para usar o site.
 
 ## Modo direto no navegador (extensão — 0 Render)
 
@@ -356,28 +356,28 @@ O backend também pode ser consumido por qualquer outro projeto. As respostas de
 basta tocar a URL devolvida.
 
 ```bash
-curl "https://fdsflix.onrender.com/api/stream?id=603&type=movie&res=480&hevc=0"
+curl "https://fdsflix-80ya.onrender.com/api/stream?id=603&type=movie&res=480&hevc=0"
 ```
 
 ```json
 {
   "mode": "hls",
-  "url": "https://fdsflix.onrender.com/hls/abc123/index.m3u8",
+  "url": "https://fdsflix-80ya.onrender.com/hls/abc123/index.m3u8",
   "quality": 480,
-  "captions": [{ "label": "Português", "srclang": "pt", "url": "https://fdsflix.onrender.com/api/subtitle?t=..." }]
+  "captions": [{ "label": "Português", "srclang": "pt", "url": "https://fdsflix-80ya.onrender.com/api/subtitle?t=..." }]
 }
 ```
 
 Em outro projeto (navegador ou Node 18+):
 
 ```js
-const res = await fetch('https://fdsflix.onrender.com/api/stream?id=603&type=movie&res=480&hevc=0');
+const res = await fetch('https://fdsflix-80ya.onrender.com/api/stream?id=603&type=movie&res=480&hevc=0');
 const { mode, url, captions } = await res.json();
 // mode === 'hls' -> toque com hls.js; mode === 'direct' -> <video src={url}>
 ```
 
 - Documentação completa: [docs/API.md](docs/API.md)
-- Documentação viva: <https://fdsflix.onrender.com/api>
+- Documentação viva: <https://fdsflix-80ya.onrender.com/api>
 - CORS liberado para qualquer origem
 - `hevc=0` força H.264 (Chrome/Linux); `hevc=1` usa HEVC nativo (Safari/Windows)
 - `API_KEY` (opcional): protege `/api/search`, `/api/popular` e `/api/stream`
@@ -388,7 +388,7 @@ const { mode, url, captions } = await res.json();
 ### Modo atual: tudo no Render
 
 O serviço `fdsflix` no Render roda o `Dockerfile` e serve **interface + API** na
-mesma URL (<https://fdsflix.onrender.com>). Não é necessário criar nada na
+mesma URL (<https://fdsflix-80ya.onrender.com>). Não é necessário criar nada na
 Vercel.
 
 Se quiser separar (UI na Vercel + API no Render), os arquivos `vercel.json` e

@@ -4,18 +4,36 @@
   <script type="text/brightscript" uri="pkg:/components/MainScene.brs" />
   <children>
     <Rectangle id="bg" width="1280" height="720" color="0x0B0B10FF" />
-    <Poster id="logo" translation="50,22" width="190" height="64" loadDisplayMode="scaleToFit" uri="pkg:/images/logo.png" />
-    <ButtonGroup id="menu" layoutDirection="horiz" translation="300,20" horizAlignment="left" textColor="0xA9A9BDFF" focusedTextColor="0xFFFFFFFF" color="0x14141DFF" focusedColor="0xE50914FF" focusBitmapUri="pkg:/images/focus.9.png" />
-    <RowList id="rows" translation="0,110" itemComponentName="PosterItem" itemSize="[1280,300]" numRows="2"
-             rowItemSize="[[150,275]]" rowItemSpacing="[[18,0]]" rowLabelOffset="[[50,6]]" showRowLabel="[true]"
-             focusXOffset="[50]" itemSpacing="[0,10]" rowFocusAnimationStyle="floatingFocus" focusBitmapUri="pkg:/images/focus.9.png" rowLabelColor="0xF2F2F7FF" visible="false" />
-    <Label id="loading" translation="0,330" width="1280" height="48" horizAlignment="center" text="Carregando…" color="0xA9A9BDFF" font="font:MediumSystemFont" visible="false" />
-    <Label id="empty" translation="0,330" width="1280" height="48" horizAlignment="center" text="" color="0xA9A9BDFF" font="font:SmallSystemFont" visible="false" />
+    <Poster id="heroBg" width="1280" height="720" loadDisplayMode="scaleToZoom" visible="false" />
+    <Poster id="heroOverlay" uri="pkg:/images/overlay_hero.png" width="1280" height="720" visible="false" />
+    <Poster id="logo" translation="[64,30]" width="170" height="56" loadDisplayMode="scaleToFit" uri="pkg:/images/logo.png" />
+    <NavBar id="nav" translation="[300,38]" />
+
+    <Label id="heroTitle" translation="[64,132]" width="700" height="60" vertAlign="center" color="0xFFFFFFFF" />
+    <Label id="heroMeta" translation="[64,198]" width="700" height="30" color="0xA9A9BDFF" />
+    <Label id="heroOverview" translation="[64,234]" width="580" height="96" wrap="true" maxLines="3" lineSpacing="6" color="0xF2F2F7FF" />
+
+    <Label id="rowTitle" translation="[64,350]" width="900" height="34" vertAlign="center" color="0xF2F2F7FF" />
+    <RowList id="rows" translation="[0,392]" itemComponentName="PosterItem" itemSize="[1280,252]" numRows="1"
+             rowItemSize="[[160,240]]" rowItemSpacing="[[16,0]]" showRowLabel="[false]" focusXOffset="[64]"
+             rowFocusAnimationStyle="floatingFocus" focusBitmapUri="pkg:/images/focus.9.png" visible="false" />
+    <RowList id="liveRows" translation="[0,392]" itemComponentName="LiveItem" itemSize="[1280,180]" numRows="1"
+             rowItemSize="[[200,146]]" rowItemSpacing="[[16,0]]" showRowLabel="[false]" focusXOffset="[64]"
+             rowFocusAnimationStyle="floatingFocus" focusBitmapUri="pkg:/images/focus.9.png" visible="false" />
+
+    <BusySpinner id="spinner" translation="[592,330]" uri="pkg:/images/spinner.png" spinInterval="1.2" visible="false" />
+    <Label id="empty" translation="[96,330]" width="1088" height="120" horizAlign="center" wrap="true" color="0xA9A9BDFF" visible="false" />
+
     <DetailScreen id="detail" visible="false" />
+    <SearchScreen id="search" visible="false" />
     <Video id="player" width="1280" height="720" visible="false" />
+
     <Group id="busyLayer" visible="false">
-      <Rectangle width="1280" height="720" color="0x000000CC" />
-      <Label id="busyText" translation="0,330" width="1280" height="48" horizAlignment="center" text="Carregando…" color="0xF2F2F7FF" font="font:MediumSystemFont" />
+      <Rectangle width="1280" height="720" color="0x0B0B10E6" />
+      <BusySpinner id="busySpinner" translation="[592,290]" uri="pkg:/images/spinner.png" spinInterval="1.2" />
+      <Label id="busyText" translation="[0,400]" width="1280" height="40" horizAlign="center" color="0xF2F2F7FF" />
     </Group>
+    <Label id="debugInfo" translation="[64,690]" width="1152" height="24" color="0x6F6F85FF" visible="false" />
+    <Timer id="heroTimer" duration="0.45" repeat="false" />
   </children>
 </component>
