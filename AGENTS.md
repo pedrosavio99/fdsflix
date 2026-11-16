@@ -284,6 +284,18 @@ e `GET /api/admin/devices/roku.zip` (monta na hora com `lib/rokuKit.js`, embute 
   Componentes próprios: `NavBar` (abas: atual sublinhada, foco em pílula vermelha), `PillButton`, `PosterItem`, `LiveItem` (cartão de canal),
   `EpisodeItem` (miniatura + título + sinopse), `SearchScreen` (MiniKeyboard + resultados ao digitar, com atraso de 0,8 s). Painel escuro atrás da
   lista de episódios (o backdrop claro deixava o texto ilegível). Simulação do layout (HTML com as mesmas coordenadas) conferida; NÃO foi vista numa TV.
+- **Player do Roku: menu, legenda, outra versão e saída (v2).** Seta para baixo **ou** `*` abre o menu "Opções" (a seta existe porque o
+  controle Voltar/Lite (Voice Remote Lite) não tem `*`): **Legenda** (só aparece se houver faixas), **Outra versão**, **Ir para o início**, **Continuar**. Uma dica
+  de 7 s ("Seta para baixo ou *: legenda e outra versão") aparece quando o vídeo começa. O vídeo fica em pausa com o menu aberto; Voltar na
+  caixa fecha e continua de onde parou (`wasClosed`). **Legenda:** `sortTracks` (`api.brs`) ordena português do arquivo, português traduzido,
+  inglês, espanhol, resto; o menu lista só rótulos em alfabeto latino (máx. 6) e marca a ativa com "(ativa)". A escolha da pessoa (`subPref`)
+  vale para o resto do título e sobrevive à "Outra versão"; sem escolha, dublado começa sem legenda e original liga a primeira (português).
+  *Bug corrigido:* antes ligava `tracks[0]`, que era árabe. **Sair fácil:** durante o "Carregando…" o modo é `loading` e o foco fica na
+  PRÓPRIA cena (`enterLoading`), então Voltar cancela e volta (antes o Voltar fechava o detalhe por baixo e o vídeo abria depois por cima da
+  lista); respostas atrasadas são ignoradas por `token` (`nextToken`, conferido em `onOptions/onStream/onLiveStream`). `closePlayer` devolve o
+  foco à lista **ativa** (`m.active`; antes ia para a lista de filmes mesmo vindo de TV ao vivo, deixando o controle morto). `goHome()` (menu →
+  "Ir para o início") sai de qualquer ponto direto para a aba Início com o foco na barra. **Não verificado numa TV de verdade:** se a seta para
+  baixo chega ao app durante o vídeo, o `wasClosed` do Dialog, e se `subtitleTrack` troca a faixa em tempo real. O emulador não toca vídeo.
 - **Diagnóstico na tela:** o zip do admin sai com `"debug": true` em `config.json` e, se uma chamada falhar, o app mostra `[erro · status · URL]`
   (`failText` em `api.brs`). Para um build público use `buildKit({ debug:false })`: o público nunca vê detalhe técnico. Tela vazia/"não foi possível
   carregar" quase sempre é endereço errado no `config.json`. **Baixado de `localhost`, o zip embute o IP do PC na rede (`resolveApi`)**; a TV precisa
@@ -326,6 +338,6 @@ e `GET /api/admin/devices/roku.zip` (monta na hora com `lib/rokuKit.js`, embute 
 
 ## Como rodar e testar
 
-- `npm start` (porta `PORT`, padrão 3000) · `npm test` (289 testes, `node --test test/*.test.js`).
+- `npm start` (porta `PORT`, padrão 3000) · `npm test` (294 testes, `node --test test/*.test.js`).
 - Manutenção/"mudamos de URL": tela "Site" do admin (`lib/siteStatus.js`, `public/sitegate.js`, `public/site.js`; tabela `pix_settings` no Supabase).
 - Docs: `docs/DEPLOY-RENDER.md`, `docs/VERCEL-POOL.md`, `docs/TV-AO-VIVO.md`, `docs/VISITANTES.md`, `docs/API.md`.

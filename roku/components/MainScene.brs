@@ -21,6 +21,11 @@ sub init()
   m.heroOverview = m.top.findNode("heroOverview")
   m.rowTitle = m.top.findNode("rowTitle")
   m.heroTimer = m.top.findNode("heroTimer")
+  m.hint = m.top.findNode("hint")
+  m.hintText = m.top.findNode("hintText")
+  m.hintTimer = m.top.findNode("hintTimer")
+  m.hintText.font = makeFont("pkg:/fonts/Inter-Bold.ttf", 20)
+  m.hintTimer.observeField("fire", "hideHint")
   if m.global.debug = true
     info = m.top.findNode("debugInfo")
     info.font = makeFont("pkg:/fonts/Inter-Regular.ttf", 15)
@@ -54,7 +59,9 @@ sub init()
   m.movieRows = { "popular-movies": 1, "top-movies": 1, "now-playing": 1, "g-action": 1, "g-comedy": 1, "g-horror": 1, "g-scifi": 1, "upcoming": 1, "g-animation": 1, "g-romance": 1, "g-thriller": 1, "g-crime": 1, "g-adventure": 1, "g-family": 1, "g-docs": 1 }
   m.tvRows = { "popular-tv": 1, "top-tv": 1, "airing": 1, "tv-drama": 1, "tv-comedy": 1, "tv-anime": 1 }
 
-  m.mode = "browse"        ' browse | detail | search | player
+  m.mode = "browse"        ' browse | detail | search | loading | player
+  m.reqSeq = 0
+  m.menuOpen = false
   m.tab = 0
   m.loadToken = 0
   m.rowQueue = []
@@ -367,15 +374,30 @@ end sub
 sub onPlayRequest(event as object)
   req = event.getData()
   if req = invalid then return
-  m.play = { live: false, type: req.type, id: req.id, s: req.s, e: req.e, title: req.title, skip: [], pick: "", lang: "", autoSwitches: 0, resume: 0, expectMin: 0, curSrc: "", curSv: "", tries: 0 }
-  showBusy("Carregando…")
+  m.play = { live: false, type: req.type, id: req.id, s: req.s, e: req.e, title: req.title, skip: [], pick: "", lang: "", autoSwitches: 0, resume: 0, expectMin: 0, curSrc: "", curSv: "", tries: 0, token: "", tracks: [], subPref: invalid, subIdx: -1 }
+  enterLoading("Carregando…")
+  m.play.token = nextToken()
   path = "/api/stream/options?id=" + req.id + "&type=" + req.type + "&s=" + req.s.toStr() + "&e=" + req.e.toStr() + "&hevc=0&title=" + urlEnc(req.title)
-  apiGet(path, "onOptions", "opt")
+  apiGet(path, "onOptions", m.play.token)
 end sub
+
+' Enquanto procura o vídeo o foco fica na própria cena: assim o Voltar CANCELA a busca
+' (antes o Voltar ia para a tela de detalhe, que fechava por baixo e o vídeo abria depois por cima da lista).
+sub enterLoading(text as string)
+  m.mode = "loading"
+  m.top.setFocus(true)
+  showBusy(text)
+end sub
+
+function nextToken() as string
+  m.reqSeq = m.reqSeq + 1
+  return "r" + m.reqSeq.toStr()
+end function
 
 sub onOptions(event as object)
   if m.play = invalid then return
   res = event.getData()
+  if res <> invalid and res.tag <> m.play.token then return
   opts = []
   if res <> invalid and res.ok and res.data <> invalid and res.data.options <> invalid then opts = res.data.options
   if opts.count() >= 2
@@ -410,23 +432,24 @@ sub choose(lang as string)
       m.play.lang = o.lang
     end if
   end for
-  showBusy("Carregando…")
   requestStream()
 end sub
 
 sub requestStream()
-  showBusy("Carregando…")
+  enterLoading("Carregando…")
   p = m.play
   path = "/api/stream?id=" + p.id + "&type=" + p.type + "&hevc=0&title=" + urlEnc(p.title)
   if p.type = "tv" then path = path + "&s=" + p.s.toStr() + "&e=" + p.e.toStr()
   if p.pick <> "" then path = path + "&pick=" + p.pick
   if p.skip.count() > 0 then path = path + "&fresh=1&skip=" + joinList(p.skip, ",")
-  apiGet(path, "onStream", "stream")
+  m.play.token = nextToken()
+  apiGet(path, "onStream", m.play.token)
 end sub
 
 sub onStream(event as object)
   if m.play = invalid then return
   res = event.getData()
+  if res <> invalid and res.tag <> m.play.token then return
   if res = invalid or not res.ok or res.data = invalid or res.data.url = invalid
     hideBusy()
     if m.play.skip.count() > 0
@@ -459,20 +482,22 @@ end sub
 ' ---------------------------------------------------------------- TV ao vivo: tocar
 
 sub startLive(id as string, title as string)
-  m.play = { live: true, ch: id, title: title, skip: [], tries: 0 }
-  showBusy("Carregando…")
+  m.play = { live: true, ch: id, title: title, skip: [], tries: 0, token: "", tracks: [], subPref: invalid, subIdx: -1 }
+  enterLoading("Carregando…")
   requestLive()
 end sub
 
 sub requestLive()
   path = "/api/live/stream?ch=" + urlEnc(m.play.ch)
   if m.play.skip.count() > 0 then path = path + "&skip=" + joinList(m.play.skip, ",")
-  apiGet(path, "onLiveStream", "live")
+  m.play.token = nextToken()
+  apiGet(path, "onLiveStream", m.play.token)
 end sub
 
 sub onLiveStream(event as object)
   if m.play = invalid or not m.play.live then return
   res = event.getData()
+  if res <> invalid and res.tag <> m.play.token then return
   ok = (res <> invalid and res.ok and res.data <> invalid and res.data.url <> invalid)
   if ok and res.data.mode = "page"
     ' página de player com anúncios: o Roku não renderiza página; pede a próxima fonte do canal
@@ -511,30 +536,170 @@ sub startVideo(url as string, mode as dynamic, captions as dynamic)
   c.streamFormat = fmt
   if m.play.live = false and m.play.resume > 0 then c.PlayStart = m.play.resume
 
-  tracks = []
-  if captions <> invalid
-    for each cap in captions
-      lang = "por"
-      if cap.srclang <> invalid and Left(cap.srclang, 2) = "en" then lang = "eng"
-      tracks.push({ Language: lang, TrackName: srtUrl(cap.url), Description: cap.label })
-    end for
-  end if
-  c.update({ SubtitleTracks: tracks }, true)
+  m.play.tracks = sortTracks(captions)
+  content = []
+  for each t in m.play.tracks
+    content.push({ Language: t.Language, TrackName: t.TrackName, Description: t.Description })
+  end for
+  c.update({ SubtitleTracks: content }, true)
 
   m.player.content = c
-  ' dublado começa sem legenda; original com legenda
-  if tracks.count() > 0 and m.play.live = false and m.play.lang <> "dub"
-    m.player.globalCaptionMode = "On"
-    m.player.subtitleTrack = tracks[0].TrackName
-  else
-    m.player.globalCaptionMode = "Off"
+  ' Legenda: o que a pessoa escolheu vale; senão dublado começa sem legenda e original liga (português primeiro).
+  want = -1
+  pref = m.play.subPref
+  if m.play.live = false and m.play.tracks.count() > 0
+    if pref = invalid
+      if m.play.lang <> "dub" then want = 0
+    else if type(pref) = "roAssociativeArray"
+      for i = 0 to m.play.tracks.count() - 1
+        t = m.play.tracks[i]
+        if t.srclang = pref.srclang and t.translated = pref.translated and want < 0 then want = i
+      end for
+      if want < 0 and m.play.lang <> "dub" then want = 0
+    end if
   end if
+  applySub(want)
   m.player.control = "play"
   m.player.visible = true
   m.player.setFocus(true)
   m.mode = "player"
   m.watchdog = 0
   hideBusy()
+  showHint()
+end sub
+
+' ---------------------------------------------------------------- dica e menu do player
+
+sub showHint()
+  if m.play.live
+    m.hintText.text = "  Seta para baixo ou *: opções"
+  else
+    m.hintText.text = "  Seta para baixo ou *: legenda e outra versão"
+  end if
+  m.hint.visible = true
+  m.hintTimer.control = "stop"
+  m.hintTimer.control = "start"
+end sub
+
+sub hideHint()
+  m.hint.visible = false
+  m.hintTimer.control = "stop"
+end sub
+
+' idx = -1 desliga a legenda; senão liga a faixa idx da lista ordenada.
+sub applySub(idx as integer)
+  if m.play = invalid then return
+  if idx < 0 or idx >= m.play.tracks.count()
+    m.play.subIdx = -1
+    m.player.globalCaptionMode = "Off"
+  else
+    m.play.subIdx = idx
+    m.player.globalCaptionMode = "On"
+    m.player.subtitleTrack = m.play.tracks[idx].TrackName
+  end if
+end sub
+
+sub openMenu()
+  hideHint()
+  m.player.control = "pause"
+  m.menuOpen = true
+  m.menuIds = []
+  labels = []
+  if m.play.live = false
+    if m.play.tracks.count() > 0
+      m.menuIds.push("sub")
+      labels.push("Legenda")
+    end if
+    m.menuIds.push("ver")
+    labels.push("Outra versão")
+  end if
+  m.menuIds.push("home")
+  labels.push("Ir para o início")
+  m.menuIds.push("go")
+  labels.push("Continuar")
+  showDialog("Opções", "O que você quer fazer?", labels, "onMenu")
+end sub
+
+sub onMenu(event as object)
+  idx = event.getData()
+  what = m.menuIds[idx]
+  if what = "sub"
+    openSubMenu()
+    return
+  end if
+  m.menuOpen = false
+  closeDialog()
+  if what = "ver"
+    m.play.autoSwitches = 0
+    switchVersion()
+  else if what = "home"
+    goHome()
+  else
+    resumePlayer()
+  end if
+end sub
+
+sub openSubMenu()
+  m.subMap = []
+  labels = ["Sem legenda"]
+  if m.play.subIdx < 0 then labels[0] = "Sem legenda  (ativa)"
+  for i = 0 to m.play.tracks.count() - 1
+    t = m.play.tracks[i]
+    if labels.count() < 7 and (t.score < 100 or isLatinLabel(t.Description))
+      name = t.Description
+      if i = m.play.subIdx then name = name + "  (ativa)"
+      labels.push(name)
+      m.subMap.push(i)
+    end if
+  end for
+  closeDialog()
+  showDialog("Legenda", "Escolha a legenda.", labels, "onSubMenu")
+end sub
+
+sub onSubMenu(event as object)
+  idx = event.getData()
+  m.menuOpen = false
+  closeDialog()
+  if idx = 0
+    m.play.subPref = "off"
+    applySub(-1)
+  else
+    i = m.subMap[idx - 1]
+    t = m.play.tracks[i]
+    m.play.subPref = { srclang: t.srclang, translated: t.translated }
+    applySub(i)
+  end if
+  resumePlayer()
+end sub
+
+' Voltar dentro de uma caixa de opções fecha a caixa sem escolher nada: o vídeo continua de onde parou.
+sub onDialogClosed()
+  if m.top.dialog <> invalid then return
+  if m.menuOpen
+    m.menuOpen = false
+    resumePlayer()
+  end if
+end sub
+
+sub resumePlayer()
+  if m.mode = "player"
+    m.player.control = "resume"
+    m.player.setFocus(true)
+  end if
+end sub
+
+' Volta direto para o início (aba Início, foco na barra de abas), de qualquer ponto do vídeo.
+sub goHome()
+  m.menuOpen = false
+  m.player.control = "stop"
+  m.player.visible = false
+  hideBusy()
+  hideHint()
+  m.play = invalid
+  m.search.visible = false
+  onDetailClosed()
+  m.nav.setFocus(true)
+  loadTab(0)
 end sub
 
 sub onPlayerState()
@@ -597,34 +762,21 @@ sub switchVersion()
   m.player.control = "stop"
   m.play.curSrc = ""
   m.play.curSv = ""
-  showBusy("Carregando outra versão…")
   requestStream()
 end sub
 
-sub onVersionMenu(event as object)
-  idx = event.getData()
-  closeDialog()
-  if idx = 0
-    m.play.autoSwitches = 0
-    switchVersion()
-  else if idx = 1
-    m.player.control = "resume"
-    m.player.setFocus(true)
-  else
-    closePlayer()
-  end if
-end sub
-
 sub closePlayer()
+  m.menuOpen = false
   m.player.control = "stop"
   m.player.visible = false
   hideBusy()
+  hideHint()
   if m.play <> invalid and m.play.live = false and m.detail.visible
     m.mode = "detail"
     m.detail.callFunc("focusMain")
   else
     m.mode = "browse"
-    m.rows.setFocus(true)
+    if m.active.visible then m.active.setFocus(true) else m.nav.setFocus(true)
   end if
   m.play = invalid
 end sub
@@ -649,6 +801,7 @@ sub showDialog(title as string, text as string, buttons as object, callback as s
   dlg.message = text
   dlg.buttons = buttons
   dlg.observeFieldScoped("buttonSelected", callback)
+  dlg.observeFieldScoped("wasClosed", "onDialogClosed")
   m.top.dialog = dlg
 end sub
 
@@ -661,13 +814,22 @@ end sub
 function onKeyEvent(key as string, press as boolean) as boolean
   if not press then return false
 
+  if m.mode = "loading"
+    ' Voltar durante o "Carregando…" cancela e volta para onde estava (resposta atrasada é ignorada pelo token)
+    if key = "back"
+      closePlayer()
+      return true
+    end if
+    return true
+  end if
+
   if m.mode = "player"
     if key = "back"
       closePlayer()
       return true
-    else if key = "options"
-      m.player.control = "pause"
-      showDialog("Opções", "O que você quer fazer?", ["Outra versão", "Continuar", "Sair do vídeo"], "onVersionMenu")
+    else if key = "options" or key = "down"
+      ' "*" não existe no controle Voltar/Lite: a seta para baixo abre o mesmo menu
+      openMenu()
       return true
     end if
     return false

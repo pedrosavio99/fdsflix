@@ -134,3 +134,48 @@ test('canal Roku: logo de canal da TV é objeto { u, a, d } (não texto)', () =>
   const first = Object.values(logos)[0];
   assert.equal(typeof first.u, 'string');
 });
+
+// Player: menu com legenda / outra versão / ir para o início, e saída fácil (pedido do dono).
+function sceneSrc() {
+  return readZip(buildKit({ api: 'https://exemplo.onrender.com' }).zip)['components/MainScene.brs'].toString('utf8');
+}
+
+test('canal Roku: menu do player abre com "*" E com a seta para baixo (controle Lite não tem "*")', () => {
+  const scene = sceneSrc();
+  assert.match(scene, /key = "options" or key = "down"/);
+  for (const frase of ['"Legenda"', '"Outra versão"', '"Ir para o início"', '"Continuar"', '"Sem legenda']) {
+    assert.ok(scene.includes(frase), `falta ${frase} no menu`);
+  }
+});
+
+test('canal Roku: Voltar durante o carregamento cancela (foco na cena + respostas atrasadas ignoradas por token)', () => {
+  const scene = sceneSrc();
+  assert.match(scene, /m\.mode = "loading"/);
+  assert.match(scene, /m\.top\.setFocus\(true\)/);
+  assert.match(scene, /if m\.mode = "loading"[\s\S]{0,200}closePlayer\(\)/);
+  for (const cb of ['onOptions', 'onStream', 'onLiveStream']) {
+    assert.match(scene, new RegExp(`sub ${cb}\\([^)]*\\)[\\s\\S]{0,260}res\\.tag <> m\\.play\\.token`), `${cb} sem checagem de token`);
+  }
+});
+
+test('canal Roku: ao sair de TV ao vivo o foco volta para a lista ativa (não a lista de filmes invisível)', () => {
+  const scene = sceneSrc();
+  const close = scene.slice(scene.indexOf('sub closePlayer()'), scene.indexOf('sub showBusy'));
+  assert.doesNotMatch(close, /m\.rows\.setFocus/);
+  assert.match(close, /m\.active\.setFocus\(true\)/);
+});
+
+test('canal Roku: legenda padrão é a em português (não a primeira da lista, que vinha em árabe)', () => {
+  const api = readZip(buildKit({ api: 'https://exemplo.onrender.com' }).zip)['components/api.brs'].toString('utf8');
+  assert.match(api, /function sortTracks/);
+  assert.match(api, /src = "pt" and not tr then score = 0/);
+  assert.match(api, /src = "pt" and tr then score = 1/);
+  assert.match(api, /function isLatinLabel/);
+});
+
+test('canal Roku: "Ir para o início" existe e reconstrói a aba Início', () => {
+  const scene = sceneSrc();
+  const home = scene.slice(scene.indexOf('sub goHome()'), scene.indexOf('sub goHome()') + 600);
+  assert.match(home, /loadTab\(0\)/);
+  assert.match(home, /m\.nav\.setFocus\(true\)/);
+});

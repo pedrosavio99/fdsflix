@@ -27,6 +27,10 @@
     <DetailScreen id="detail" visible="false" />
     <SearchScreen id="search" visible="false" />
     <Video id="player" width="1280" height="720" visible="false" />
+    <Group id="hint" visible="false">
+      <Rectangle translation="[48,32]" width="640" height="48" color="0x000000B3" />
+      <Label id="hintText" translation="[64,32]" width="608" height="48" vertAlign="center" color="0xFFFFFFFF" />
+    </Group>
 
     <Group id="busyLayer" visible="false">
       <Rectangle width="1280" height="720" color="0x0B0B10E6" />
@@ -35,5 +39,6 @@
     </Group>
     <Label id="debugInfo" translation="[64,690]" width="1152" height="24" color="0x6F6F85FF" visible="false" />
     <Timer id="heroTimer" duration="0.45" repeat="false" />
+    <Timer id="hintTimer" duration="7" repeat="false" />
   </children>
 </component>

@@ -128,3 +128,55 @@ function genreText(list as dynamic) as string
   if list = invalid then return ""
   return joinList(list, ", ")
 end function
+
+' Código de idioma de 3 letras (o Roku espera ISO 639-2) a partir do srclang da API.
+function langCode(src as dynamic) as string
+  if src = invalid then return "und"
+  c = Left(LCase(src), 2)
+  map = { pt: "por", en: "eng", es: "spa", fr: "fra", de: "deu", it: "ita", ru: "rus", ja: "jpn", zh: "zho", ar: "ara", hi: "hin" }
+  if map[c] <> invalid then return map[c]
+  return "und"
+end function
+
+' Só rótulos em alfabeto latino entram no menu (o Roku não desenha árabe/hindi etc. direito na caixa de opções).
+function isLatinLabel(text as string) as boolean
+  for i = 1 to Len(text)
+    if Asc(Mid(text, i, 1)) > 591 then return false
+  end for
+  return true
+end function
+
+' Faixas da API -> lista ordenada: português do arquivo, português traduzido, inglês, espanhol, resto (ordem original).
+' Cada item: { Language, TrackName (URL .srt), Description, srclang, translated, score }
+function sortTracks(captions as dynamic) as object
+  list = []
+  if captions = invalid then return list
+  idx = 0
+  for each cap in captions
+    if cap.url <> invalid
+      src = ""
+      if cap.srclang <> invalid then src = LCase(Left(cap.srclang, 2))
+      tr = (cap.translated = true)
+      score = 100 + idx
+      if src = "pt" and not tr then score = 0
+      if src = "pt" and tr then score = 1
+      if src = "en" then score = 2
+      if src = "es" then score = 3
+      label = "Legenda"
+      if cap.label <> invalid then label = cap.label
+      list.push({ Language: langCode(cap.srclang), TrackName: srtUrl(cap.url), Description: label, srclang: src, translated: tr, score: score })
+    end if
+    idx = idx + 1
+  end for
+  ' ordenação por pontuação (listas pequenas)
+  for i = 1 to list.count() - 1
+    cur = list[i]
+    j = i - 1
+    while j >= 0 and list[j].score > cur.score
+      list[j + 1] = list[j]
+      j = j - 1
+    end while
+    list[j + 1] = cur
+  end for
+  return list
+end function

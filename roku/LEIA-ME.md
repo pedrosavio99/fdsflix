@@ -24,3 +24,7 @@ curl -X POST http://127.0.0.1:8060/keypress/Down      # ECP: Up/Down/Left/Right/
 
 `-s arquivo.png` + Ctrl+S (via pseudo-terminal) salva um print da tela renderizada. Achou com isso: foco perdido pelo `scene.setFocus`,
 `Dialog.message` com tipo errado, `config.json` ignorado. Coloque `print` temporário numa CÓPIA, não no app.
+
+## No player
+
+Seta para baixo ou `*` abre **Opções**: Legenda, Outra versão, Ir para o início, Continuar. Voltar durante o "Carregando…" cancela.

@@ -89,9 +89,27 @@ apareceu **executando**. Então, antes de entregar:
 5. Procure `ERROR` no log do emulador: o objetivo é zero.
 6. Diga ao dono, sem enfeitar, o que **não** foi visto (ex.: o vídeo tocando, a legenda, o visual numa TV de verdade).
 
+## 6b. Requisitos de player que TODO app novo precisa ter (o dono pediu no Roku)
+
+1. **Menu de opções no player** com: **Legenda**, **Outra versão**, **Ir para o início**, **Continuar**. Abra por uma tecla que EXISTA em
+   todos os controles (no Roku o `*` falta no Voice Remote Lite: use também a seta para baixo) e mostre uma dica de ~7 s ao iniciar o vídeo.
+   Pause o vídeo com o menu aberto; fechar o menu sem escolher continua de onde parou.
+2. **Legenda:** nunca ligue "a primeira da lista" (a API devolve dezenas de idiomas e a primeira pode ser árabe). Ordem:
+   português do arquivo, português traduzido (`translated:true`), inglês, espanhol, resto. Só mostre no menu rótulos que a fonte da TV
+   desenha (alfabeto latino) e limite a ~6. Dublado começa sem legenda; original liga a em português. A escolha da pessoa vale para o título
+   inteiro e sobrevive à "Outra versão".
+3. **Outra versão:** guarde `src` e `sv` da resposta e mande `skip=<ids>&fresh=1`; retome da mesma posição; se não houver outra, avise e
+   libere as descartadas. Troque sozinho se o vídeo errar ou a duração fugir de `expectMin`.
+4. **Sair sem sofrer:** Voltar tem que funcionar **em qualquer estado**. Em especial durante o "Carregando…" (a busca da fonte leva até
+   40 s): Voltar CANCELA e respostas que chegarem depois são ignoradas (número de pedido/token por requisição). Ao sair do vídeo o foco volta
+   para a lista/tela de onde veio (em TV ao vivo, a lista de canais, não a de filmes) e existe um atalho direto **Ir para o início**.
+   Um app que "abre o vídeo por cima da tela errada" ou "fica sem resposta ao apertar Voltar" está reprovado.
+5. Teste no emulador: Voltar durante o carregamento, menu → cada item, Voltar com o menu aberto, TV ao vivo → sair → mover pelo controle.
+
 ## 7. Armadilhas conhecidas
 
-- Dar `setFocus` na cena inteira tira o foco do componente que devia receber os botões (Roku).
+- Dar `setFocus` na cena inteira tira o foco do componente que devia receber os botões (Roku). A exceção é de propósito: durante o "Carregando…" o foco vai para a cena para o Voltar cancelar (ver 6b).
+- Foco numa lista **invisível** deixa o controle morto: ao devolver o foco, use a lista que está na tela.
 - Em BrightScript, `type()` de valores vindos de `ParseJson` engana; leia o campo direto e teste `invalid`.
 - Percent-encoding de títulos com acento: o Roku não faz sozinho; veja `urlEnc` em `roku/components/api.brs`.
 - Não use redirect 302 para o CDN do vídeo: o Chrome perde o `Origin` nos `Range` (ver `AGENTS.md`). TVs com navegador baseado em Chromium herdam isso.
