@@ -584,6 +584,25 @@
   .cfg-inline{flex:1;min-width:220px;padding:.5rem .6rem;border:1px solid var(--line);border-radius:8px;background:var(--panel-2);color:inherit;font-size:.82rem}
   .cfg-devbox p{margin:0 0 .5rem;font-size:.82rem}
   .cfg-devbox .cfg-row{margin-top:.45rem}
+  /* ---------- aba Aparelhos (admin) ---------- */
+  .dev-head{display:flex;align-items:baseline;gap:.7rem;margin-bottom:.7rem}
+  .dev-logo{font-weight:900;letter-spacing:-.04em;font-size:1.5rem;line-height:1;color:var(--brand)}
+  .dev-logo b{color:var(--text);font-weight:900}
+  .dev-name{font-size:.95rem;font-weight:700;color:var(--text)}
+  .dev-dl{display:flex;flex-wrap:wrap;align-items:center;gap:.6rem .9rem;margin-bottom:.4rem}
+  .dev-api{font-size:.76rem;color:var(--muted);word-break:break-all}
+  .dev-manual{margin-top:.8rem;border-top:1px solid var(--line);padding-top:.6rem}
+  .dev-manual summary{cursor:pointer;font-weight:700;font-size:.92rem;color:var(--text);padding:.2rem 0;list-style:none}
+  .dev-manual summary::before{content:"▸";display:inline-block;margin-right:.45rem;color:var(--brand);transition:transform .18s var(--ease)}
+  .dev-manual[open] summary::before{transform:rotate(90deg)}
+  .dev-manual ol{padding-left:1.4rem;margin:.5rem 0}
+  .dev-manual ol li{margin:.55rem 0;padding-left:.2rem}
+  .dev-manual ol li::marker{color:var(--brand);font-weight:800}
+  .dev-manual li b{color:var(--text)}
+  .dev-manual li p{margin:.15rem 0 0}
+  .dev-manual ul{margin:.3rem 0;padding-left:1.2rem;color:var(--muted)}
+  .dev-manual ul li{margin:.25rem 0}
+  .dev-manual kbd{display:inline-block;min-width:1.5em;text-align:center;padding:.05rem .4rem;border:1px solid var(--line);border-bottom-width:2px;border-radius:6px;background:var(--panel-2);color:var(--text);font:600 .78rem/1.5 ui-monospace,Menlo,Consolas,monospace}
   .cfg-note{margin-top:.9rem;padding:.6rem .8rem;border:1px solid var(--line);border-left:3px solid var(--warn);border-radius:8px;background:var(--panel-2);font-size:.8rem;color:var(--muted)}
   .server-notice{
     display:flex;align-items:center;gap:.55rem;margin:.7rem 0 0;
@@ -960,11 +979,26 @@
         <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M19.14 12.94c.04-.31.06-.63.06-.94s-.02-.63-.07-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.61-.22l-2.39.96a7 7 0 0 0-1.62-.94l-.36-2.54a.49.49 0 0 0-.48-.41h-3.84a.49.49 0 0 0-.48.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.49.49 0 0 0-.61.22L2.74 8.84a.48.48 0 0 0 .12.64l2.03 1.58c-.05.31-.08.63-.08.94s.03.63.08.94l-2.03 1.58a.5.5 0 0 0-.12.64l1.92 3.32c.12.22.37.29.61.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.26.41.48.41h3.84c.24 0 .44-.17.48-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.49 0 .61-.22l1.92-3.32a.5.5 0 0 0-.12-.64zM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2"/></svg>
         <span class="lbl">Configs</span>
       </button>
+      <button id="devOpen" class="nav-btn admin-only" type="button" title="Aparelhos: apps para TV (Roku) com o zip para instalar" aria-label="Aparelhos">
+        <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 3H3a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h7v2H8v2h8v-2h-2v-2h7a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2m0 13H3V5h18z"/></svg>
+      </button>
       <button id="tokyoOpen" class="nav-btn admin-only" type="button" title="Outras fontes: testar este título em todas as fontes e buscar no acervo" aria-label="Outras fontes">
         <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 4l2 4h-3l-2-4h-2l2 4h-3l-2-4H8l2 4H7L5 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V4z"/></svg>
       </button>
     </div>
   </nav>
+
+  <dialog id="devDialog" class="cfg admin-only" aria-labelledby="devTitle" style="max-width:640px">
+    <div class="cfg-head">
+      <h3 id="devTitle">Aparelhos · apps para TV</h3>
+      <button id="devClose" class="ghost" type="button" aria-label="Fechar">✕</button>
+    </div>
+    <div class="cfg-body">
+      <p class="cfg-note">O app é só um controle remoto da API: lista, busca, TV e vídeo vêm do servidor. Por isso <b>não precisa atualizar o app</b> quando a lógica muda (só se a interface do app mudar).</p>
+      <div id="devList"></div>
+      <p id="devStatus" class="cfg-status" role="status" aria-live="polite"></p>
+    </div>
+  </dialog>
 
   <dialog id="loadDialog" class="cfg" aria-labelledby="loadTitle" style="max-width:860px">
     <div class="cfg-head">
@@ -1637,6 +1671,7 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
 <script src="/site.js"></script>
 <script src="/tokyo.js"></script>
 <script src="/load.js"></script>
+<script src="/devices.js"></script>
 <script>
 (function () {
   'use strict';

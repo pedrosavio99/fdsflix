@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<component name="PosterItem" extends="Group">
+  <interface>
+    <field id="itemContent" type="node" onChange="onContent" />
+    <field id="width" type="float" />
+    <field id="height" type="float" />
+  </interface>
+  <script type="text/brightscript" uri="pkg:/components/PosterItem.brs" />
+  <children>
+    <Poster id="poster" translation="[0,0]" width="150" height="225" loadDisplayMode="scaleToFit" />
+    <Label id="name" translation="[0,229]" width="150" height="46" wrap="true" maxLines="2" color="0xF2F2F7FF" font="font:SmallestSystemFont" />
+  </children>
+</component>

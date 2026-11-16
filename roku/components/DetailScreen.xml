@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<component name="DetailScreen" extends="Group">
+  <interface>
+    <field id="item" type="assocarray" onChange="onItem" />
+    <field id="playRequest" type="assocarray" alwaysNotify="true" />
+    <field id="closed" type="boolean" alwaysNotify="true" />
+    <function name="focusMain" />
+  </interface>
+  <script type="text/brightscript" uri="pkg:/components/api.brs" />
+  <script type="text/brightscript" uri="pkg:/components/DetailScreen.brs" />
+  <children>
+    <Rectangle id="bg" width="1280" height="720" color="0x0B0B10FF" />
+    <Poster id="backdrop" width="1280" height="720" opacity="0.18" loadDisplayMode="scaleToZoom" />
+    <Poster id="poster" translation="60,70" width="300" height="450" loadDisplayMode="scaleToFit" />
+    <Label id="title" translation="400,64" width="820" height="56" font="font:LargeBoldSystemFont" color="0xF2F2F7FF" />
+    <Label id="meta" translation="400,126" width="820" height="32" font="font:SmallSystemFont" color="0xA9A9BDFF" />
+    <Label id="overview" translation="400,168" width="820" height="150" wrap="true" lineSpacing="4" font="font:SmallSystemFont" color="0xF2F2F7FF" />
+    <ButtonGroup id="actions" translation="400,340" visible="false" color="0x14141DFF" focusedColor="0xE50914FF" textColor="0xF2F2F7FF" focusedTextColor="0xFFFFFFFF" focusBitmapUri="pkg:/images/focus.9.png">
+      <Button id="playBtn" text="Assistir" />
+    </ButtonGroup>
+    <LabelList id="seasons" translation="400,332" itemSize="[230,40]" numRows="7" visible="false" color="0xA9A9BDFF" focusedColor="0xFFFFFFFF" focusBitmapUri="pkg:/images/focus.9.png" />
+    <LabelList id="eps" translation="650,332" itemSize="[570,40]" numRows="7" visible="false" color="0xA9A9BDFF" focusedColor="0xFFFFFFFF" focusBitmapUri="pkg:/images/focus.9.png" />
+    <Label id="busy" translation="400,340" width="820" height="40" text="Carregando…" font="font:SmallSystemFont" color="0xA9A9BDFF" />
+  </children>
+</component>

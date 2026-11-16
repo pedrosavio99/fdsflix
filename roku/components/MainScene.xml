@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<component name="MainScene" extends="Scene">
+  <script type="text/brightscript" uri="pkg:/components/api.brs" />
+  <script type="text/brightscript" uri="pkg:/components/MainScene.brs" />
+  <children>
+    <Rectangle id="bg" width="1280" height="720" color="0x0B0B10FF" />
+    <Poster id="logo" translation="50,22" width="190" height="64" loadDisplayMode="scaleToFit" uri="pkg:/images/logo.png" />
+    <ButtonGroup id="menu" layoutDirection="horiz" translation="300,20" horizAlignment="left" textColor="0xA9A9BDFF" focusedTextColor="0xFFFFFFFF" color="0x14141DFF" focusedColor="0xE50914FF" focusBitmapUri="pkg:/images/focus.9.png" />
+    <RowList id="rows" translation="0,110" itemComponentName="PosterItem" itemSize="[1280,300]" numRows="2"
+             rowItemSize="[[150,275]]" rowItemSpacing="[[18,0]]" rowLabelOffset="[[50,6]]" showRowLabel="[true]"
+             focusXOffset="[50]" itemSpacing="[0,10]" rowFocusAnimationStyle="floatingFocus" focusBitmapUri="pkg:/images/focus.9.png" rowLabelColor="0xF2F2F7FF" visible="false" />
+    <Label id="loading" translation="0,330" width="1280" height="48" horizAlignment="center" text="Carregando…" color="0xA9A9BDFF" font="font:MediumSystemFont" visible="false" />
+    <Label id="empty" translation="0,330" width="1280" height="48" horizAlignment="center" text="" color="0xA9A9BDFF" font="font:SmallSystemFont" visible="false" />
+    <DetailScreen id="detail" visible="false" />
+    <Video id="player" width="1280" height="720" visible="false" />
+    <Group id="busyLayer" visible="false">
+      <Rectangle width="1280" height="720" color="0x000000CC" />
+      <Label id="busyText" translation="0,330" width="1280" height="48" horizAlignment="center" text="Carregando…" color="0xF2F2F7FF" font="font:MediumSystemFont" />
+    </Group>
+  </children>
+</component>

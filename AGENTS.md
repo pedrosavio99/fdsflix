@@ -258,6 +258,30 @@ não carrega. A troca prefere "Português (Brasil) · tradução automática", d
 **Casamento por título (TokyVideo)**: `titleScore` agora exige 3+ letras depois de normalizar e "contém" só por palavra inteira
 (o nome russo "Гладiатор" virava "i" e casou "Gladiador" com "Pulp Fiction"); ano diferente (folga ±1) recusa o candidato.
 
+## Aparelhos (admin): canal Roku
+
+Botão **Aparelhos** (ícone de TV, `#devOpen`, `public/devices.js`, diálogo `#devDialog`) na barra do admin: um cartão por aparelho com o
+**zip para baixar** e o **manual de instalação** (Roku é o único por enquanto). Rotas (admin, `requireStatsKey`): `GET /api/admin/devices`
+e `GET /api/admin/devices/roku.zip` (monta na hora com `lib/rokuKit.js`, embute o endereço público do servidor em `config.json` e um
+`build_version` novo). Visual igual ao do site (mesmas variáveis `--brand`, `--panel`, `cfg-card`; o app Roku usa as mesmas cores e o logo
+"fds" vermelho + "Flix" branco, ver `roku/images/`).
+- **Por que app nativo e não "launcher que mostra o site":** o Roku não tem WebView/navegador para canal, então não dá para renderizar o
+  site e repassar o controle. O app (`roku/`, BrightScript/SceneGraph) é um **cliente fino da API**: `/api/home`, `/api/row`, `/api/details`,
+  `/api/season`, `/api/search`, `/api/stream/options` (dublado/original), `/api/stream`, `/api/live/channels`, `/api/live/stream`. Toda a
+  lógica (fontes, matchGuard, troca de versão, legenda) continua no servidor, então **quase nunca precisa reinstalar** — só se a interface do
+  app mudar. Para Android TV/Fire TV um launcher com WebView seria possível (não feito).
+- Recursos no app: abas Início/Filmes/Séries/TV ao vivo/Buscar; detalhe com temporadas/episódios; escolha dublado/original; tecla `*`
+  (options) = "Outra versão" (usa `skip`/`src`/`sv` como no site, retoma a posição); troca sozinha se o vídeo errar ou a duração diferir de
+  `expectMin`; TV ao vivo pula fonte `mode:"page"` (página de player, que o Roku não renderiza).
+- Legenda: o app pede `/api/subtitle.srt` (o Roku lê SRT externo; o servidor converte o WebVTT com `vttToSrt` em `lib/subtitles.js`).
+- Texto do app é neutro (regra do público só vê o vídeo; teste em `test/roku.test.js` varre as frases do app).
+- **Validação feita:** `bsc` (BrighterScript 0.73.8) compila o pacote sem erro (`bsc --rootDir roku --files "manifest" "source/**/*"
+  "components/**/*" "config.json" --createPackage false --copyToStaging false`), e o zip gerado também. **NÃO foi executado num Roku**
+  (sem aparelho; o emulador `brs-node` não rodou aqui). Incertezas a conferir na TV: nome do campo de legenda externa (`SubtitleTracks`
+  + `subtitleTrack`), `streamFormat "ts"` na TV ao vivo e o visual do 9-patch de foco (`roku/images/focus.9.png`).
+- Instalar: modo desenvolvedor da TV (Home×3, ↑↑, →←→←→), `http://IP-DA-TV` (usuário `rokudev`) → Upload → Install. Só um canal de
+  desenvolvedor por vez (instalar substitui o anterior).
+
 ## Dublado ou original (escolha antes de tocar)
 
 - `GET /api/stream/options?id&type&s&e&title` (`lib/streamOptions.js`): roda as fontes **em paralelo**
@@ -282,6 +306,6 @@ não carrega. A troca prefere "Português (Brasil) · tradução automática", d
 
 ## Como rodar e testar
 
-- `npm start` (porta `PORT`, padrão 3000) · `npm test` (276 testes, `node --test test/*.test.js`).
+- `npm start` (porta `PORT`, padrão 3000) · `npm test` (283 testes, `node --test test/*.test.js`).
 - Manutenção/"mudamos de URL": tela "Site" do admin (`lib/siteStatus.js`, `public/sitegate.js`, `public/site.js`; tabela `pix_settings` no Supabase).
 - Docs: `docs/DEPLOY-RENDER.md`, `docs/VERCEL-POOL.md`, `docs/TV-AO-VIVO.md`, `docs/VISITANTES.md`, `docs/API.md`.

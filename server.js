@@ -30,7 +30,7 @@ const {
   shutdown
 } = require('./lib/transcoder');
 const { proxyVideo, USER_AGENT, TOKEN_TTL_MS } = require('./lib/proxy');
-const { srtToVtt, shiftVtt, decodeSubtitle, stripSpamCues, analyzeVtt } = require('./lib/subtitles');
+const { srtToVtt, shiftVtt, decodeSubtitle, stripSpamCues, analyzeVtt, vttToSrt } = require('./lib/subtitles');
 const { translateVtt } = require('./lib/translate');
 const registry = require('./lib/registry');
 const usageLedger = require('./lib/usageLedger');
@@ -38,6 +38,7 @@ const visitors = require('./lib/visitors');
 const watchStats = require('./lib/watchStats');
 const egress = require('./lib/egressMeter');
 const poolKit = require('./lib/poolKit');
+const rokuKit = require('./lib/rokuKit');
 const pixKit = require('./lib/pixKit');
 const pixAuth = require('./lib/pixAuth');
 const siteStatus = require('./lib/siteStatus');
@@ -1176,6 +1177,45 @@ app.get('/api/pool/info', requireApiKey, requireStatsKey, (req, res) => {
     kit: poolKit.kitAvailable(),
     poolSize: usageLedger.getPool().length
   });
+});
+
+/* ------------------------------------------------------------------ */
+/* Aparelhos (admin): apps para TV, começando pelo Roku                  */
+/* ------------------------------------------------------------------ */
+
+// Lista dos aparelhos com app. O app é um cliente fino da própria API: a lógica fica aqui, então o zip quase
+// nunca precisa ser refeito (só quando a interface do app mudar). O .zip sai com o endereço deste servidor.
+app.get('/api/admin/devices', requireApiKey, requireStatsKey, (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const api = publicOrigin(req);
+  res.json({
+    devices: [
+      {
+        id: 'roku',
+        name: 'Roku TV',
+        available: rokuKit.kitAvailable(),
+        file: 'fdsflix-roku.zip',
+        download: '/api/admin/devices/roku.zip',
+        api,
+        https: /^https:\/\//i.test(api)
+      }
+    ]
+  });
+});
+
+app.get('/api/admin/devices/roku.zip', requireApiKey, requireStatsKey, (req, res) => {
+  if (!rokuKit.kitAvailable()) return res.status(404).json({ error: 'A pasta roku/ não está neste servidor.' });
+  try {
+    const kit = rokuKit.buildKit({ api: publicOrigin(req), key: API_KEY });
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="${kit.filename}"`);
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Content-Length', kit.zip.length);
+    res.setHeader('X-Roku-Api', kit.api);
+    res.end(kit.zip);
+  } catch (err) {
+    res.status(400).json({ error: `Não consegui montar o canal: ${err.message}` });
+  }
 });
 
 /* ------------------------------------------------------------------ */
@@ -2494,7 +2534,8 @@ function translatedVtt(sourceVtt, to) {
   return job;
 }
 
-app.get('/api/subtitle', async (req, res) => {
+// `.srt` é para o Roku (legenda externa só em SRT); o resto é WebVTT para o <track> do navegador.
+app.get(['/api/subtitle', '/api/subtitle.srt'], async (req, res) => {
   const entry = registry.resolve('subtitle', String(req.query.t || ''));
   if (!entry) return res.status(404).json({ error: 'Legenda expirada. Recarregue o player.' });
 
@@ -2520,12 +2561,13 @@ app.get('/api/subtitle', async (req, res) => {
       ? shiftVtt(baseVtt, total, scale)
       : baseVtt;
 
-    res.setHeader('Content-Type', 'text/vtt; charset=utf-8');
+    const asSrt = req.path.endsWith('.srt');
+    res.setHeader('Content-Type', asSrt ? 'application/x-subrip; charset=utf-8' : 'text/vtt; charset=utf-8');
     res.setHeader('Access-Control-Allow-Origin', '*');
     // Tradução incompleta (provedor limitado): não deixa o navegador guardar, para tentar de novo.
     res.setHeader('Cache-Control', complete ? 'public, max-age=3600' : 'no-store');
     if (entry.translateTo) res.setHeader('X-Subtitle-Translation', complete ? 'ok' : 'partial');
-    res.send(body);
+    res.send(asSrt ? vttToSrt(body) : body);
   } catch (err) {
     res.status(err.status || 502).json({ error: err.status ? err.message : 'Falha ao baixar legenda: ' + err.message });
   }
