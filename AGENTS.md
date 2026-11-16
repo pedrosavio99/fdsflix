@@ -260,6 +260,8 @@ não carrega. A troca prefere "Português (Brasil) · tradução automática", d
 
 ## Aparelhos (admin): canal Roku
 
+> **Vai criar app para outra TV (Android TV, Samsung, LG…)?** Leia antes `docs/AGENTE-NOVAS-TVS.md`: contrato da API, padrão de ligação com o admin, como testar e as armadilhas já pagas no Roku.
+
 Botão **Aparelhos** (ícone de TV, `#devOpen`, `public/devices.js`, diálogo `#devDialog`) na barra do admin: um cartão por aparelho com o
 **zip para baixar** e o **manual de instalação** (Roku é o único por enquanto). Rotas (admin, `requireStatsKey`): `GET /api/admin/devices`
 e `GET /api/admin/devices/roku.zip` (monta na hora com `lib/rokuKit.js`, embute o endereço público do servidor em `config.json` e um
