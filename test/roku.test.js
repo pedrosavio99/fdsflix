@@ -179,3 +179,51 @@ test('canal Roku: "Ir para o início" existe e reconstrói a aba Início', () =>
   assert.match(home, /loadTab\(0\)/);
   assert.match(home, /m\.nav\.setFocus\(true\)/);
 });
+
+// Legenda desenhada pelo app + botão "Menu inicial" (reclamação do dono: legenda "ativa" que não aparecia).
+function kitFiles() {
+  return readZip(buildKit({ api: 'https://exemplo.onrender.com' }).zip);
+}
+const semComentario = (src) => src.replace(/'.*$/gm, '');
+
+test('canal Roku: legenda é desenhada pelo app (SubTask + srt.brs) e não usa a legenda nativa da TV', () => {
+  const files = kitFiles();
+  assert.ok(files['components/SubTask.brs'] && files['components/SubTask.xml'] && files['components/srt.brs']);
+  const scene = semComentario(files['components/MainScene.brs'].toString('utf8'));
+  assert.doesNotMatch(scene, /globalCaptionMode|subtitleTrack|SubtitleTracks/);
+  assert.match(scene, /CreateObject\("roSGNode", "SubTask"\)/);
+  assert.match(scene, /function onSubTick|sub onSubTick/);
+  assert.match(files['components/MainScene.xml'].toString('utf8'), /srt\.brs/);
+});
+
+test('canal Roku: nenhum .brs usa "pos" (palavra reservada) nem compara nós com "="', () => {
+  const files = kitFiles();
+  for (const [name, buf] of Object.entries(files)) {
+    if (!name.endsWith('.brs')) continue;
+    const src = semComentario(buf.toString('utf8'));
+    assert.doesNotMatch(src, /(^|[^.\w"])pos\s*(=|as\b)/m, `${name}: "pos" é palavra reservada`);
+    assert.doesNotMatch(src, /\(m\.active = m\.(rows|liveRows)/, `${name}: não compare nós com "="`);
+  }
+});
+
+test('canal Roku: tela de detalhe tem "Menu inicial" (filme: botão; série: último item da lista) ligado ao goHome', () => {
+  const files = kitFiles();
+  const xml = files['components/DetailScreen.xml'].toString('utf8');
+  const brs = semComentario(files['components/DetailScreen.brs'].toString('utf8'));
+  assert.match(xml, /id="homeBtn"[^>]*text="Menu inicial"/);
+  assert.match(xml, /id="goHome"/);
+  assert.match(brs, /homeItem\.id = "home"/);
+  assert.match(brs, /m\.top\.goHome = true/);
+  const scene = semComentario(files['components/MainScene.brs'].toString('utf8'));
+  assert.match(scene, /observeField\("goHome", "onDetailHome"\)/);
+});
+
+test('servidor: link da legenda vale mais que 4 min e o texto não fica preso ao token', () => {
+  const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'server.js'), 'utf8');
+  const ttl = /const SUBTITLE_TTL_MS = (\d+) \* (\d+) \* (\d+) \* (\d+);/.exec(src);
+  assert.ok(ttl, 'SUBTITLE_TTL_MS não encontrado');
+  assert.ok(ttl[1] * ttl[2] * ttl[3] * ttl[4] >= 60 * 60 * 1000, 'legenda precisa durar pelo menos 1 h');
+  assert.equal((src.match(/registry\.register\('subtitle'[\s\S]*?\)\;/g) || []).length >= 1, true);
+  assert.doesNotMatch(src, /register\('subtitle',[^;]*TOKEN_TTL_MS/);
+  assert.doesNotMatch(src, /entry\.vtt\b/);
+});

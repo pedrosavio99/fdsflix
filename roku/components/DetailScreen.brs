@@ -4,6 +4,7 @@ sub init()
   m.overview = m.top.findNode("overview")
   m.backdrop = m.top.findNode("backdrop")
   m.playBtn = m.top.findNode("playBtn")
+  m.homeBtn = m.top.findNode("homeBtn")
   m.seasons = m.top.findNode("seasons")
   m.eps = m.top.findNode("eps")
   m.spinner = m.top.findNode("spinner")
@@ -17,8 +18,9 @@ sub init()
   m.curSeason = 0
   m.focusOn = "play"
   m.playBtn.observeField("selected", "onPlayMovie")
+  m.homeBtn.observeField("selected", "onHomeBtn")
   m.seasons.observeField("itemFocused", "onSeasonFocus")
-  m.seasons.observeField("itemSelected", "onSeasonPick")
+  m.seasons.observeField("itemSelected", "onSeasonSelected")
   m.eps.observeField("itemSelected", "onEpisodePick")
 end sub
 
@@ -31,6 +33,7 @@ sub onItem()
   m.overview.text = it.overview
   m.backdrop.uri = it.backdrop
   m.playBtn.visible = false
+  placeHome(it.type)
   m.panel.visible = false
   m.seasons.visible = false
   m.eps.visible = false
@@ -81,6 +84,10 @@ sub onDetails(event as object)
     node.id = s.n.toStr()
     node.title = "Temporada " + s.n.toStr()
   end for
+  ' último item da lista: "Menu inicial" (Cima a partir da Temporada 1 dá a volta até ele)
+  homeItem = root.createChild("ContentNode")
+  homeItem.id = "home"
+  homeItem.title = "Menu inicial"
   m.seasons.content = root
   m.panel.visible = true
   m.seasons.visible = true
@@ -94,7 +101,9 @@ sub onSeasonFocus()
   if m.seasons.content = invalid then return
   idx = m.seasons.itemFocused
   if idx < 0 or idx >= m.seasons.content.getChildCount() then return
-  n = m.seasons.content.getChild(idx).id.toInt()
+  sid = m.seasons.content.getChild(idx).id
+  if sid = "home" then return
+  n = sid.toInt()
   if n = m.curSeason then return
   m.curSeason = n
   m.eps.content = invalid
@@ -125,11 +134,40 @@ sub onSeason(event as object)
   m.eps.content = root
 end sub
 
+' Seleção na lista de temporadas: o 1º item é o "Menu inicial".
+sub onSeasonSelected()
+  idx = m.seasons.itemSelected
+  if idx >= 0 and m.seasons.content <> invalid and m.seasons.content.getChild(idx).id = "home"
+    m.top.goHome = true
+    return
+  end if
+  onSeasonPick()
+end sub
+
+function seasonIsHome() as boolean
+  if m.seasons.content = invalid then return false
+  idx = m.seasons.itemFocused
+  if idx < 0 or idx >= m.seasons.content.getChildCount() then return false
+  return m.seasons.content.getChild(idx).id = "home"
+end function
+
 sub onSeasonPick()
   if m.eps.content <> invalid and m.eps.content.getChildCount() > 0
     m.eps.setFocus(true)
     m.focusOn = "eps"
   end if
+end sub
+
+' Filme: botão ao lado do "Assistir". Série: "Menu inicial" é o ÚLTIMO item da lista de temporadas
+' (uma lista dá a volta com a seta para cima, então um botão fora dela não seria alcançado). Fica por ÚLTIMO..
+sub placeHome(kind as string)
+  m.homeBtn.translation = [352, 372]
+  m.homeBtn.width = 240
+  m.homeBtn.visible = (kind = "movie")
+end sub
+
+sub onHomeBtn()
+  m.top.goHome = true
 end sub
 
 sub onPlayMovie()
@@ -148,8 +186,16 @@ function onKeyEvent(key as string, press as boolean) as boolean
   if key = "back"
     m.top.closed = true
     return true
+  else if key = "right" and m.focusOn = "play"
+    m.homeBtn.setFocus(true)
+    m.focusOn = "home"
+    return true
+  else if key = "left" and m.focusOn = "home" and m.cur <> invalid and m.cur.type = "movie"
+    m.playBtn.setFocus(true)
+    m.focusOn = "play"
+    return true
   else if key = "right" and m.focusOn = "seasons"
-    onSeasonPick()
+    if not seasonIsHome() then onSeasonPick()
     return true
   else if key = "left" and m.focusOn = "eps"
     m.seasons.setFocus(true)
@@ -162,8 +208,11 @@ end function
 ' Chamado pela cena para devolver o foco depois do vídeo.
 sub focusMain()
   if m.cur = invalid then return
-  if m.cur.type = "movie"
+  if m.focusOn = "home"
+    m.homeBtn.setFocus(true)
+  else if m.cur.type = "movie"
     m.playBtn.setFocus(true)
+    m.focusOn = "play"
   else if m.focusOn = "eps"
     m.eps.setFocus(true)
   else

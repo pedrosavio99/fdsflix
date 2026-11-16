@@ -106,10 +106,31 @@ apareceu **executando**. Então, antes de entregar:
    Um app que "abre o vídeo por cima da tela errada" ou "fica sem resposta ao apertar Voltar" está reprovado.
 5. Teste no emulador: Voltar durante o carregamento, menu → cada item, Voltar com o menu aberto, TV ao vivo → sair → mover pelo controle.
 
+## 6c. Legenda: o que deu errado no Roku e como fazer certo (leia antes de implementar)
+
+- **O link da legenda tem que durar o filme inteiro.** A TV só baixa a faixa quando a pessoa a escolhe, às vezes no meio do filme. O token
+  valia 4 min e a faixa dava 404 "Legenda expirada" enquanto o menu dizia "(ativa)". Agora vale 3 h (`SUBTITLE_TTL_MS`). **Teste sempre
+  escolhendo a legenda depois de mais de 4 minutos** (ou meça: pegue um `captions[].url`, espere e baixe de novo).
+- **Prefira desenhar a legenda no próprio app** (baixar o `.srt`, ler as falas, mostrar a da posição atual) quando a TV só aceitar legenda
+  externa em formatos/modos que você não consegue testar sem o aparelho. No Roku, MP4 com legenda externa é TTML na documentação e o
+  `globalCaptionMode` altera a configuração global do aparelho. O leitor de SRT/VTT pronto está em `roku/components/srt.brs`
+  (testado contra a legenda real, igual a uma contagem em Python) e pode ser portado.
+- **Mostre o estado:** "Carregando legenda…" (a tradução automática demora) e, se falhar, "Não consegui carregar esta legenda." Nunca marque
+  uma faixa como ativa antes de ela estar carregada.
+- **Teste de legenda no emulador:** como o emulador não toca vídeo, simule a posição (cópia do app com a posição fixa em 125 s) e confira no
+  print: fala certa, 2 linhas, troca de idioma, "Sem legenda". Diga ao dono que o sincronismo com vídeo real não foi visto.
+
+## 6d. Tela de detalhe
+
+- Precisa de **botão para voltar ao menu inicial** (filme: ao lado de "Assistir"; série: item da lista de temporadas, porque listas dão a
+  volta com a seta para cima e um botão fora delas fica inalcançável). Teste a navegação por TODAS as setas, não só o caminho feliz.
+
 ## 7. Armadilhas conhecidas
 
 - Dar `setFocus` na cena inteira tira o foco do componente que devia receber os botões (Roku). A exceção é de propósito: durante o "Carregando…" o foco vai para a cena para o Voltar cancelar (ver 6b).
 - Foco numa lista **invisível** deixa o controle morto: ao devolver o foco, use a lista que está na tela.
+- BrightScript: `pos` é palavra reservada (o emulador deixa passar, a TV não); comparar dois nós com `=` falha no emulador (use um marcador booleano). **O erro do emulador não contém a palavra ERROR**: varra o log por `mismatch|error|exception|cannot|can't be`, senão você acha que está limpo e não está.
+- Servidor de teste local: antes de subir, confira se a porta está livre (`curl localhost:PORTA/api/health` já responder = tem servidor ANTIGO ali; o seu nem subiu e você testa código velho). Use uma porta nova.
 - Em BrightScript, `type()` de valores vindos de `ParseJson` engana; leia o campo direto e teste `invalid`.
 - Percent-encoding de títulos com acento: o Roku não faz sozinho; veja `urlEnc` em `roku/components/api.brs`.
 - Não use redirect 302 para o CDN do vídeo: o Chrome perde o `Origin` nos `Range` (ver `AGENTS.md`). TVs com navegador baseado em Chromium herdam isso.

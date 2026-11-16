@@ -26,6 +26,20 @@ sub init()
   m.hintTimer = m.top.findNode("hintTimer")
   m.hintText.font = makeFont("pkg:/fonts/Inter-Bold.ttf", 20)
   m.hintTimer.observeField("fire", "hideHint")
+  m.subGroup = m.top.findNode("subGroup")
+  m.subBox = m.top.findNode("subBox")
+  m.subLabel = m.top.findNode("subLabel")
+  m.subLabel.font = makeFont("pkg:/fonts/Inter-Bold.ttf", 30)
+  m.subTimer = m.top.findNode("subTimer")
+  m.subTimer.observeField("fire", "onSubTick")
+  m.toast = m.top.findNode("toast")
+  m.toastText = m.top.findNode("toastText")
+  m.toastText.font = makeFont("pkg:/fonts/Inter-Bold.ttf", 20)
+  m.toastTimer = m.top.findNode("toastTimer")
+  m.toastTimer.observeField("fire", "hideToast")
+  m.subCues = invalid
+  m.subCur = -2
+  m.subTask = invalid
   if m.global.debug = true
     info = m.top.findNode("debugInfo")
     info.font = makeFont("pkg:/fonts/Inter-Regular.ttf", 15)
@@ -50,6 +64,7 @@ sub init()
   m.liveRows.observeField("rowItemFocused", "onRowFocus")
   m.detail.observeField("playRequest", "onPlayRequest")
   m.detail.observeField("closed", "onDetailClosed")
+  m.detail.observeField("goHome", "onDetailHome")
   m.search.observeField("picked", "onSearchPicked")
   m.search.observeField("closed", "onSearchClosed")
   m.player.observeField("state", "onPlayerState")
@@ -71,6 +86,7 @@ sub init()
   m.homeRows = invalid
   m.play = invalid
   m.active = m.rows
+  m.liveTab = false       ' true na aba TV ao vivo (não compare nós com "=": o emulador recusa)
   m.pendingBackdrop = ""
   m.langByTitle = {}
   m.nav.setFocus(true)
@@ -102,7 +118,8 @@ sub loadTab(idx as integer)
   m.empty.visible = false
   clearHero()
   m.rowTitle.text = ""
-  if idx = 3 then m.active = m.liveRows else m.active = m.rows
+  m.liveTab = (idx = 3)
+  if m.liveTab then m.active = m.liveRows else m.active = m.rows
   m.focusRowsWhenReady = (m.mode = "browse" and not m.nav.isInFocusChain())
   showSpinner(true)
 
@@ -309,8 +326,8 @@ sub onSearchClosed()
   m.nav.visible = true
   m.mode = "browse"
   if m.active.visible then m.active.setFocus(true) else m.nav.setFocus(true)
-  m.rows.visible = (m.active = m.rows and m.rowsShown > 0)
-  m.liveRows.visible = (m.active = m.liveRows and m.rowsShown > 0)
+  m.rows.visible = (not m.liveTab and m.rowsShown > 0)
+  m.liveRows.visible = (m.liveTab and m.rowsShown > 0)
   m.nav.selected = m.tab
 end sub
 
@@ -355,10 +372,14 @@ sub onItemPick()
   end if
 end sub
 
+sub onDetailHome()
+  goHome()
+end sub
+
 sub onDetailClosed()
   m.detail.visible = false
   m.nav.visible = true
-  m.rows.visible = (m.active = m.rows)
+  m.rows.visible = (not m.liveTab)
   m.heroBg.visible = (m.tab < 3)
   m.heroOverlay.visible = (m.tab < 3)
   m.heroTitle.visible = true
@@ -374,7 +395,7 @@ end sub
 sub onPlayRequest(event as object)
   req = event.getData()
   if req = invalid then return
-  m.play = { live: false, type: req.type, id: req.id, s: req.s, e: req.e, title: req.title, skip: [], pick: "", lang: "", autoSwitches: 0, resume: 0, expectMin: 0, curSrc: "", curSv: "", tries: 0, token: "", tracks: [], subPref: invalid, subIdx: -1 }
+  m.play = { live: false, type: req.type, id: req.id, s: req.s, e: req.e, title: req.title, skip: [], pick: "", lang: "", autoSwitches: 0, resume: 0, expectMin: 0, curSrc: "", curSv: "", tries: 0, token: "", tracks: [], subPref: invalid, subIdx: -1, subToken: "", subCache: {} }
   enterLoading("Carregando…")
   m.play.token = nextToken()
   path = "/api/stream/options?id=" + req.id + "&type=" + req.type + "&s=" + req.s.toStr() + "&e=" + req.e.toStr() + "&hevc=0&title=" + urlEnc(req.title)
@@ -482,7 +503,7 @@ end sub
 ' ---------------------------------------------------------------- TV ao vivo: tocar
 
 sub startLive(id as string, title as string)
-  m.play = { live: true, ch: id, title: title, skip: [], tries: 0, token: "", tracks: [], subPref: invalid, subIdx: -1 }
+  m.play = { live: true, ch: id, title: title, skip: [], tries: 0, token: "", tracks: [], subPref: invalid, subIdx: -1, subToken: "", subCache: {} }
   enterLoading("Carregando…")
   requestLive()
 end sub
@@ -536,13 +557,12 @@ sub startVideo(url as string, mode as dynamic, captions as dynamic)
   c.streamFormat = fmt
   if m.play.live = false and m.play.resume > 0 then c.PlayStart = m.play.resume
 
+  ' A legenda é desenhada pelo app (SubTask baixa e lê o .srt; onSubTick mostra a fala da posição atual).
+  ' Não usamos SubtitleTracks/subtitleTrack/globalCaptionMode: dependem do formato aceito pela TV (MP4 externo
+  ' é TTML na documentação do Roku) e mexem na configuração GLOBAL de legenda do aparelho.
   m.play.tracks = sortTracks(captions)
-  content = []
-  for each t in m.play.tracks
-    content.push({ Language: t.Language, TrackName: t.TrackName, Description: t.Description })
-  end for
-  c.update({ SubtitleTracks: content }, true)
-
+  clearSubs()
+  m.player.notificationInterval = 0.25
   m.player.content = c
   ' Legenda: o que a pessoa escolheu vale; senão dublado começa sem legenda e original liga (português primeiro).
   want = -1
@@ -558,7 +578,6 @@ sub startVideo(url as string, mode as dynamic, captions as dynamic)
       if want < 0 and m.play.lang <> "dub" then want = 0
     end if
   end if
-  applySub(want)
   m.player.control = "play"
   m.player.visible = true
   m.player.setFocus(true)
@@ -566,6 +585,7 @@ sub startVideo(url as string, mode as dynamic, captions as dynamic)
   m.watchdog = 0
   hideBusy()
   showHint()
+  applySub(want)
 end sub
 
 ' ---------------------------------------------------------------- dica e menu do player
@@ -586,17 +606,116 @@ sub hideHint()
   m.hintTimer.control = "stop"
 end sub
 
-' idx = -1 desliga a legenda; senão liga a faixa idx da lista ordenada.
+sub showToast(text as string, secs as float)
+  m.toastText.text = "  " + text
+  m.toast.visible = true
+  m.toastTimer.control = "stop"
+  m.toastTimer.duration = secs
+  m.toastTimer.control = "start"
+end sub
+
+sub hideToast()
+  m.toast.visible = false
+  m.toastTimer.control = "stop"
+end sub
+
+' ---------------------------------------------------------------- legenda desenhada pelo app
+
+' idx = -1 desliga a legenda; senão baixa (ou pega do cache) a faixa idx da lista ordenada e passa a mostrá-la.
 sub applySub(idx as integer)
   if m.play = invalid then return
+  clearSubs()
+  m.play.subToken = ""
   if idx < 0 or idx >= m.play.tracks.count()
     m.play.subIdx = -1
-    m.player.globalCaptionMode = "Off"
-  else
-    m.play.subIdx = idx
-    m.player.globalCaptionMode = "On"
-    m.player.subtitleTrack = m.play.tracks[idx].TrackName
+    return
   end if
+  m.play.subIdx = idx
+  key = m.play.tracks[idx].TrackName
+  cached = m.play.subCache[key]
+  if cached <> invalid
+    useCues(cached)
+    return
+  end if
+  showToast("Carregando legenda…", 60)
+  m.play.subToken = nextToken()
+  task = CreateObject("roSGNode", "SubTask")
+  task.url = key
+  task.apiKey = m.global.apiKey
+  task.tag = m.play.subToken
+  task.observeField("result", "onSubResult")
+  m.subTask = task
+  task.control = "RUN"
+end sub
+
+sub onSubResult(event as object)
+  res = event.getData()
+  if m.play = invalid or res = invalid or res.tag <> m.play.subToken then return
+  idx = m.play.subIdx
+  if res.ok and idx >= 0 and idx < m.play.tracks.count()
+    key = m.play.tracks[idx].TrackName
+    if m.play.subCache.count() >= 2 then m.play.subCache = {}
+    m.play.subCache[key] = res.cues
+    useCues(res.cues)
+    text = "Legenda: " + m.play.tracks[idx].Description
+    if m.global.debug = true then text = text + "  [" + res.count.toStr() + " falas]"
+    showToast(text, 3)
+  else
+    m.play.subIdx = -1
+    text = "Não consegui carregar esta legenda."
+    if m.global.debug = true then text = text + "  [" + res.error + " · status " + res.status.toStr() + "]"
+    showToast(text, 5)
+  end if
+end sub
+
+sub useCues(cues as object)
+  m.subCues = cues
+  m.subCur = -2
+  m.subTimer.control = "start"
+  onSubTick()
+end sub
+
+sub clearSubs()
+  m.subCues = invalid
+  m.subCur = -2
+  m.subTimer.control = "stop"
+  m.subGroup.visible = false
+  hideToast()
+end sub
+
+' Mostra a fala que cobre a posição atual do vídeo (a cada 0,25 s).
+sub onSubTick()
+  if m.subCues = invalid or m.player = invalid then return
+  secs = m.player.position
+  if secs = invalid then return
+  if m.subCur >= 0 and m.subCur < m.subCues.count()
+    c = m.subCues[m.subCur]
+    if secs >= c.s and secs < c.e then return
+  end if
+  idx = findCue(m.subCues, secs)
+  if idx = m.subCur then return
+  m.subCur = idx
+  if idx < 0
+    m.subGroup.visible = false
+  else
+    setSubText(m.subCues[idx].t)
+  end if
+end sub
+
+sub setSubText(text as string)
+  parts = text.split(Chr(10))
+  lines = 0
+  for each p in parts
+    lines = lines + 1 + Int(Len(p) / 52)
+  end for
+  if lines > 3 then lines = 3
+  h = lines * 38 + 16
+  m.subBox.height = h
+  m.subBox.translation = [140, 656 - h]
+  m.subLabel.height = h - 12
+  m.subLabel.translation = [160, 656 - h + 6]
+  m.subLabel.text = text
+  m.subGroup.visible = true
 end sub
 
 sub openMenu()
@@ -690,6 +809,7 @@ end sub
 
 ' Volta direto para o início (aba Início, foco na barra de abas), de qualquer ponto do vídeo.
 sub goHome()
+  clearSubs()
   m.menuOpen = false
   m.player.control = "stop"
   m.player.visible = false
@@ -766,6 +886,7 @@ sub switchVersion()
 end sub
 
 sub closePlayer()
+  clearSubs()
   m.menuOpen = false
   m.player.control = "stop"
   m.player.visible = false

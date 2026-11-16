@@ -25,7 +25,7 @@ Hardware assumido: Render **Free** = 512 MB RAM e **0,1 CPU** (o `render.yaml` d
 
 `lib/streamGuard.js` (ligado em `/api/stream`, sem variável de ambiente): junta pedidos idênticos em voo (nada fica guardado depois da resposta; o "↻ Recarregar" faz busca nova) e limita 30 buscas simultâneas (excedente espera até 30 s e depois roda mesmo assim, nunca é recusado). Admin (senha) nunca é juntado nem enfileirado. Estatísticas em `/api/health` (admin): `streamGuard`. Testes: `test/streamGuard.test.js`.
 
-Estimativa (a CPU local é mais rápida que 0,1 CPU do Render; trate como ordem de grandeza). Correções importantes: tokens de legenda vivem 4 min (`TOKEN_TTL_MS`), então **memória não é gargalo por causa das legendas**; e o Worker da Cloudflare **provavelmente nem carrega o vídeo** (o CDN principal recusa a rede da Cloudflare, ver `deploy/media-relay/README.md`; o vídeo do Vidsrc sai pelas Vercels).
+Estimativa (a CPU local é mais rápida que 0,1 CPU do Render; trate como ordem de grandeza). Correções importantes: tokens de legenda vivem 3 h (`SUBTITLE_TTL_MS`; eram 4 min e a faixa escolhida no meio do filme dava 404, ver "Player do Roku") mas são minúsculos e o TEXTO fica no cache compartilhado por URL (`fetchSubtitleSource`: 30 min, máx. 80), então **memória não é gargalo por causa das legendas**; e o Worker da Cloudflare **provavelmente nem carrega o vídeo** (o CDN principal recusa a rede da Cloudflare, ver `deploy/media-relay/README.md`; o vídeo do Vidsrc sai pelas Vercels).
 
 - **Só o Render (CPU), com o vídeo saindo por fora e a banda resolvida com mais fallbacks/Vercels:** ~300 a 500 espectadores simultâneos. Cada espectador faz poucas chamadas leves (aviso de uso a cada 20 s, status do site a cada 45 s, EPG da TV a cada 60 s) e um play a cada 30–120 min.
 - **Chegada de visitantes novos:** ~3 a 5 por segundo sustentados (CPU do gzip do HTML) até o cache do HTML (próximo passo 1). Visita que volta recebe 304 e custa quase nada.
@@ -296,6 +296,26 @@ e `GET /api/admin/devices/roku.zip` (monta na hora com `lib/rokuKit.js`, embute 
   foco à lista **ativa** (`m.active`; antes ia para a lista de filmes mesmo vindo de TV ao vivo, deixando o controle morto). `goHome()` (menu →
   "Ir para o início") sai de qualquer ponto direto para a aba Início com o foco na barra. **Não verificado numa TV de verdade:** se a seta para
   baixo chega ao app durante o vídeo, o `wasClosed` do Dialog, e se `subtitleTrack` troca a faixa em tempo real. O emulador não toca vídeo.
+- **Legenda no Roku: desenhada PELO APP (v3), não pela TV.** Reclamação real do dono: o menu marcava a legenda como "(ativa)" mas ela não
+  aparecia. Duas causas, as duas corrigidas: **(1) servidor:** o link de cada legenda (`/api/subtitle?t=`) morria em **4 min**
+  (`TOKEN_TTL_MS`) e o Roku só baixa o arquivo quando a faixa é escolhida, então escolher depois de 4 min = HTTP 404 "Legenda expirada"
+  (medido no Render: 404 após 4,5 min; com a correção, 200). Agora `SUBTITLE_TTL_MS` = 3 h e o texto não fica preso ao token
+  (`loadSubtitleVtt` usa o cache por URL). **(2) app:** a documentação do Roku diz que legenda externa em MP4 é TTML (SRT só aparece como
+  suporte "legado") e `globalCaptionMode` mexe na configuração GLOBAL de legenda do aparelho; não dá para testar isso sem TV. Então o app
+  **não usa mais** `SubtitleTracks/subtitleTrack/globalCaptionMode`: `SubTask` baixa o `.srt` e `parseSrt` (`srt.brs`, lê SRT e WebVTT, remove
+  tags/entidades, ordena) devolve as falas; `onSubTick` (Timer 0,25 s + `Video.notificationInterval = 0.25`) acha a fala da posição
+  (`findCue`, busca binária) e `setSubText` a desenha numa caixa translúcida embaixo (Inter Bold 30, até 3 linhas). Cache de 2 faixas por
+  título; "Carregando legenda…" enquanto baixa (tradução automática pode demorar); falha mostra "Não consegui carregar esta legenda."
+  (com `debug:true` junto de `[motivo · status]`). **Verificado no emulador** com a legenda REAL do Clube da Luta (1878 falas, igual a uma
+  contagem independente em Python; pt em 2 linhas, troca para inglês pelo menu = 1860 falas, "Sem legenda" apaga, "Outra versão" recarrega
+  a legenda). **Não verificado numa TV:** o emulador não toca vídeo, então a posição foi SIMULADA; falta ver o sincronismo com vídeo real e o
+  tamanho da fonte a 2 m. Legenda por cima do vídeo não aparece em captura de tela/gravação do Roku.
+- **"Menu inicial" na tela de detalhe:** filme = botão ao lado de "Assistir" (Direita/Esquerda); série = ÚLTIMO item da lista de temporadas
+  (uma lista dá a volta com a seta para cima, então um botão fora dela nunca era alcançado; Cima a partir da Temporada 1 chega nele).
+  Dispara `goHome` → `MainScene.goHome()`. Verificado no emulador (filme e série).
+- **Armadilhas que o emulador/compilador mostraram nesta rodada (todas corrigidas):** `pos` é palavra reservada do BrightScript (o emulador
+  aceita, o `bsc` e a TV não); comparar dois NÓS com `=` (`m.active = m.rows`) dá "Type Mismatch" no emulador, use um marcador (`m.liveTab`);
+  e a mensagem de erro do emulador NÃO tem a palavra ERROR, então varra o log por `mismatch|error|exception|cannot|can't be`.
 - **Diagnóstico na tela:** o zip do admin sai com `"debug": true` em `config.json` e, se uma chamada falhar, o app mostra `[erro · status · URL]`
   (`failText` em `api.brs`). Para um build público use `buildKit({ debug:false })`: o público nunca vê detalhe técnico. Tela vazia/"não foi possível
   carregar" quase sempre é endereço errado no `config.json`. **Baixado de `localhost`, o zip embute o IP do PC na rede (`resolveApi`)**; a TV precisa
@@ -338,6 +358,6 @@ e `GET /api/admin/devices/roku.zip` (monta na hora com `lib/rokuKit.js`, embute 
 
 ## Como rodar e testar
 
-- `npm start` (porta `PORT`, padrão 3000) · `npm test` (294 testes, `node --test test/*.test.js`).
+- `npm start` (porta `PORT`, padrão 3000) · `npm test` (298 testes, `node --test test/*.test.js`).
 - Manutenção/"mudamos de URL": tela "Site" do admin (`lib/siteStatus.js`, `public/sitegate.js`, `public/site.js`; tabela `pix_settings` no Supabase).
 - Docs: `docs/DEPLOY-RENDER.md`, `docs/VERCEL-POOL.md`, `docs/TV-AO-VIVO.md`, `docs/VISITANTES.md`, `docs/API.md`.

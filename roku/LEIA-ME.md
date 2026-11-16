@@ -28,3 +28,5 @@ curl -X POST http://127.0.0.1:8060/keypress/Down      # ECP: Up/Down/Left/Right/
 ## No player
 
 Seta para baixo ou `*` abre **Opções**: Legenda, Outra versão, Ir para o início, Continuar. Voltar durante o "Carregando…" cancela.
+
+Legenda: o app baixa o `.srt` e a desenha por cima do vídeo (não usa a legenda nativa da TV). Fica ativa 3 h depois de pedida no servidor.

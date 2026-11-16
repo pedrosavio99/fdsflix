@@ -304,10 +304,15 @@ const TRANSLATE_SOURCE_ORDER = ['en', 'es', 'fr', 'it', 'de'];
 const TRANSLATE_TARGET = 'pt';
 const TRANSLATE_LABEL = 'Português (Brasil) · tradução automática';
 
+// A legenda é pedida quando a pessoa a ESCOLHE, às vezes no meio do filme: o link precisa durar o filme inteiro
+// (antes valia 4 min e a faixa escolhida depois disso respondia 404 "Legenda expirada"). O token é minúsculo;
+// o TEXTO baixado fica num cache compartilhado e limitado (loadSubtitleVtt), não preso a cada token.
+const SUBTITLE_TTL_MS = 3 * 60 * 60 * 1000;
+
 function buildCaptions(rawCaptions, autoShift = 0) {
   const captions = (Array.isArray(rawCaptions) ? rawCaptions : []).map((caption) => {
     const lang = normalizeLang(caption.language);
-    const token = registry.register('subtitle', { url: caption.url, autoShift, lang }, TOKEN_TTL_MS);
+    const token = registry.register('subtitle', { url: caption.url, autoShift, lang }, SUBTITLE_TTL_MS);
     return {
       label: caption.language || 'Legenda',
       srclang: lang,
@@ -331,7 +336,7 @@ function buildCaptions(rawCaptions, autoShift = 0) {
       autoShift,
       lang: normalizeLang(source.language),
       translateTo: TRANSLATE_TARGET
-    }, TOKEN_TTL_MS);
+    }, SUBTITLE_TTL_MS);
     const translated = {
       label: TRANSLATE_LABEL,
       srclang: TRANSLATE_TARGET,
@@ -2495,14 +2500,10 @@ function fetchSubtitleSource(url, lang) {
   return promise;
 }
 
-async function loadSubtitleVtt(entry) {
-  if (entry.vtt) return entry;
-  const source = await fetchSubtitleSource(entry.url, entry.lang);
-  entry.vtt = source.vtt;
-  entry.spamRemoved = source.spamRemoved;
-  // Tradução não muda nº de falas nem tempos: o diagnóstico da origem vale para ela.
-  entry.info = source.info;
-  return entry;
+// O texto NÃO fica preso ao token (os tokens de legenda vivem 3 h): vem do cache compartilhado por URL de
+// origem (`fetchSubtitleSource`: 30 min, máx. 80, pedidos simultâneos dividem o mesmo download).
+function loadSubtitleVtt(entry) {
+  return fetchSubtitleSource(entry.url, entry.lang);
 }
 
 // Tradução pronta (por conteúdo da legenda + idioma). Pedidos simultâneos da mesma legenda
@@ -2541,13 +2542,13 @@ app.get(['/api/subtitle', '/api/subtitle.srt'], async (req, res) => {
   if (!entry) return res.status(404).json({ error: 'Legenda expirada. Recarregue o player.' });
 
   try {
-    await loadSubtitleVtt(entry);
+    const source = await loadSubtitleVtt(entry);
 
     // Faixa de tradução automática: troca só o texto; os tempos seguem os da origem.
-    let baseVtt = entry.vtt;
+    let baseVtt = source.vtt;
     let complete = true;
     if (entry.translateTo) {
-      const tr = await translatedVtt(entry.vtt, entry.translateTo);
+      const tr = await translatedVtt(source.vtt, entry.translateTo);
       baseVtt = tr.vtt;
       complete = tr.complete;
     }
@@ -2580,9 +2581,9 @@ app.get('/api/subtitle/info', async (req, res) => {
   const entry = registry.resolve('subtitle', String(req.query.t || ''));
   if (!entry) return res.status(404).json({ error: 'Legenda expirada. Recarregue o player.' });
   try {
-    await loadSubtitleVtt(entry);
+    const source = await loadSubtitleVtt(entry);
     res.setHeader('Access-Control-Allow-Origin', '*');
-    res.json(entry.info);
+    res.json(source.info);
   } catch (err) {
     res.status(err.status || 502).json({ error: err.message });
   }

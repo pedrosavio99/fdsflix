@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <component name="MainScene" extends="Scene">
   <script type="text/brightscript" uri="pkg:/components/api.brs" />
+  <script type="text/brightscript" uri="pkg:/components/srt.brs" />
   <script type="text/brightscript" uri="pkg:/components/MainScene.brs" />
   <children>
     <Rectangle id="bg" width="1280" height="720" color="0x0B0B10FF" />
@@ -27,6 +28,14 @@
     <DetailScreen id="detail" visible="false" />
     <SearchScreen id="search" visible="false" />
     <Video id="player" width="1280" height="720" visible="false" />
+    <Group id="subGroup" visible="false">
+      <Rectangle id="subBox" translation="[140,590]" width="1000" height="60" color="0x000000B8" />
+      <Label id="subLabel" translation="[160,598]" width="960" height="44" horizAlign="center" vertAlign="center" wrap="true" maxLines="3" lineSpacing="2" color="0xFFFFFFFF" />
+    </Group>
+    <Group id="toast" visible="false">
+      <Rectangle translation="[48,88]" width="640" height="44" color="0x000000B3" />
+      <Label id="toastText" translation="[64,88]" width="608" height="44" vertAlign="center" color="0xFFFFFFFF" />
+    </Group>
     <Group id="hint" visible="false">
       <Rectangle translation="[48,32]" width="640" height="48" color="0x000000B3" />
       <Label id="hintText" translation="[64,32]" width="608" height="48" vertAlign="center" color="0xFFFFFFFF" />
@@ -40,5 +49,7 @@
     <Label id="debugInfo" translation="[64,690]" width="1152" height="24" color="0x6F6F85FF" visible="false" />
     <Timer id="heroTimer" duration="0.45" repeat="false" />
     <Timer id="hintTimer" duration="7" repeat="false" />
+    <Timer id="toastTimer" duration="3" repeat="false" />
+    <Timer id="subTimer" duration="0.25" repeat="true" />
   </children>
 </component>
