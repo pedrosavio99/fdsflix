@@ -93,7 +93,14 @@ variável própria dele.
   navegador consome a URL assinada — 0 byte no Render. Só age em anime (TMDB gênero 16 + JP) e
   devolve `dubbed:true`/`audioLang:'por'` na página dublada, então o `/api/stream/options` mostra
   **Dublado (AnimesDigital)** e **Original (VidLink 1080)**. Teste: `test/animesDigital.test.js`.
-  Medido E2E: Jujutsu Kaisen S1E1/S2E1, HLS dublado, playlist 200 e segmento TS 206.
+  Títulos: o site usa romaji ("Kimetsu no Yaiba", "Shingeki no Kyojin"), então o provider pega o
+  romaji/english pelo **AniList** (o TMDB só tem o japonês), tenta o **slug direto**
+  (`/anime/a/<slug>[-dublado]`) antes da busca e segue a **paginação** `/page/N/` (One Piece tem
+  50 por página; os primeiros ficam na última). Rejeita arcos/live-action com nome parecido
+  ("One Piece: A Série", "Kimetsu no Yaiba: Hashira Geiko-hen") para não tocar o vídeo errado.
+  Medido E2E: Jujutsu S1E1/S2E1, One Piece S1E1, Naruto S1E1, Attack on Titan S1E1, My Hero S1E1,
+  Demon Slayer S1E1 (legendado — o site não tem a 1ª temporada dublada); HLS dublado/legendado,
+  playlist 200 e segmento TS 206.
 - **Fontes mortas/limitadas (medido em 2026-11-17, de casa e do Render):** **AnimeFire** — a API
   (`api.animefire.one`) continua viva, mas o CDN `akumast.net` devolveu **404 em todos os títulos
   testados** (One Piece, Naruto, Demon Slayer, Jujutsu); o próprio GoAnime já detecta isso
