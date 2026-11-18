@@ -93,6 +93,42 @@
       .catch(function () { if (my === sugSeq) hideSuggest(); });
   }
 
+  /* --------------------------- copiar o link (sem aba nova) --------------------------- */
+
+  function legacyCopy(text) {
+    try {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.cssText = 'position:fixed;left:-9999px;top:0';
+      document.body.appendChild(ta);
+      ta.select();
+      var ok = document.execCommand('copy');
+      ta.remove();
+      return ok;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function copyLink(link, btn) {
+    var done = function () {
+      note('Link copiado. Cole no seu app de torrent.');
+      if (btn) {
+        btn.textContent = 'copiado ✔';
+        setTimeout(function () { btn.textContent = 'copiar magnet'; }, 1600);
+      }
+    };
+    var fail = function () { note('Não consegui copiar o link.', 'warn'); };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(link).then(done).catch(function () { if (legacyCopy(link)) done(); else fail(); });
+    } else if (legacyCopy(link)) {
+      done();
+    } else {
+      fail();
+    }
+  }
+
   /* --------------------------- resultados de torrent --------------------------- */
 
   function rowOf(item) {
@@ -110,13 +146,14 @@
     row.appendChild(head);
     var link = item.magnet || item.torrent;
     if (link) {
-      var a = document.createElement('a');
-      a.href = link;
-      a.textContent = item.magnet ? 'magnet' : 'arquivo .torrent';
-      a.target = '_blank';
-      a.rel = 'noopener noreferrer';
-      a.style.cssText = 'display:inline-block;margin-top:.25rem';
-      row.appendChild(a);
+      var copy = document.createElement('button');
+      copy.type = 'button';
+      copy.className = 'ghost';
+      copy.style.cssText = 'margin-top:.3rem';
+      copy.textContent = 'copiar magnet';
+      copy.title = 'Copia o link (o app não abre aba nova). Cole no seu app de torrent.';
+      copy.addEventListener('click', function () { copyLink(link, copy); });
+      row.appendChild(copy);
     }
     return row;
   }
