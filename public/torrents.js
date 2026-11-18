@@ -179,6 +179,7 @@
   }
 
   function stopTorrent() {
+    playSeq += 1;
     if (wt) { try { wt.destroy(); } catch (e) { /* ignore */ } wt = null; }
     if (blobURL) { try { URL.revokeObjectURL(blobURL); } catch (e) { /* ignore */ } blobURL = ''; }
     var box = document.getElementById('torrentPlayerBox');
@@ -249,6 +250,69 @@
     return tick();
   }
 
+  var playSeq = 0;
+
+  // Ordem de tentativa: o nó "preso" ao arquivo primeiro, depois os outros (os com mais sobra de banda na frente).
+  function candidates(hash) {
+    var first = nodeFor(hash);
+    if (!first) return [];
+    var rank = function (n) { var i = nodeRank.indexOf(normNode(n)); return i === -1 ? 999 : i; };
+    var rest = nodes.filter(function (n) { return n !== first; }).sort(function (a, b) { return rank(a) - rank(b); });
+    return [first].concat(rest);
+  }
+
+  // Container dormindo: a plataforma responde 503 com uma página "Waking up…" SEM cabeçalho CORS, e o navegador
+  // só mostra "Failed to fetch". Isso NÃO é nó quebrado: insiste a cada 3 s até ele acordar (~1 min).
+  function wakeNode(node, my) {
+    var t0 = Date.now();
+    var lastLog = 0;
+    function attempt() {
+      return fetch(node + '/ping', { cache: 'no-store' })
+        .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
+        .catch(function (e) {
+          var secs = Math.round((Date.now() - t0) / 1000);
+          if (my !== playSeq) throw e;
+          if (Date.now() - t0 > 100000) throw new Error('não acordou em ' + secs + 's (' + e.message + ')');
+          if (Date.now() - lastLog >= 9000) {
+            lastLog = Date.now();
+            log('nó dormindo, acordando… ' + secs + 's (' + e.message + ')');
+          }
+          return new Promise(function (res) { setTimeout(res, 3000); }).then(attempt);
+        });
+    }
+    return attempt();
+  }
+
+  // Com o nó acordado: prepara o torrent (peers + metadados), aquece o começo e só então monta o <video>.
+  function openOnNode(node, item) {
+    var qs = '/' + item.hash + '?magnet=' + encodeURIComponent(item.magnet || '');
+    var url = node + '/stream' + qs;
+    note('Nó acordado — procurando peers e metadados (até ~45 s)…');
+    log('preparando torrent (peers + metadados)…');
+    // /prepare devolve sempre JSON com o motivo real. Sem ele o <video> só diria "Format error"
+    // quando o nó responde um 504 (a plataforma troca o corpo por uma página HTML).
+    var ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    var to = setTimeout(function () { if (ctl) ctl.abort(); }, 70000);
+    return fetch(node + '/prepare' + qs, { cache: 'no-store', signal: ctl ? ctl.signal : undefined })
+      .then(function (r) {
+        clearTimeout(to);
+        if (r.status === 404) { log('nó antigo (sem /prepare) — abrindo direto'); return { legacy: true }; }
+        return r.json();
+      })
+      .then(function (p) {
+        if (p.legacy) { showVideo(url); return; }
+        log('prepare: ' + (p.ready ? 'pronto' : 'NÃO pronto') + ' | peers conectados: ' + (p.wires || 0) +
+          (p.name ? ' | arquivo: ' + p.name + ' (' + Math.round((p.size || 0) / 1048576) + ' MB)' : '') +
+          (p.remux ? ' | vai converter para MP4 (sem avançar no tempo)' : ''));
+        if (!p.ready) {
+          log('motivo: ' + (p.reason || 'desconhecido'));
+          note('O nó não conseguiu abrir este torrent: ' + (p.reason || 'sem resposta') + ' Tente outro resultado.', 'warn');
+          return;
+        }
+        return warmUp(node, qs, url, p);
+      });
+  }
+
   function playTorrent(item) {
     var box = document.getElementById('torrentPlayerBox');
     if (!box) return;
@@ -259,47 +323,33 @@
     log('título: ' + (item.title || '') + ' | hash: ' + (item.hash || '') + ' | seeds: ' + (item.seeds || 0));
     log('nós configurados: ' + nodes.length + (nodes.length ? ' (' + nodes.join(', ') + ')' : ''));
 
-    var node = nodeFor(item.hash);
-    if (node) {
-      log('nó escolhido: ' + node);
-      note('Acordando o nó… (pode levar até ~60 s)');
-      log('ping ' + node + '/ping …');
-      fetch(node + '/ping', { cache: 'no-store' })
-        .then(function (r) { log('ping HTTP ' + r.status); if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
-        .then(function (txt) {
-          log('ping respondeu: ' + txt);
-          var qs = '/' + item.hash + '?magnet=' + encodeURIComponent(item.magnet || '');
-          var url = node + '/stream' + qs;
-          note('Nó acordado — procurando peers e metadados (até ~45 s)…');
-          log('preparando torrent (peers + metadados)…');
-          // /prepare devolve sempre JSON com o motivo real. Sem ele o <video> só diria "Format error"
-          // quando o nó responde um 504 (a plataforma troca o corpo por uma página HTML).
-          var ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
-          var to = setTimeout(function () { if (ctl) ctl.abort(); }, 70000);
-          return fetch(node + '/prepare' + qs, { cache: 'no-store', signal: ctl ? ctl.signal : undefined })
-            .then(function (r) {
-              clearTimeout(to);
-              if (r.status === 404) { log('nó antigo (sem /prepare) — abrindo direto'); return { legacy: true }; }
-              return r.json();
-            })
-            .then(function (p) {
-              if (p.legacy) { showVideo(url); return; }
-              log('prepare: ' + (p.ready ? 'pronto' : 'NÃO pronto') + ' | peers conectados: ' + (p.wires || 0) +
-                (p.name ? ' | arquivo: ' + p.name + ' (' + Math.round((p.size || 0) / 1048576) + ' MB)' : '') +
-                (p.remux ? ' | vai converter para MP4 (sem avançar no tempo)' : ''));
-              if (!p.ready) {
-                log('motivo: ' + (p.reason || 'desconhecido'));
-                note('O nó não conseguiu abrir este torrent: ' + (p.reason || 'sem resposta') + ' Tente outro resultado.', 'warn');
-                return;
-              }
-              return warmUp(node, qs, url, p);
-            });
-        })
-        .catch(function (e) {
-          log('falha no nó: ' + e.message + ' — caindo no WebTorrent');
-          note('Nó não respondeu; tentando no navegador (WebTorrent)…', 'warn');
+    var list = candidates(item.hash);
+    if (list.length) {
+      var my = ++playSeq;
+      var tryAt = function (i) {
+        if (my !== playSeq) return; // outro vídeo foi aberto / "parar"
+        if (i >= list.length) {
+          log('nenhum nó respondeu — caindo no WebTorrent');
+          note('Nenhum nó respondeu; tentando no navegador (WebTorrent)…', 'warn');
           playTorrentBrowser(item);
-        });
+          return;
+        }
+        var node = list[i];
+        log('nó escolhido: ' + node + (list.length > 1 ? ' (' + (i + 1) + '/' + list.length + ')' : ''));
+        note('Acordando o nó… (pode levar ~1 min)');
+        wakeNode(node, my)
+          .then(function (txt) {
+            if (my !== playSeq) return;
+            log('ping respondeu: ' + txt);
+            return openOnNode(node, item);
+          })
+          .catch(function (e) {
+            if (my !== playSeq) return;
+            log('falha no nó: ' + e.message + (i + 1 < list.length ? ' — tentando o próximo nó' : ''));
+            tryAt(i + 1);
+          });
+      };
+      tryAt(0);
       return;
     }
     log('sem nó configurado — usando WebTorrent do navegador');
@@ -547,9 +597,11 @@
     tnFoot.textContent = 'Saída = vídeo para o navegador + upload para peers, medida pelo próprio nó. A cota (' +
       (list[0] ? fmtBytes(list[0].quotaBytes) : '?') + '/nó) é uma ASSUNÇÃO: o SnapDeploy não publica o limite de banda; ' +
       'o limite documentado é ' + d.hoursQuota + ' container-horas/mês por conta. ' + where;
-    // Sem nó salvo neste navegador: usa os que o servidor conhece por TORRENT_NODES.
-    if (!nodes.length && (d.configured || []).length) {
-      nodes = d.configured.slice();
+    // Nós de TORRENT_NODES (env do Render) entram sempre, somados aos salvos neste navegador.
+    var known = nodes.map(normNode);
+    var added = (d.configured || []).filter(function (u) { return known.indexOf(normNode(u)) === -1; });
+    if (added.length) {
+      nodes = nodes.concat(added);
       if (nodeEl) nodeEl.value = nodes.join('\n');
     }
   }
