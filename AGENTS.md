@@ -84,10 +84,17 @@ variável própria dele.
   o `/_adshield/r/` trata segmento `.html` como HTML e corrompe o vídeo). Cache de 20 min por título;
   `VIXSRC_MAX_NODES` (padrão 5) limita quantos nós tentar. Teste: `test/vixsrc.test.js`. Testado E2E
   com "A Odisseia" 1368337, Matrix 603, Clube da Luta 550 e GoT 1399 S1E1/S2E3.
-- **VidLink Pro: lançamento pelo IMDB.** O VidLink indexa parte dos lançamentos pelo **IMDB**, não pelo
-  TMDB ("A Odisseia" TMDB 1368337 → `null`; `tt33764258` → stream 1080p HEVC). `lib/streamExtractor.js`
-  agora, quando o id do TMDB não acha nada, busca `external_ids` no TMDB e repete com o IMDB
-  (`VIDLINK_IMDB_FALLBACK=0` desliga). Teste: `test/streamExtractor.test.js`.
+- **Fontes mortas/limitadas (medido em 2026-11-17, de casa e do Render):** **AnimeFire** — a API
+  (`api.animefire.one`) continua viva, mas o CDN `akumast.net` devolveu **404 em todos os títulos
+  testados** (One Piece, Naruto, Demon Slayer, Jujutsu); `getAnimeReport` em `/api/debug/hls` mostra
+  o motivo e o provider devolve `null` (não quebra a cascata). **Embed.su** — `HTTP 521` (origem fora
+  do ar). **VidLink anime** — o próprio site chama `http://localhost:8080/api/anime/<mal>/<ep>/<sub>`
+  (URL de desenvolvimento que não foi trocada); o endpoint público `/api/anime/...` dá 404, o
+  `/api/b/anime/...` dá 404 e o fallback do `/tv/...` devolve `bcdnxw...?t=1`, que responde 429 no CDN.
+  **CinePro** — o Dockerfile está no último commit do
+  `cinepro-org/core` (2026-05-27); o processo sobe no Render (pid ativo), mas os provedores internos
+  não entregam. `/api/debug/hls` agora mostra `ultimaConsulta.error` (`HTTP n`/`fetch failed`) em vez
+  de nada — antes o painel só via "sem resultado".
 
 - **TokyVideo** (`lib/tokyoVideo.js`, `TOKYOVIDEO_ENABLED=0` desliga): busca por título no
   tokyvideo.com, casa pelos nomes do TMDB e **confirma pela duração** contra o runtime (é o que
