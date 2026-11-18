@@ -114,6 +114,12 @@ variável própria dele.
   fontes mostra 0. Sem relay residencial ou iframe do player do site (com anúncio), não é viável.
   A busca (`/buscar`) e os parsers funcionam (o card tem o título num segundo `<a>` dentro do `<h5>`;
   `stripTags` remove os comentários HTML). Teste: `test/jkAnime.test.js`.
+- **Redundância medida no ar (2026-11-18, 6 séries/anime):** séries novas têm **2 fontes**
+  (VidLink + VixSrc: House of the Dragon/Wednesday/The Last of Us); **GoT só VixSrc** (o VidLink não
+  tem catálogo antigo); **DBZ/One Piece só AnimesDigital** (o VidLink tem Jujutsu/Demon Slayer, não
+  esses). Filmes: **2 a 5** (VidLink + VixSrc + TokyVideo/Catálogo/Archive/BitChute). Os três de
+  fonte única só ganham segunda com serviço do dono (**Consumet** para anime; **CineWinx/Stream-Winx**
+  para série) — CinePro/JKAnime/VidFast/Vidsrc/MGEB não entregam ad-free do datacenter sem relay.
 - **Fontes mortas/limitadas (medido em 2026-11-17, de casa e do Render):** **AnimeFire** — a API
   (`api.animefire.one`) continua viva, mas o CDN `akumast.net` devolveu **404 em todos os títulos
   testados** (One Piece, Naruto, Demon Slayer, Jujutsu); o próprio GoAnime já detecta isso
