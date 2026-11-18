@@ -134,15 +134,28 @@
 
   var wt = null;
   var blobURL = '';
-  var nodeUrl = '';
+  var nodes = [];
   var nodeEl = document.getElementById('torrentNode');
 
-  function savedNode() { try { return localStorage.getItem('fdsflix.torrentNode') || ''; } catch (e) { return ''; } }
+  function savedNodes() {
+    try {
+      var v = JSON.parse(localStorage.getItem('fdsflix.torrentNodes') || '[]');
+      return Array.isArray(v) ? v : [];
+    } catch (e) { return []; }
+  }
 
-  function setNode() {
-    nodeUrl = String((nodeEl && nodeEl.value) || '').trim().replace(/\/+$/, '');
-    try { localStorage.setItem('fdsflix.torrentNode', nodeUrl); } catch (e) { /* ignore */ }
-    note(nodeUrl ? 'Nó salvo: ' + nodeUrl : 'Nó removido.');
+  function setNodes() {
+    var raw = String((nodeEl && nodeEl.value) || '');
+    nodes = raw.split(/[\n,]+/).map(function (s) { return s.trim().replace(/\/+$/, ''); }).filter(Boolean);
+    try { localStorage.setItem('fdsflix.torrentNodes', JSON.stringify(nodes)); } catch (e) { /* ignore */ }
+    note(nodes.length + ' nó(s) salvo(s).');
+  }
+
+  // Rodízio "preso ao arquivo": o mesmo infoHash cai sempre no mesmo nó.
+  function nodeFor(hash) {
+    if (!nodes.length) return '';
+    var n = parseInt(String(hash || '').slice(0, 8), 16) || 0;
+    return nodes[n % nodes.length];
   }
 
   function stopTorrent() {
@@ -171,9 +184,9 @@
     box.hidden = false;
     box.textContent = '';
 
-    var node = nodeUrl || savedNode();
+    var node = nodeFor(item.hash);
     if (node) {
-      note('Acordando o nó (pode levar alguns segundos)…');
+      note('Acordando o nó… (pode levar até ~60 s)');
       fetch(node + '/ping', { cache: 'no-store' })
         .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
         .then(function () {
@@ -329,19 +342,19 @@
         document.body.appendChild(a);
         a.click();
         setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
-        note('Streamer baixado. Suba no Koyeb (Dockerfile, porta 8080) e cole a URL do nó aqui.');
+        note('Streamer baixado. Suba no SnapDeploy/Koyeb (Dockerfile, porta 8080) e cole a URL (ou as URLs) dos nós aqui.');
       })
       .catch(function (e) { note('Não consegui baixar o streamer: ' + e.message, 'warn'); });
   }
 
   var streamerBtn = document.getElementById('torrentStreamer');
   var nodeSaveBtn = document.getElementById('torrentNodeSave');
+  nodes = savedNodes();
   if (nodeEl) {
-    nodeUrl = savedNode();
-    nodeEl.value = nodeUrl;
-    nodeEl.addEventListener('change', setNode);
+    nodeEl.value = nodes.join('\n');
+    nodeEl.addEventListener('change', setNodes);
   }
-  if (nodeSaveBtn) nodeSaveBtn.addEventListener('click', setNode);
+  if (nodeSaveBtn) nodeSaveBtn.addEventListener('click', setNodes);
   if (streamerBtn) streamerBtn.addEventListener('click', downloadStreamer);
 
   input.addEventListener('input', function () {
