@@ -3186,6 +3186,24 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
     return -1;
   }
 
+  // O master HLS de alguns provedores (ex.: VixSrc) traz legendas EMBUTIDAS — inclusive uma
+  // "Forced"/DEFAULT=YES. O hls.js as transforma em <track> nativas e o navegador desenha; o app
+  // TAMBÉM adiciona a legenda externa (companion captions) e as duas aparecem ao mesmo tempo.
+  // Desligamos a renderização nativa do hls.js no attachHls e, por garantia (Safari/HLS nativo),
+  // desativamos qualquer textTrack que NÃO tenha sido criada por nós (as nossas estão em <track>).
+  function disableForeignSubtitleTracks() {
+    var video = $('nativePlayer');
+    if (!video) return;
+    var ours = [];
+    Array.prototype.forEach.call(video.querySelectorAll('track'), function (el) {
+      if (el.track) ours.push(el.track);
+    });
+    for (var i = 0; i < video.textTracks.length; i++) {
+      var tr = video.textTracks[i];
+      if (tr && ours.indexOf(tr) === -1 && tr.mode !== 'disabled') tr.mode = 'disabled';
+    }
+  }
+
   function applySubLangByIndex(index) {
     var video = $('nativePlayer');
     var tracks = video.textTracks;
@@ -3773,6 +3791,9 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
       if (video.canPlayType('application/vnd.apple.mpegurl')) {
         diag('warn', 'hls.js indisponível: usando HLS nativo do navegador (sem detalhes de segmentos; banda estimada pelo tempo assistido).');
         video.src = url;
+        // HLS nativo (Safari): as legendas embutidas do master aparecem como textTracks do vídeo;
+        // desativa as que não são nossas para não duplicar com a legenda externa do app.
+        [0, 800, 2500].forEach(function (ms) { setTimeout(disableForeignSubtitleTracks, ms); });
         (function (token) { startNativeMeter(video, url, function () { return token === state.playToken; }); })(state.playToken);
         return;
       }
@@ -3789,7 +3810,10 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
       manifestLoadingMaxRetry: 8,
       levelLoadingMaxRetry: 8,
       fragLoadingMaxRetry: 8,
-      fragLoadingRetryDelay: 800
+      fragLoadingRetryDelay: 800,
+      // Legendas embutidas no master (ex.: VixSrc "Italian [Forced]" DEFAULT=YES) não podem ser
+      // renderizadas pelo hls.js: o app já adiciona a legenda externa e as duas apareciam juntas.
+      renderTextTracksNatively: false
     });
     state.hls = hls;
     diagHlsEvents(hls);
@@ -3833,6 +3857,8 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
         hideOverlay();
         setStatus('warn', 'O navegador bloqueou o autoplay — clique no ▶ do vídeo.');
       });
+      // hls.js pode criar as faixas de legenda embutidas um pouco depois do manifest.
+      [0, 800, 2500].forEach(function (ms) { setTimeout(disableForeignSubtitleTracks, ms); });
     });
 
     // Se em 25 s nada tocou, mostra o que o player viu (para diagnóstico).

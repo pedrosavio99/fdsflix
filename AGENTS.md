@@ -84,10 +84,21 @@ variável própria dele.
   o `/_adshield/r/` trata segmento `.html` como HTML e corrompe o vídeo). Cache de 20 min por título;
   `VIXSRC_MAX_NODES` (padrão 5) limita quantos nós tentar. Teste: `test/vixsrc.test.js`. Testado E2E
   com "A Odisseia" 1368337, Matrix 603, Clube da Luta 550 e GoT 1399 S1E1/S2E3.
+- **AnimesDigital** (`lib/animesDigital.js`, sem variável para desligar; usa os nós do AdFallback):
+  **a fonte brasileira de anime que substitui o AnimeFire.** Busca `animesdigital.org/?s=<título>` →
+  página `/anime/a/<slug>` (prefere a **DUBLADA** e a temporada pedida) → links `/video/a/<id>`
+  ("Episódio N") → iframe `api.anivideo.net/videohls.php?d=<HLS>`. O CDN
+  (`cdn-sv01.maximaimg.online`) exige **Referer** `https://animesdigital.org/` (sem ele: 403) e não
+  manda CORS; o nó do AdFallback prepara a URL **sem `Origin`** (o CDN recusa esse header) e o
+  navegador consome a URL assinada — 0 byte no Render. Só age em anime (TMDB gênero 16 + JP) e
+  devolve `dubbed:true`/`audioLang:'por'` na página dublada, então o `/api/stream/options` mostra
+  **Dublado (AnimesDigital)** e **Original (VidLink 1080)**. Teste: `test/animesDigital.test.js`.
+  Medido E2E: Jujutsu Kaisen S1E1/S2E1, HLS dublado, playlist 200 e segmento TS 206.
 - **Fontes mortas/limitadas (medido em 2026-11-17, de casa e do Render):** **AnimeFire** — a API
   (`api.animefire.one`) continua viva, mas o CDN `akumast.net` devolveu **404 em todos os títulos
-  testados** (One Piece, Naruto, Demon Slayer, Jujutsu); `getAnimeReport` em `/api/debug/hls` mostra
-  o motivo e o provider devolve `null` (não quebra a cascata). **Embed.su** — `HTTP 521` (origem fora
+  testados** (One Piece, Naruto, Demon Slayer, Jujutsu); o próprio GoAnime já detecta isso
+  (`checkPlaylist`), `getAnimeReport` em `/api/debug/hls` mostra o motivo e o provider devolve
+  `null`. O **AnimesDigital** acima cobre o buraco. **Embed.su** — `HTTP 521` (origem fora
   do ar). **VidLink anime** — o próprio site chama `http://localhost:8080/api/anime/<mal>/<ep>/<sub>`
   (URL de desenvolvimento que não foi trocada); o endpoint público `/api/anime/...` dá 404, o
   `/api/b/anime/...` dá 404 e o fallback do `/tv/...` devolve `bcdnxw...?t=1`, que responde 429 no CDN.
@@ -395,6 +406,6 @@ e `GET /api/admin/devices/roku.zip` (monta na hora com `lib/rokuKit.js`, embute 
 
 ## Como rodar e testar
 
-- `npm start` (porta `PORT`, padrão 3000) · `npm test` (306 testes, `node --test test/*.test.js`).
+- `npm start` (porta `PORT`, padrão 3000) · `npm test` (310 testes, `node --test test/*.test.js`).
 - Manutenção/"mudamos de URL": tela "Site" do admin (`lib/siteStatus.js`, `public/sitegate.js`, `public/site.js`; tabela `pix_settings` no Supabase).
 - Docs: `docs/DEPLOY-RENDER.md`, `docs/VERCEL-POOL.md`, `docs/TV-AO-VIVO.md`, `docs/VISITANTES.md`, `docs/API.md`.
