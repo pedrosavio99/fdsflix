@@ -92,7 +92,9 @@ variável própria dele.
   manda CORS; o nó do AdFallback prepara a URL **sem `Origin`** (o CDN recusa esse header) e o
   navegador consome a URL assinada — 0 byte no Render. Só age em anime (TMDB gênero 16 + JP) e
   devolve `dubbed:true`/`audioLang:'por'` na página dublada, então o `/api/stream/options` mostra
-  **Dublado (AnimesDigital)** e **Original (VidLink 1080)**. Teste: `test/animesDigital.test.js`.
+  **Dublado (AnimesDigital)** e **Original (VidLink 1080)**. Ele entra em `DUBBERS`: sem isso, quando
+  o VidLink respondia o original primeiro, a checagem de dublado/original terminava sem esperar o
+  anime e o cartão **Dublado** sumia (visto no Jujutsu no ar). Teste: `test/animesDigital.test.js`.
   Títulos: o site usa romaji ("Kimetsu no Yaiba", "Shingeki no Kyojin"), então o provider pega o
   romaji/english pelo **AniList** (o TMDB só tem o japonês), tenta o **slug direto**
   (`/anime/a/<slug>[-dublado]`) antes da busca e segue a **paginação** `/page/N/` (One Piece tem
