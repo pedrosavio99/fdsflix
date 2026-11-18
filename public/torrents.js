@@ -136,6 +136,17 @@
   var blobURL = '';
   var nodes = [];
   var nodeEl = document.getElementById('torrentNode');
+  var logEl = document.getElementById('torrentLog');
+
+  function log(msg) {
+    if (!logEl) return;
+    logEl.hidden = false;
+    var t = new Date().toLocaleTimeString('pt-BR');
+    logEl.textContent += '[' + t + '] ' + msg + '\n';
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  function clearLog() { if (logEl) { logEl.textContent = ''; logEl.hidden = false; } }
 
   function savedNodes() {
     try {
@@ -163,6 +174,7 @@
     if (blobURL) { try { URL.revokeObjectURL(blobURL); } catch (e) { /* ignore */ } blobURL = ''; }
     var box = document.getElementById('torrentPlayerBox');
     if (box) { box.hidden = true; box.textContent = ''; }
+    log('parado');
   }
 
   function showVideo(src) {
@@ -174,6 +186,10 @@
     video.playsInline = true;
     video.style.cssText = 'width:100%;max-height:60vh;background:#000;border-radius:.5rem';
     video.src = src;
+    video.addEventListener('loadedmetadata', function () { log('metadata ok: ' + Math.round(video.duration || 0) + 's'); });
+    video.addEventListener('canplay', function () { log('canplay — pronto para tocar'); });
+    video.addEventListener('playing', function () { log('playing'); });
+    video.addEventListener('error', function () { log('ERRO no <video>: ' + (video.error && video.error.message ? video.error.message : 'code ' + (video.error && video.error.code))); });
     box.appendChild(video);
   }
 
@@ -181,36 +197,47 @@
     var box = document.getElementById('torrentPlayerBox');
     if (!box) return;
     stopTorrent();
+    clearLog();
     box.hidden = false;
     box.textContent = '';
+    log('título: ' + (item.title || '') + ' | hash: ' + (item.hash || '') + ' | seeds: ' + (item.seeds || 0));
+    log('nós configurados: ' + nodes.length + (nodes.length ? ' (' + nodes.join(', ') + ')' : ''));
 
     var node = nodeFor(item.hash);
     if (node) {
+      log('nó escolhido: ' + node);
       note('Acordando o nó… (pode levar até ~60 s)');
+      log('ping ' + node + '/ping …');
       fetch(node + '/ping', { cache: 'no-store' })
-        .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
-        .then(function () {
+        .then(function (r) { log('ping HTTP ' + r.status); if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
+        .then(function (txt) {
+          log('ping respondeu: ' + txt);
+          var url = node + '/stream/' + item.hash + '?magnet=' + encodeURIComponent(item.magnet || '');
+          log('abrindo stream: ' + url.slice(0, 120) + '…');
           note('Nó acordado — carregando o vídeo…');
-          showVideo(node + '/stream/' + item.hash + '?magnet=' + encodeURIComponent(item.magnet || ''));
+          showVideo(url);
         })
-        .catch(function () {
+        .catch(function (e) {
+          log('falha no nó: ' + e.message + ' — caindo no WebTorrent');
           note('Nó não respondeu; tentando no navegador (WebTorrent)…', 'warn');
           playTorrentBrowser(item);
         });
       return;
     }
+    log('sem nó configurado — usando WebTorrent do navegador');
     playTorrentBrowser(item);
   }
 
   function playTorrentBrowser(item) {
     var box = document.getElementById('torrentPlayerBox');
     if (!box) return;
-    if (typeof WebTorrent === 'undefined') { note('Sem nó e o WebTorrent não carregou (CDN).', 'warn'); return; }
-    if (!WebTorrent.WEBRTC_SUPPORT) { note('Sem nó e este navegador não tem WebRTC.', 'warn'); return; }
+    if (typeof WebTorrent === 'undefined') { log('WebTorrent não carregou (CDN)'); note('Sem nó e o WebTorrent não carregou (CDN).', 'warn'); return; }
+    if (!WebTorrent.WEBRTC_SUPPORT) { log('navegador sem WebRTC'); note('Sem nó e este navegador não tem WebRTC.', 'warn'); return; }
     var src = item.magnet || item.torrent;
-    if (!src) { note('Sem link para tocar.', 'warn'); return; }
+    if (!src) { log('sem link de torrent'); note('Sem link para tocar.', 'warn'); return; }
     box.hidden = false;
     box.textContent = '';
+    log('webtorrent: adicionando torrent…');
     note('Conectando aos peers (WebTorrent)…');
     wt = new WebTorrent();
     wt.on('error', function (e) { note('Torrent: ' + (e && e.message ? e.message : e), 'warn'); });
