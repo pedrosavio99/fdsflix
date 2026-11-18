@@ -252,8 +252,9 @@ chegar. Teto geral 40 s. Antes eram ~13 s só para chegar nas fontes novas (Vids
   anexa a qualquer fonte que venha sem legenda (Internet Archive, BitChute, TokyVideo, catálogo…). Sem isso o
   original ficava sem legenda. No front, **dublado começa sem legenda** (só se a pessoa nunca escolheu; não grava
   isso como escolha) e **original liga a legenda** (pt-BR primeiro).
-- `/api/stream/options` só oferece versão que o `/api/stream` realmente entrega (filtra `renderBound`; o front manda
-  os mesmos `hevc`/`direct`). Orçamento 6 s (`BUDGET_MS`) + 2,5 s de tolerância; o front desiste da checagem em 8 s
+- `/api/stream/options` só oferece versão que o `/api/stream` realmente entrega (filtra `renderBound` **só
+  quando o AdFallback está desligado**; com ele ligado, a versão `renderBound` escolhida é entregue pelo nó). O front manda
+  os mesmos `hevc`/`direct`. Orçamento 6 s (`BUDGET_MS`) + 2,5 s de tolerância; o front desiste da checagem em 8 s
   e segue a cascata normal. Testes: `test/parallelCascade.test.js`. Gancho de teste: `_setProviders()`.
 - **`lib/matchGuard.js` — "este upload é MESMO este filme?"** (BitChute, Internet Archive, PeerTube). Título parecido +
   duração parecida NÃO bastam (caso real: "La Odisea", minissérie de 1997 publicada em 2023, casou com "A Odisseia",
@@ -372,7 +373,8 @@ e `GET /api/admin/devices/roku.zip` (monta na hora com `lib/rokuKit.js`, embute 
   (`DUBBERS`) terminarem. Cache 10 min (2 min se vazio). Público não recebe nome de fonte (`provider`
   só com a senha admin). Erro/timeout ⇒ `{options: []}` e o front segue a cascata normal.
 - `GET /api/stream?...&pick=<token>` reaproveita o link achado na 1ª tentativa (nada é procurado de
-  novo); se for fonte que gastaria o Render, cai no fluxo normal (AdFallback etc.).
+  novo). Se a versão escolhida gastaria o Render (ex.: VidLink HEVC), o AdFallback é tentado **antes**
+  da cascata — assim a pessoa recebe a versão que escolheu (pelo nó), não outra qualquer.
 - Front (`public/index.html`, `chooseLanguage()` chamado em `renderPlayer()` antes do `/api/stream`):
   etapa `lang` do overlay com frases divertidas; **duas versões** ⇒ `#langPick` (dois cards animados
   no mesmo espaço do player, só aparecem quando as duas existem); **uma** ⇒ vai direto; **nenhuma** ⇒

@@ -1705,19 +1705,34 @@ app.get('/api/stream/options', requireApiKey, async (req, res) => {
       log: admin ? (row) => console.log('[opcoes] ' + JSON.stringify(row)) : null
     });
     const options = [];
+    // Com o AdFallback ligado, o /api/stream entrega fonte "renderBound" pelo nó (resgate), então
+    // ela conta como opção válida. Sem o AdFallback, continua valendo o filtro antigo.
+    const canRescue = adshieldFallback.isEnabled();
     for (const lang of ['dub', 'orig']) {
-      const info = found[lang];
-      if (!info) continue;
-      // Só oferece o que o /api/stream realmente vai entregar: fonte que gastaria a banda do Render é
-      // pulada lá (e a cascata rodaria de novo), então escolher esta versão não levaria a nada.
-      let bound = false;
-      try { bound = await renderBound(info, { hevcOk, direct }); } catch (err) { bound = true; }
-      if (bound && !ALLOW_RENDER_VIDEO) continue;
+      // Tenta os candidatos do melhor para o pior: se o melhor gastaria a banda do Render (ex.: VidLink
+      // HEVC), ainda sobra o segundo (ex.: VixSrc HLS direto) em vez de devolver "nenhuma versão".
+      const candidates = found.all && Array.isArray(found.all[lang]) && found.all[lang].length
+        ? found.all[lang]
+        : [found[lang]].filter(Boolean);
+      const seen = new Set();
+      let chosen = null;
+      for (const info of candidates) {
+        if (!info || !info.url || seen.has(info.url)) continue;
+        seen.add(info.url);
+        // Só oferece o que o /api/stream realmente vai entregar: fonte que gastaria a banda do Render é
+        // pulada lá (e a cascata rodaria de novo), então escolher esta versão não levaria a nada.
+        let bound = false;
+        try { bound = await renderBound(info, { hevcOk, direct }); } catch (err) { bound = true; }
+        if (bound && !ALLOW_RENDER_VIDEO && !canRescue) continue;
+        chosen = info;
+        break;
+      }
+      if (!chosen) continue;
       options.push({
         lang,
-        pick: registry.register('pick', info, 8 * 60 * 1000),
-        quality: info.quality || 'auto',
-        ...(admin ? { provider: info.provider } : {})
+        pick: registry.register('pick', chosen, 8 * 60 * 1000),
+        quality: chosen.quality || 'auto',
+        ...(admin ? { provider: chosen.provider } : {})
       });
     }
     return res.json({ options });
@@ -1813,8 +1828,13 @@ app.get('/api/stream', requireApiKey, streamGuard.middleware, async (req, res) =
       if (bound) {
         boundCandidates.push(streamInfo);
         trace[trace.length - 1].outcome = 'PULADA';
-        trace[trace.length - 1].notes.push('Passaria o vídeo pelo Render; seguindo para a próxima fonte.');
+        trace[trace.length - 1].notes.push('Passaria o vídeo pelo Render; tentando o AdFallback antes da cascata.');
         skip.push(streamInfo.provider);
+        // O ouvinte ESCOLHEU esta versão: se o AdFallback está ligado, entrega por ele agora, em vez
+        // de cair na cascata e devolver outra (ex.: escolheu VidLink 1080p e recebia o VixSrc).
+        if (!forceDev && adshieldFallback.isEnabled()) {
+          if (await rescueMovieWithAdShield(req, res, { candidates: [streamInfo], trace, hevcOk, forced: false })) return;
+        }
         streamInfo = null;
       }
     }

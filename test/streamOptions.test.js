@@ -55,7 +55,7 @@ test('só original e as fontes de dublagem já terminaram: não espera à toa', 
 test('nada achado: devolve vazio e guarda o "não achei" por pouco tempo', async () => {
   const providers = [src('VidLink Pro', 10, null), src('CinePro', 10, null)];
   const out = await streamOptions.discover({ id: '3', type: 'movie', season: 1, episode: 1, title: 't', providers });
-  assert.deepEqual(out, { dub: null, orig: null });
+  assert.deepEqual({ dub: out.dub, orig: out.orig }, { dub: null, orig: null });
 });
 
 test('fonte que lança erro não derruba as outras', async () => {
@@ -75,3 +75,4 @@ test('série: cada episódio tem a sua descoberta', () => {
     streamOptions.keyOf({ id: '9', type: 'tv', season: 1, episode: 2 })
   );
 });
+
