@@ -119,6 +119,33 @@ test('findStream pede allowCompat:false (nó legado devolve /_adshield/r/ e corr
   }
 });
 
+test('findStream recusa o compat /_adshield/r/ e refaz em um nó de mídia', async () => {
+  anime._reset();
+  fallback._reset();
+  const s = stubFetch();
+  const originalPrepare = fallback.prepare;
+  const originalPrepareOn = fallback.prepareOn;
+  const originalMediaNodes = fallback.mediaNodes;
+  let retriedOn = null;
+  fallback.prepare = async () => ({ ok: true, compat: true, kind: 'hls', url: 'https://legacy.example/_adshield/r/x', node: 'https://legacy.example' });
+  fallback.mediaNodes = () => ['https://media.example'];
+  fallback.prepareOn = async (base) => {
+    retriedOn = base;
+    return { ok: true, kind: 'hls', url: 'https://media.example/_adshield/media/m/y', node: base };
+  };
+  try {
+    const r = await anime.findStream({ id: '95479', type: 'tv', season: 1, episode: 1, title: 'Jujutsu Kaisen' });
+    assert.ok(r);
+    assert.equal(r.url, 'https://media.example/_adshield/media/m/y');
+    assert.equal(retriedOn, 'https://media.example');
+  } finally {
+    fallback.prepare = originalPrepare;
+    fallback.prepareOn = originalPrepareOn;
+    fallback.mediaNodes = originalMediaNodes;
+    s.restore();
+  }
+});
+
 test('findStream devolve null para título que não é anime', async () => {
   anime._reset();
   fallback._reset();

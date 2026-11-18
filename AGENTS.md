@@ -94,7 +94,11 @@ variável própria dele.
   devolve `dubbed:true`/`audioLang:'por'` na página dublada, então o `/api/stream/options` mostra
   **Dublado (AnimesDigital)** e **Original (VidLink 1080)**. Ele entra em `DUBBERS`: sem isso, quando
   o VidLink respondia o original primeiro, a checagem de dublado/original terminava sem esperar o
-  anime e o cartão **Dublado** sumia (visto no Jujutsu no ar). Teste: `test/animesDigital.test.js`.
+  anime e o cartão **Dublado** sumia (visto no Jujutsu no ar). Se o rodízio cair em nó de build
+  antigo e devolver o compat `/_adshield/r/`, o provider **recusa** (medido: o compat do Vercel
+  falhou; o do Wasmer serviu TS válido — não é determinístico) e refaz em um nó de mídia via
+  `prepareOn`; sem nó de mídia, devolve `null` em vez de um caminho incerto.
+  Teste: `test/animesDigital.test.js`.
   Títulos: o site usa romaji ("Kimetsu no Yaiba", "Shingeki no Kyojin"), então o provider pega o
   romaji/english pelo **AniList** (o TMDB só tem o japonês), tenta o **slug direto**
   (`/anime/a/<slug>[-dublado]`) antes da busca e segue a **paginação** `/page/N/` (One Piece tem
@@ -415,6 +419,6 @@ e `GET /api/admin/devices/roku.zip` (monta na hora com `lib/rokuKit.js`, embute 
 
 ## Como rodar e testar
 
-- `npm start` (porta `PORT`, padrão 3000) · `npm test` (312 testes, `node --test test/*.test.js`).
+- `npm start` (porta `PORT`, padrão 3000) · `npm test` (313 testes, `node --test test/*.test.js`).
 - Manutenção/"mudamos de URL": tela "Site" do admin (`lib/siteStatus.js`, `public/sitegate.js`, `public/site.js`; tabela `pix_settings` no Supabase).
 - Docs: `docs/DEPLOY-RENDER.md`, `docs/VERCEL-POOL.md`, `docs/TV-AO-VIVO.md`, `docs/VISITANTES.md`, `docs/API.md`.
