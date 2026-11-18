@@ -97,6 +97,28 @@ test('findStream resolve o episódio e prepara o HLS no nó (sem Origin, que o C
   }
 });
 
+test('findStream pede allowCompat:false (nó legado devolve /_adshield/r/ e corrompe o HLS)', async () => {
+  anime._reset();
+  fallback._reset();
+  const s = stubFetch();
+  const original = fallback.prepare;
+  let captured = null;
+  fallback.prepare = async (options) => {
+    captured = options;
+    return { ok: true, kind: 'hls', url: 'https://node.example/_adshield/media/m/x', node: 'node.example' };
+  };
+  try {
+    const r = await anime.findStream({ id: '95479', type: 'tv', season: 1, episode: 1, title: 'Jujutsu Kaisen' });
+    assert.ok(r);
+    assert.equal(captured.allowCompat, false);
+    assert.equal(captured.referer, 'https://animesdigital.org/');
+    assert.equal(captured.headers.Origin, undefined, 'Origin faz o CDN responder 403');
+  } finally {
+    fallback.prepare = original;
+    s.restore();
+  }
+});
+
 test('findStream devolve null para título que não é anime', async () => {
   anime._reset();
   fallback._reset();
