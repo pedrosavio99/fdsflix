@@ -4,6 +4,9 @@
  * Quando o link de vídeo falha, o admin procura o MESMO título nos trackers e recebe magnet/.torrent.
  * Dublado PT-BR primeiro; o motor rejeita CAM/TS/sample e casa título + ano (mesmo rigor do vídeo).
  *
+ * O campo de título usa o MESMO /api/search da barra do site: digita e escolhe na lista (título + ano
+ * preenchidos), como no site oficial.
+ *
  * Nada disto existe para o visitante: a seção está dentro do diálogo .admin-only, o módulo não roda
  * sem html.is-admin e as rotas exigem a senha. Texto vindo da API entra por textContent.
  */
@@ -16,6 +19,7 @@
   var yearEl = document.getElementById('torrentYear');
   var resultsEl = document.getElementById('torrentResults');
   var noteEl = document.getElementById('torrentNote');
+  var suggestEl = document.getElementById('torrentSuggest');
   var kitBtn = document.getElementById('torrentKit');
   if (!box || !form || !input || !resultsEl || !noteEl) return;
   if (!document.documentElement.classList.contains('is-admin')) return;
@@ -23,6 +27,8 @@
   var CONFIG = window.__FDSFLIX_CONFIG__ || {};
   var API_BASE = String(CONFIG.apiBase || '').replace(/\/+$/, '');
   var seq = 0;
+  var sugSeq = 0;
+  var sugTimer = null;
 
   function key() { try { return localStorage.getItem('fdsflix.adminKey') || ''; } catch (e) { return ''; } }
 
@@ -38,6 +44,56 @@
     noteEl.textContent = text || '';
     noteEl.className = 'pix-note' + (kind ? ' ' + kind : '');
   }
+
+  /* --------------------------- sugestões (mesmo /api/search do site) --------------------------- */
+
+  function hideSuggest() {
+    sugSeq += 1;
+    if (!suggestEl) return;
+    suggestEl.hidden = true;
+    suggestEl.textContent = '';
+  }
+
+  function pick(item) {
+    input.value = item.title || '';
+    if (yearEl && item.year) yearEl.value = item.year;
+    hideSuggest();
+    search();
+  }
+
+  function showSuggest(items) {
+    if (!suggestEl) return;
+    suggestEl.textContent = '';
+    if (!items.length) { hideSuggest(); return; }
+    items.slice(0, 8).forEach(function (item) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.setAttribute('role', 'option');
+      b.style.cssText = 'display:flex;flex-direction:column;gap:.1rem;width:100%;padding:.45rem .6rem;border:0;background:transparent;color:inherit;text-align:left;cursor:pointer;border-radius:.35rem';
+      var t = document.createElement('span');
+      t.textContent = item.title || '';
+      var y = document.createElement('span');
+      y.style.cssText = 'font-size:.8rem;opacity:.7';
+      y.textContent = (item.year || 'sem ano') + (item.type === 'tv' ? ' · série' : ' · filme');
+      b.appendChild(t);
+      b.appendChild(y);
+      b.addEventListener('mousedown', function (e) { e.preventDefault(); pick(item); });
+      suggestEl.appendChild(b);
+    });
+    suggestEl.hidden = false;
+  }
+
+  function suggest() {
+    var q = String(input.value || '').trim();
+    if (q.length < 2) { hideSuggest(); return; }
+    var my = ++sugSeq;
+    fetch(API_BASE + '/api/search?q=' + encodeURIComponent(q), { headers: headers(), cache: 'no-store' })
+      .then(function (r) { return r.json().catch(function () { return {}; }); })
+      .then(function (d) { if (my === sugSeq) showSuggest((d && d.results) || []); })
+      .catch(function () { if (my === sugSeq) hideSuggest(); });
+  }
+
+  /* --------------------------- resultados de torrent --------------------------- */
 
   function rowOf(item) {
     var row = document.createElement('div');
@@ -59,8 +115,7 @@
       a.textContent = item.magnet ? 'magnet' : 'arquivo .torrent';
       a.target = '_blank';
       a.rel = 'noopener noreferrer';
-      a.style.display = 'inline-block';
-      a.style.marginTop = '.25rem';
+      a.style.cssText = 'display:inline-block;margin-top:.25rem';
       row.appendChild(a);
     }
     return row;
@@ -114,6 +169,12 @@
       .catch(function (e) { note('Não consegui baixar o kit: ' + e.message, 'warn'); });
   }
 
-  form.addEventListener('submit', function (e) { e.preventDefault(); search(); });
+  input.addEventListener('input', function () {
+    clearTimeout(sugTimer);
+    sugTimer = setTimeout(suggest, 250);
+  });
+  input.addEventListener('keydown', function (e) { if (e.key === 'Escape') hideSuggest(); });
+  input.addEventListener('blur', function () { setTimeout(hideSuggest, 150); });
+  form.addEventListener('submit', function (e) { e.preventDefault(); hideSuggest(); search(); });
   if (kitBtn) kitBtn.addEventListener('click', downloadKit);
 })();

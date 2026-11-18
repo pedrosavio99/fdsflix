@@ -1180,10 +1180,11 @@
           </span>
         </div>
         <p class="pix-note" style="margin:.2rem 0">Quando o link de vídeo falhar, procure o mesmo título nos trackers. Dublado PT-BR primeiro; rejeita CAM/TS/sample. Só admin.</p>
-        <form id="torrentForm" class="tk-form" autocomplete="off">
-          <input id="torrentQ" type="search" placeholder="Título (ex.: Matrix)" aria-label="Título para procurar torrent" required>
+        <form id="torrentForm" class="tk-form" autocomplete="off" style="position:relative">
+          <input id="torrentQ" type="search" placeholder="Título (ex.: Matrix)" aria-label="Título para procurar torrent" required autocomplete="off" aria-autocomplete="list" aria-controls="torrentSuggest">
           <input id="torrentYear" type="number" inputmode="numeric" placeholder="Ano" aria-label="Ano" style="width:6rem">
           <button id="torrentRun" type="submit">Procurar</button>
+          <div id="torrentSuggest" role="listbox" hidden style="position:absolute;left:0;right:0;top:100%;z-index:60;max-height:18rem;overflow:auto;background:var(--panel,#14141d);border:1px solid rgba(255,255,255,.14);border-radius:.5rem;margin-top:.25rem;padding:.25rem;box-shadow:0 10px 30px rgba(0,0,0,.5)"></div>
         </form>
         <p id="torrentNote" class="pix-note" role="status"></p>
         <div id="torrentResults" class="src-list"></div>
