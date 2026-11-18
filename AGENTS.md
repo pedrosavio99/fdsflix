@@ -61,6 +61,34 @@ A cascata é `ALL_PROVIDERS` em `lib/fallbackCascade.js`: cada provedor é uma f
 Para desligar um provedor de teste, use `FALLBACK_ORDER` (só afeta a ordem/ lista exibida) ou a
 variável própria dele.
 
+- **Vidsrc: gate Turnstile (2026-11) — a pool não extrai mais.** O player (`stellarconductornexus.com`,
+  atrás do `vidsrc.sh` e dos clones `vidsrc2.ru`/`api.cineby.homes`) passou a servir, para **IP de
+  datacenter**, uma página com `turnstile:true`, `apiToken:""` e `gateTicket`. O `apiToken` só é emitido
+  depois do desafio (POST `/embed/verify.php`), é preso ao IP e vive ~1 min; o `api.php` recusa outro IP
+  (`{"error":"invalid api token"}`). Não há como resolver Turnstile no servidor: a pool de
+  Vercels/Wasmers (e o Render) recebem o gate, e o Worker da Cloudflare passou a levar 403 do nginx.
+  Medido em 2026-11-17. `adproxy/lib/vidsrc.js` detecta o gate e falha com
+  `gate Turnstile ... apiToken não emitido` (sem repetir a cadeia); `lib/fallbackCascade.js` inclui
+  `turnstile|gate de ip` no `SYSTEMIC_FAILURE`, então o disjuntor abre na hora e a cascata cai no VixSrc.
+  O IP residencial (casa) continua sem gate — é a saída do `docs/RELAY-RESIDENCIAL.md`.
+- **VixSrc** (`lib/vixsrc.js`, sem variável para desligar; usa os nós do AdFallback): **a fonte que
+  devolveu o vídeo com o Vidsrc bloqueado.** API aberta `https://vixsrc.to/api/movie/<tmdb>` (ou
+  `/api/tv/<tmdb>/<s>/<e>`) → `/embed/<id>?token=...` com `window.streams` + `masterPlaylist.params`
+  (token/expires); a master é `.../playlist/<id>?ub=1&token=...&expires=...&h=1&lang=en` (sem
+  `h=1&lang=en` dá 403). O token da playlist é **preso ao IP do nó** que fez `/api`+`/embed`, então
+  resolução e entrega acontecem no **mesmo nó**: `lib/vixsrc.js` busca `/api` e `/embed` pelo
+  `/_adshield/r/<token>` (segredo público do adproxy) e pede `/_adshield/media/prepare` no mesmo nó
+  (`ADSHIELD_FALLBACK_KEY`). O Render só orquestra 2-3 chamadas pequenas; o navegador busca
+  playlist/segmentos no nó (`mode:"hls"`, `via:"direct"`) — **0 byte de vídeo no Render**. Exige nó
+  com `MEDIA_PROXY=1` (o kit do AdFallback); nó de build antigo é pulado (`allowCompat:false`, porque
+  o `/_adshield/r/` trata segmento `.html` como HTML e corrompe o vídeo). Cache de 20 min por título;
+  `VIXSRC_MAX_NODES` (padrão 5) limita quantos nós tentar. Teste: `test/vixsrc.test.js`. Testado E2E
+  com "A Odisseia" 1368337, Matrix 603, Clube da Luta 550 e GoT 1399 S1E1/S2E3.
+- **VidLink Pro: lançamento pelo IMDB.** O VidLink indexa parte dos lançamentos pelo **IMDB**, não pelo
+  TMDB ("A Odisseia" TMDB 1368337 → `null`; `tt33764258` → stream 1080p HEVC). `lib/streamExtractor.js`
+  agora, quando o id do TMDB não acha nada, busca `external_ids` no TMDB e repete com o IMDB
+  (`VIDLINK_IMDB_FALLBACK=0` desliga). Teste: `test/streamExtractor.test.js`.
+
 - **TokyVideo** (`lib/tokyoVideo.js`, `TOKYOVIDEO_ENABLED=0` desliga): busca por título no
   tokyvideo.com, casa pelos nomes do TMDB e **confirma pela duração** contra o runtime (é o que
   separa filme inteiro de trailer/clipe). Só filmes (`type=movie`); em série devolve `null` sem
@@ -358,6 +386,6 @@ e `GET /api/admin/devices/roku.zip` (monta na hora com `lib/rokuKit.js`, embute 
 
 ## Como rodar e testar
 
-- `npm start` (porta `PORT`, padrão 3000) · `npm test` (298 testes, `node --test test/*.test.js`).
+- `npm start` (porta `PORT`, padrão 3000) · `npm test` (306 testes, `node --test test/*.test.js`).
 - Manutenção/"mudamos de URL": tela "Site" do admin (`lib/siteStatus.js`, `public/sitegate.js`, `public/site.js`; tabela `pix_settings` no Supabase).
 - Docs: `docs/DEPLOY-RENDER.md`, `docs/VERCEL-POOL.md`, `docs/TV-AO-VIVO.md`, `docs/VISITANTES.md`, `docs/API.md`.

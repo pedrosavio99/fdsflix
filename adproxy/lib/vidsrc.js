@@ -240,8 +240,16 @@ async function resolveVidsrcOnce(options, jar, onStep = () => {}) {
     ...pageInfo(player),
     ms: player.ms,
     hasConfig: Boolean(config && config.apiToken),
-    scrapedToken: Boolean(tokenFromPage)
+    scrapedToken: Boolean(tokenFromPage),
+    turnstile: Boolean(config && config.turnstile)
   });
+  // O Vidsrc passou a servir um GATE de Cloudflare Turnstile para IPs de datacenter: a página vem
+  // com turnstile:true e apiToken VAZIO; o token só é emitido depois do desafio no navegador
+  // (/embed/verify.php), preso ao IP e com TTL de ~1 min. Não há como resolver isso no servidor —
+  // reportar o motivo certo é o que faz o disjuntor abrir na hora e a cascata cair no VixSrc.
+  if (config && config.turnstile && !config.apiToken) {
+    throw new Error(`gate Turnstile do Vidsrc (IP de datacenter): apiToken não emitido (${pageSummary(player)})`);
+  }
   if (!config || !config.apiToken) throw new Error(`CONFIG/apiToken ausente (${pageSummary(player)})`);
 
   const meta = await fetchText(cfg.metaApi, { Referer: srcJson.src }, 20000, jar);
@@ -314,7 +322,9 @@ async function resolveVidsrc(options) {
       return await resolveVidsrcOnce(options, createJar());
     } catch (error) {
       if (!firstError) firstError = error;
-      const retryable = /CONFIG|CFG|apiToken|vs_src|embed HTTP 5|socket|ECONN|tempo/i.test(String(error.message));
+      // Gate Turnstile é decisão do IP: repetir não muda nada (e só gasta ~1 s).
+      const gated = /gate Turnstile/i.test(String(error.message));
+      const retryable = !gated && /CONFIG|CFG|apiToken|vs_src|embed HTTP 5|socket|ECONN|tempo/i.test(String(error.message));
       if (!retryable) break;
       await new Promise((resolve) => setTimeout(resolve, 900));
     }

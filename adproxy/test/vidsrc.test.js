@@ -6,7 +6,7 @@ const { after, before, test } = require('node:test');
 
 const { createApp } = require('../lib/app');
 const { loadConfig } = require('../lib/config');
-const { configureSigning, proxiedPath, rewriteHls, parseJsonAssignment, findApiToken } = require('../lib/vidsrc');
+const { configureSigning, proxiedPath, rewriteHls, parseJsonAssignment, findApiToken, resolveVidsrcOnce } = require('../lib/vidsrc');
 
 let server;
 let base;
@@ -98,4 +98,32 @@ test('findApiToken acha o token mesmo se o objeto CONFIG mudar de nome', () => {
 test('selftest com id inválido responde 400 (rota existe em qualquer build novo)', async () => {
   const res = await fetch(`${base}/vidsrc/selftest?tmdb=abc`);
   assert.equal(res.status, 400);
+});
+
+test('gate Turnstile: player com turnstile:true e apiToken vazio falha com motivo claro', async () => {
+  const original = global.fetch;
+  global.fetch = async (url) => {
+    const u = String(url);
+    if (u.includes('/embed/player/')) {
+      return new Response('<html>window.CONFIG = {"turnstile":true,"apiToken":"","gateTicket":"x"};</html>', { status: 200 });
+    }
+    if (u.includes('/embed/movie/603?vs=')) {
+      return new Response('<html>CFG = {"playerUrl":"/embed/player/movie/603?vs=p","metaApi":"https://data.vidsrc.sh/api.php?type=movie&tmdb=603"};</html>', { status: 200 });
+    }
+    if (u.includes('/embed/movie/')) {
+      return new Response('<html><div data-api="/vs_src.php?type=movie&amp;id=603"></div></html>', { status: 200 });
+    }
+    if (u.includes('vs_src.php')) {
+      return new Response(JSON.stringify({ src: 'https://stellarconductornexus.com/embed/movie/603?vs=t' }), { status: 200 });
+    }
+    return new Response('x', { status: 404 });
+  };
+  try {
+    await assert.rejects(
+      () => resolveVidsrcOnce({ id: '603', type: 'movie' }),
+      /gate Turnstile/
+    );
+  } finally {
+    global.fetch = original;
+  }
 });
