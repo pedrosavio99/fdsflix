@@ -18,6 +18,7 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const { spawn } = require('child_process');
 const torrentStream = require('torrent-stream');
 
 const PORT = Number(process.env.PORT) || 8080;
@@ -35,6 +36,12 @@ function json(res, code, body) {
 function pickVideo(engine) {
   const files = (engine.files || []).filter((f) => /\.(mp4|m4v|webm|mkv|avi|mov)$/i.test(f.name));
   return files.sort((a, b) => (b.length || 0) - (a.length || 0))[0] || null;
+}
+
+const MIME = { mp4: 'video/mp4', m4v: 'video/mp4', webm: 'video/webm', mkv: 'video/x-matroska', avi: 'video/x-msvideo', mov: 'video/quicktime' };
+function mimeOf(name) {
+  const ext = String(name || '').split('.').pop().toLowerCase();
+  return MIME[ext] || 'video/mp4';
 }
 
 function engineFor(hash, magnet) {
@@ -62,6 +69,7 @@ function stream(req, res, entry) {
   const start = () => {
     const file = entry.file || pickVideo(entry.engine);
     if (!file) { json(res, 404, { error: 'sem vídeo no torrent' }); return; }
+    try { file.select(); } catch (e) { /* ignore */ }
     const total = file.length;
     const range = req.headers.range;
     let from = 0;
@@ -73,8 +81,10 @@ function stream(req, res, entry) {
         if (m[2]) to = Number(m[2]);
       }
     }
+    const isMkv = /\.mkv$/i.test(file.name);
+    // .mkv não toca no Chrome; o remux abaixo gera MP4 (fragmented) sem re-encodear.
     const headers = {
-      'Content-Type': 'video/mp4',
+      'Content-Type': isMkv ? 'video/mp4' : mimeOf(file.name),
       'Accept-Ranges': 'bytes',
       'Access-Control-Allow-Origin': '*',
       'Cache-Control': 'no-store'
@@ -87,18 +97,46 @@ function stream(req, res, entry) {
     } else {
       res.writeHead(200, Object.assign(headers, { 'Content-Length': total }));
     }
-    const stream = fs.createReadStream(file.path, { start: from, end: to });
-    stream.on('error', () => { try { res.destroy(); } catch (e) {} });
-    stream.pipe(res);
+    const src = fs.createReadStream(file.path, { start: from, end: to });
+    src.on('error', () => { try { res.destroy(); } catch (e) { /* ignore */ } });
+    if (isMkv) {
+      const ff = spawn('ffmpeg', [
+        '-hide_banner', '-loglevel', 'error',
+        '-i', 'pipe:0',
+        '-c', 'copy',
+        '-movflags', 'frag_keyframe+empty_moov',
+        '-f', 'mp4', 'pipe:1'
+      ], { stdio: ['pipe', 'pipe', 'ignore'] });
+      ff.stdout.pipe(res);
+      src.pipe(ff.stdin);
+      req.on('close', () => { try { ff.kill('SIGKILL'); } catch (e) { /* ignore */ } });
+    } else {
+      src.pipe(res);
+    }
   };
   if (entry.file) return start();
-  entry.engine.on('ready', start);
+  const t = setTimeout(() => { json(res, 504, { error: 'metadata não chegou (sem peers?)' }); }, 20000);
+  entry.engine.on('ready', () => { clearTimeout(t); start(); });
 }
 
 const server = http.createServer((req, res) => {
   const u = new URL(req.url, 'http://nó');
   if (u.pathname === '/ping') { res.writeHead(200, { 'Access-Control-Allow-Origin': '*' }); res.end('ok'); return; }
-  if (u.pathname === '/health') { json(res, 200, { engines: engines.size, uptime: process.uptime() }); return; }
+  if (u.pathname === '/health') {
+    const list = [];
+    for (const [hash, e] of engines) {
+      list.push({
+        hash,
+        ready: !!e.file,
+        name: e.file && e.file.name,
+        files: (e.engine.files || []).length,
+        peers: e.engine.swarm && e.engine.swarm.peers ? e.engine.swarm.peers.length : 0,
+        downloaded: e.engine.torrent ? e.engine.torrent.downloaded : 0
+      });
+    }
+    json(res, 200, { engines: list, uptime: process.uptime() });
+    return;
+  }
   const m = u.pathname.match(/^\/stream\/([a-fA-F0-9]{40})$/);
   if (!m) { json(res, 404, { error: 'rota' }); return; }
   const magnet = u.searchParams.get('magnet') || '';
