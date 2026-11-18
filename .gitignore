@@ -23,3 +23,7 @@ fdsflix-*-kit.zip
 
 # sobras do emulador/node (xhr síncrono)
 .node-xhr-sync-*
+
+# rascunhos de diagnóstico local (não versionar)
+tmp-diag/
+tmp-check/

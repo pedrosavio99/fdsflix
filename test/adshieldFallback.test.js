@@ -407,3 +407,28 @@ test('cold start (status 0) ganha uma segunda tentativa no mesmo nó', async () 
     resetEnv();
   }
 });
+
+test('prepare allowCompat:false não cai no compat /_adshield/r/ de nó legado', async () => {
+  resetEnv();
+  process.env.ADSHIELD_FALLBACK_URLS = NODE_A;
+  const calls = [];
+  const restore = stubFetch(async (url, init) => {
+    const u = String(url);
+    calls.push(`${(init && init.method) || 'GET'} ${u}`);
+    if (u.includes('/_adshield/media/prepare')) return new Response('nope', { status: 404 });
+    if (u.includes('/_adshield/r/')) return new Response('ok', { status: 200, headers: { 'content-type': 'application/vnd.apple.mpegurl' } });
+    return new Response('x', { status: 404 });
+  });
+  try {
+    const result = await fallback.prepare({
+      url: 'https://cdn.example/a.m3u8',
+      referer: 'https://site.example/',
+      allowCompat: false
+    });
+    assert.equal(result.ok, false);
+    assert.equal(calls.some((c) => c.includes('/_adshield/r/')), false, 'compat não pode ser chamado');
+    assert.match(result.error, /build antigo|compat desligado/);
+  } finally {
+    restore();
+  }
+});

@@ -1627,6 +1627,7 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
                 <summary>🔎 Diagnóstico do caminho (ao vivo)
                   <span class="diag-actions">
                     <button id="diagProbe" class="ghost" type="button" title="Pede ao servidor para testar o Vidsrc na Vercel agora">Testar Vidsrc/Vercel</button>
+                    <button id="diagServer" class="ghost" type="button" title="Relatório técnico do servidor (/api/debug/hls: CinePro, última consulta, eventos HLS) — só admin">Relatório do servidor</button>
                     <button id="diagCopy" class="ghost" type="button">Copiar</button>
                     <button id="diagClear" class="ghost" type="button">Limpar</button>
                   </span>
@@ -3866,10 +3867,13 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
     state.hlsWatch = setTimeout(function () {
       var v = $('nativePlayer');
       if (!state.selected || (!v.paused && v.readyState >= 3 && v.currentTime > 0)) return;
-      var msg = 'O vídeo não começou em 25 s. Player: ' + (state.hlsIssue || 'sem erro registrado') +
-        ' · duração ' + (isFinite(v.duration) ? Math.round(v.duration) + 's' : '?') +
-        ' · readyState ' + v.readyState +
-        '. Abra ' + apiUrl('/api/debug/hls') + ' e copie o resultado.';
+      var msg = 'O vídeo não começou em 25 s.';
+      if (isAdminView()) {
+        msg += ' Player: ' + (state.hlsIssue || 'sem erro registrado') +
+          ' · duração ' + (isFinite(v.duration) ? Math.round(v.duration) + 's' : '?') +
+          ' · readyState ' + v.readyState +
+          '. Use o botão "Relatório do servidor" no Diagnóstico do modal (ou abra /api/debug/hls?key=SUA_SENHA).';
+      }
       setStatus('warn', msg);
       console.warn('[diagnóstico]', msg);
     }, 25000);
@@ -5182,6 +5186,28 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
             ? '   ✅ extrai E baixa segmentos do Vidsrc.' : '   ⚠ cadeia não fechou até o segmento; veja o passo que falhou.');
         });
       }).catch(function (err) { diag('err', 'Falha ao chamar o servidor: ' + err.message); });
+    });
+    $('diagServer').addEventListener('click', function (ev) {
+      ev.preventDefault(); ev.stopPropagation();
+      var btn = $('diagServer');
+      if (btn.disabled) return;
+      btn.disabled = true;
+      var label = btn.textContent;
+      btn.textContent = 'Buscando…';
+      diag('step', 'Buscando /api/debug/hls (relatório do servidor)…');
+      apiFetch('/api/debug/hls', { cache: 'no-store' }).then(function (r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status + (r.status === 401 ? ' — entre como admin para ver o relatório' : ''));
+        return r.json();
+      }).then(function (data) {
+        diag('ok', 'Relatório do servidor (/api/debug/hls):');
+        diag('info', JSON.stringify(data, null, 2));
+        diag('info', 'Use "Copiar" para copiar o relatório inteiro.');
+      }).catch(function (err) {
+        diag('err', 'Não consegui buscar o relatório: ' + (err && err.message ? err.message : err));
+      }).then(function () {
+        btn.disabled = false;
+        btn.textContent = label;
+      });
     });
     diag('info', 'Painel pronto. Clique em um título para ver o caminho completo, ou em "Testar Vidsrc/Vercel".');
   })();
