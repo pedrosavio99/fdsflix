@@ -120,6 +120,9 @@ variável própria dele.
   esses). Filmes: **2 a 5** (VidLink + VixSrc + TokyVideo/Catálogo/Archive/BitChute). Os três de
   fonte única só ganham segunda com serviço do dono (**Consumet** para anime; **CineWinx/Stream-Winx**
   para série) — CinePro/JKAnime/VidFast/Vidsrc/MGEB não entregam ad-free do datacenter sem relay.
+  **Temporadas seguintes medidas (2026-11-18):** One Piece S2E1 → AnimesDigital, GoT S2E1 → VixSrc
+  entregam; **DBZ S2E1 não** porque o DBZ tem **1 temporada no TMDB** (291 episódios) — "S2 vazia"
+  é o banco, não a fonte.
 - **Fontes opcionais (prontas para deploy):** CineWinx (`CINEWINX_API_BASE`), Stream-Winx
   (`STREAM_WINX_API_BASE`) e Consumet (`CONSUMET_API_BASE`) já têm adaptadores na cascata (os três
   em `HEAVY`) e agora **teste com API mockada** (`test/optionalSources.test.js`): CineWinx/Stream-Winx
