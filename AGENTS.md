@@ -210,6 +210,23 @@ variável própria dele.
   README, para rodar no PC). Medido em 2026-11-18: Matrix → apibay 100 + YTS 24; DBZ/One Piece → 30.
   Teste: `test/torrentSearch.test.js` (8). O vídeo não passa por aqui; é só o link. A
   responsabilidade legal do download é do usuário.
+- **Nós de torrent: banda e horas por conta (admin; `deploy/torrent-streamer`, `lib/torrentNodes.js`, `supabase/torrent-nodes-schema.sql`).**
+  Um nó = uma conta SnapDeploy = um container; **o mesmo `.tar` serve para todas** (a config vem de `node.config.json` — o zip do
+  painel já o embute com o endereço do Render e a chave — ou das envs `FDSFLIX_URL`/`NODE_KEY`/`NODE_NAME`/`NODE_URL`). Quem MEDE é o
+  próprio nó (o `<video>` não informa bytes, e upload para peers também é saída): `egress` = vídeo ao navegador + upload do swarm,
+  `ingress` = baixado dos peers, `awake` = segundos ligado (o que gasta as 100 container-horas/mês da conta). Reporta a cada 2 min em
+  `POST /api/torrent-nodes/report` (header `x-node-key`, **não** a senha admin; chave derivada do Supabase/`STATS_KEY` se
+  `TORRENT_NODE_KEY` faltar). O servidor soma por dia/nó no Supabase (tabela `torrent_node_usage_daily`, RPC `fdsflix_add_node_usage`) e
+  `GET /api/admin/torrent-nodes[?nodes=]` devolve usado/cota/restante, filmes que ainda cabem (GB/filme medido, senão 0,7), horas, `asleep`
+  e `rank` (nós com sobra, do mais folgado). O front (`public/torrents.js`, bloco `#torrentNodesBox` **abaixo do log**) desenha as barras no
+  estilo das Vercels e o `nodeFor(hash)` tira nó esgotado do rodízio. **Cota de banda é ASSUNÇÃO** (`TORRENT_NODE_QUOTA_GB`, padrão 10,
+  `TORRENT_NODE_QUOTAS=URL=GB`): os termos do SnapDeploy (lidos 2026-11-18) falam em "allowance razoável" **sem número** e dizem que avisam
+  antes de restringir só por banda. Documentado: 100 container-horas/mês por conta (dormindo não conta), 100 req/min por IP no domínio
+  compartilhado (o `/status` do front faz ~30/min), 0,25 vCPU/512 MB, saída TCP só nas portas 1–27017 e UDP só DNS/NTP (lido na página
+  free-tier por UM agente, a confirmar; o UDP bloqueado foi MEDIDO pelo `/diag`. Se for verdade, peers em porta alta ficam inalcançáveis e
+  o nó vê menos peers do que o teste local `TCP_ONLY=1`). **RISCO DE CONTA:** o AUP do SnapDeploy lista "torrent clients/seedboxes/P2P" e
+  "re-streaming de mídia" como proibidos, com suspensão imediata sem aviso ("multi-account abuse" também). O dono foi avisado; decisão dele.
+  Testes: `test/torrentNodes.test.js`. E2E local (nó → servidor → painel) medido: 20 MB de saída contados exatos.
 - **Descartadas (medido):** Dailymotion (busca aberta, mas o manifesto responde 403 `E005` — trava
   deliberada, não contornar), Odysee (busca aberta; CDN exige Referer do site e devolve 429), ok.ru
   (login), Rumble (sem resposta). **AnimePahe** (`animepahe.ru`): o site responde 200 (casca JS), mas

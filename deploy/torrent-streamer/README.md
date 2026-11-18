@@ -57,3 +57,23 @@ docker save fdsflix-torrent-streamer -o fdsflix-torrent-streamer.tar
 - **Aquecimento:** lê as caixas do MP4 para achar o `moov`. No começo (YIFY é assim) já vem junto com os primeiros 6 MB;
   no fim (MP4 comum), baixa só esse trecho. Depois o Chrome lê do disco do nó (início em ~40 ms).
 - `TCP_ONLY=1` simula plataforma sem UDP (teste local); `HEAD_BYTES` muda o tanto de começo aquecido (padrão 6 MB).
+
+## Consumo reportado ao fdsFlix (mesma imagem para todas as contas)
+
+O nó mede o que passa por ele e avisa o fdsFlix a cada ~2 min (`POST /api/torrent-nodes/report`):
+**saída** (vídeo ao navegador + upload aos peers), **entrada** (baixado dos peers) e **horas ligado**.
+O painel Torrents mostra banda e horas por nó, abaixo do log.
+
+Config, em ordem de prioridade: variáveis de ambiente → `node.config.json`.
+
+| Variável | Para quê |
+|---|---|
+| `FDSFLIX_URL` | endereço do fdsFlix (Render). O zip do painel já embute isso |
+| `NODE_KEY` | chave dos nós. O zip do painel já embute |
+| `NODE_NAME` | apelido no painel (opcional; senão usa o subdomínio) |
+| `NODE_URL` | URL pública do nó (opcional; senão sai do `Host` da 1ª requisição) |
+| `UPLOAD_SLOTS` | peers que recebem upload (padrão 3). Upload também gasta banda de saída |
+| `REPORT_MS` | intervalo do relatório (padrão 120000) |
+
+**Para várias contas, o fluxo é:** baixe o zip pelo painel (já vem com `node.config.json`), gere UM tar, e suba o mesmo tar em cada
+conta. `/usage` no nó mostra o que ele mediu e se o último relatório chegou (`report.lastError`).

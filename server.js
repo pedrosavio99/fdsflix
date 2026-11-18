@@ -42,6 +42,7 @@ const rokuKit = require('./lib/rokuKit');
 const torrentSearch = require('./lib/torrentSearch');
 const torrentKit = require('./lib/torrentKit');
 const torrentStreamerKit = require('./lib/torrentStreamerKit');
+const torrentNodes = require('./lib/torrentNodes');
 const pixKit = require('./lib/pixKit');
 const pixAuth = require('./lib/pixAuth');
 const siteStatus = require('./lib/siteStatus');
@@ -1269,7 +1270,7 @@ app.get('/api/admin/torrents/kit.zip', requireApiKey, requireStatsKey, (req, res
 app.get('/api/admin/torrents/streamer.zip', requireApiKey, requireStatsKey, (req, res) => {
   if (!torrentStreamerKit.kitAvailable()) return res.status(404).json({ error: 'Streamer indisponível neste servidor.' });
   try {
-    const kit = torrentStreamerKit.buildKit();
+    const kit = torrentStreamerKit.buildKit({ fdsflixUrl: publicOrigin(req), nodeKey: torrentNodes.nodeKey() });
     res.setHeader('Content-Type', 'application/zip');
     res.setHeader('Content-Disposition', `attachment; filename="${kit.filename}"`);
     res.setHeader('Cache-Control', 'no-store');
@@ -1277,6 +1278,36 @@ app.get('/api/admin/torrents/streamer.zip', requireApiKey, requireStatsKey, (req
     res.end(kit.zip);
   } catch (err) {
     res.status(400).json({ error: `Não consegui montar o streamer: ${err.message}` });
+  }
+});
+
+/* ---- Banda dos nós de torrent (cada conta SnapDeploy = 1 nó). Ver lib/torrentNodes.js ---- */
+
+// O PRÓPRIO nó avisa quanto passou por ele (saída/entrada/tempo ligado). Autenticado pela chave dos nós, não pela senha admin.
+app.post('/api/torrent-nodes/report', (req, res) => {
+  if (!torrentNodes.keyOK(req.get('x-node-key'))) return res.status(401).json({ ok: false, error: 'chave do nó inválida' });
+  const body = req.body && typeof req.body === 'object' ? req.body : {};
+  const out = torrentNodes.record(body.node, body);
+  res.status(out.ok ? 200 : 400).json(out);
+});
+
+// Painel "Torrents": banda e horas por nó. ?nodes=url1,url2 inclui os nós salvos no navegador.
+app.get('/api/admin/torrent-nodes', requireApiKey, requireStatsKey, (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const extra = String(req.query.nodes || '').split(/[\s,;]+/).filter(Boolean);
+  res.json(torrentNodes.snapshot(extra));
+});
+
+app.post('/api/admin/torrent-nodes/sync', requireApiKey, requireStatsKey, async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.json(await torrentNodes.syncNow());
+});
+
+app.get('/api/admin/torrent-nodes/schema', requireApiKey, requireStatsKey, (req, res) => {
+  try {
+    res.type('text/plain; charset=utf-8').send(fs.readFileSync(path.join(__dirname, 'supabase', 'torrent-nodes-schema.sql'), 'utf8'));
+  } catch (err) {
+    res.status(404).type('text').send('supabase/torrent-nodes-schema.sql não está neste servidor.');
   }
 });
 

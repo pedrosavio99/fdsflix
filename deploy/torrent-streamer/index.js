@@ -39,6 +39,33 @@ const META_WAIT_MS = Number(process.env.META_WAIT_MS) || 45 * 1000; // /prepare
 const STREAM_WAIT_MS = Number(process.env.STREAM_WAIT_MS) || 25 * 1000; // /stream sem /prepare
 // TCP_ONLY=1 simula plataforma sem UDP (só para teste local): sem DHT e sem trackers UDP.
 const TCP_ONLY = process.env.TCP_ONLY === '1';
+// ---- Medidor de consumo deste nó (reportado ao fdsFlix; ver lib/torrentNodes.js no servidor) ----
+// Mesma imagem (.tar) em todas as contas: a config vem de node.config.json (no zip do painel) ou de variáveis.
+//   FDSFLIX_URL  endereço do fdsFlix (Render)      NODE_KEY   chave dos nós
+//   NODE_URL     URL pública DESTE nó (opcional: sai do Host da 1ª requisição)   NODE_NAME  apelido (opcional)
+//   UPLOAD_SLOTS quantos peers recebem upload (padrão 3; o upload também gasta banda de saída)
+//   REPORT_MS    intervalo do relatório (padrão 120000)
+let fileCfg = {};
+try { fileCfg = JSON.parse(fs.readFileSync(path.join(__dirname, 'node.config.json'), 'utf8')) || {}; } catch (e) { /* sem arquivo: só variáveis */ }
+const FDSFLIX_URL = String(process.env.FDSFLIX_URL || fileCfg.fdsflixUrl || '').trim().replace(/\/+$/, '');
+const NODE_KEY = String(process.env.NODE_KEY || fileCfg.nodeKey || '').trim();
+const NODE_NAME = String(process.env.NODE_NAME || fileCfg.name || '').trim();
+const REPORT_MS = Math.max(15000, Number(process.env.REPORT_MS) || 120000);
+const UPLOAD_SLOTS = process.env.UPLOAD_SLOTS === undefined ? 3 : Math.max(0, Number(process.env.UPLOAD_SLOTS) || 0);
+let nodeUrl = String(process.env.NODE_URL || fileCfg.nodeUrl || '').trim().replace(/\/+$/, '');
+
+const meter = {
+  since: Date.now(),
+  http: 0,      // bytes de vídeo enviados ao navegador
+  up: 0,        // bytes enviados aos peers (upload do torrent)
+  down: 0,      // bytes baixados dos peers
+  streams: 0,   // vídeos abertos
+  lastTick: Date.now(),
+  total: { egress: 0, ingress: 0, awake: 0, streams: 0 }, // desde que o processo subiu
+  pend: { egress: 0, ingress: 0, awake: 0, streams: 0 },  // ainda não aceito pelo fdsFlix
+  reports: { ok: 0, fail: 0, lastOkAt: null, lastError: '', lastTryAt: null }
+};
+
 const USE_DHT = process.env.DHT !== '0' && !TCP_ONLY;
 const HEAD_BYTES = Number(process.env.HEAD_BYTES) || 6 * 1024 * 1024; // começo do vídeo, baixado antes de liberar
 const MAX_TAIL = 24 * 1024 * 1024; // teto do trecho final (moov) que aquecemos
@@ -101,7 +128,7 @@ function engineFor(hash, magnet) {
   if (engines.size >= MAX_ENGINES) {
     let oldest = null;
     for (const [k, v] of engines) if (!oldest || v.last < oldest.last) oldest = { k, ...v };
-    if (oldest) { try { oldest.engine.destroy(); } catch (e) {} engines.delete(oldest.k); }
+    if (oldest) { sample(oldest); try { oldest.engine.destroy(); } catch (e) {} engines.delete(oldest.k); }
   }
 
   const dir = path.join(CACHE, key);
@@ -110,9 +137,10 @@ function engineFor(hash, magnet) {
     path: dir,
     tmp: path.join(CACHE, '_meta'),
     connections: 80,
+    uploads: UPLOAD_SLOTS,
     dht: USE_DHT
   });
-  const entry = { engine, hash: key, file: null, ready: false, last: Date.now(), err: '', t0: Date.now(), warm: null };
+  const entry = { engine, hash: key, file: null, ready: false, last: Date.now(), err: '', t0: Date.now(), warm: null, seenUp: 0, seenDown: 0, lastStreamAt: 0 };
   engines.set(key, entry);
   engine.on('ready', () => {
     entry.ready = true;
@@ -129,6 +157,56 @@ function engineFor(hash, magnet) {
     t.unref();
   });
   return entry;
+}
+
+/** Soma ao medidor o que o swarm deste torrent moveu desde a última amostra. */
+function sample(entry) {
+  try {
+    const sw = entry.engine.swarm;
+    if (!sw) return;
+    const up = Math.max(0, (sw.uploaded || 0) - entry.seenUp);
+    const down = Math.max(0, (sw.downloaded || 0) - entry.seenDown);
+    entry.seenUp = sw.uploaded || 0;
+    entry.seenDown = sw.downloaded || 0;
+    meter.up += up;
+    meter.down += down;
+  } catch (e) { /* ignore */ }
+}
+
+/** Fecha o período: devolve o que mudou desde o último fechamento e acumula nos totais. */
+function drainMeter() {
+  for (const e of engines.values()) sample(e);
+  const now = Date.now();
+  const awake = Math.max(0, Math.round((now - meter.lastTick) / 1000));
+  meter.lastTick = now;
+  const d = { egress: meter.http + meter.up, ingress: meter.down, awake, streams: meter.streams };
+  meter.http = 0; meter.up = 0; meter.down = 0; meter.streams = 0;
+  for (const k of Object.keys(d)) { meter.total[k] += d[k]; meter.pend[k] += d[k]; }
+  return d;
+}
+
+function reportNow(timeoutMs) {
+  drainMeter();
+  if (!FDSFLIX_URL || !NODE_KEY) { meter.reports.lastError = 'sem FDSFLIX_URL/NODE_KEY (não reporta)'; return Promise.resolve(false); }
+  if (!nodeUrl) { meter.reports.lastError = 'URL do nó ainda desconhecida (aguardando a 1ª requisição)'; return Promise.resolve(false); }
+  const p = meter.pend;
+  const sent = { egress: p.egress, ingress: p.ingress, awake: p.awake, streams: p.streams };
+  meter.reports.lastTryAt = Date.now();
+  return fetch(FDSFLIX_URL + '/api/torrent-nodes/report', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-node-key': NODE_KEY },
+    body: JSON.stringify({ node: nodeUrl, name: NODE_NAME, egressBytes: sent.egress, ingressBytes: sent.ingress, awakeSeconds: sent.awake, streams: sent.streams }),
+    signal: AbortSignal.timeout(timeoutMs || 15000)
+  }).then((r) => {
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    // Só subtrai o que foi enviado (o medidor continuou somando durante o envio).
+    for (const k of Object.keys(sent)) p[k] = Math.max(0, p[k] - sent[k]);
+    meter.reports.ok += 1; meter.reports.lastOkAt = Date.now(); meter.reports.lastError = '';
+    return true;
+  }).catch((e) => {
+    meter.reports.fail += 1; meter.reports.lastError = String((e && e.message) || e);
+    return false; // pend segue acumulando e vai no próximo ciclo
+  });
 }
 
 function harvestPeers(entry) {
@@ -278,6 +356,8 @@ function stream(req, res, entry) {
     const file = ok ? entry.file : null;
     if (!file) { json(res, ok ? 404 : 504, { error: whyNot(entry) }); return; }
     try { file.select(); } catch (e) { /* ignore */ }
+    // "Vídeo aberto" = pedido que começa do zero, no máximo 1 por minuto por torrent (o Chrome repete).
+    if (!/bytes=[1-9]/.test(String(req.headers.range || '')) && Date.now() - entry.lastStreamAt > 60000) { meter.streams += 1; entry.lastStreamAt = Date.now(); }
     // Enquanto a resposta estiver aberta o motor conta como "em uso" (um mkv é UMA requisição de horas).
     const keep = setInterval(() => { entry.last = Date.now(); }, 30 * 1000);
     res.on('close', () => clearInterval(keep));
@@ -307,6 +387,7 @@ function stream(req, res, entry) {
       ff.stdin.on('error', () => {});
       src.on('error', () => { try { ff.kill('SIGKILL'); } catch (e) { /* ignore */ } });
       src.pipe(ff.stdin);
+      ff.stdout.on('data', (d) => { meter.http += d.length; });
       ff.stdout.pipe(res);
       const stop = () => {
         try { ff.kill('SIGKILL'); } catch (e) { /* ignore */ }
@@ -352,6 +433,7 @@ function stream(req, res, entry) {
     const src = file.createReadStream({ start: from, end: to });
     src.on('error', () => { try { res.destroy(); } catch (e) { /* ignore */ } });
     res.on('close', () => { try { src.destroy(); } catch (e) { /* ignore */ } });
+    src.on('data', (d) => { meter.http += d.length; });
     src.pipe(res);
   });
 }
@@ -421,12 +503,40 @@ async function diag() {
 
 const server = http.createServer((req, res) => {
   const u = new URL(req.url, 'http://nó');
+  // A URL pública deste nó (para o relatório) sai do Host da 1ª requisição vinda da internet. NODE_URL vence.
+  // Só o Host (x-forwarded-host seria forjável por qualquer visitante e batizaria o nó errado).
+  if (!nodeUrl) {
+    const host = String(req.headers.host || '').split(',')[0].trim().toLowerCase();
+    if (host && !/^(localhost|127\.|0\.0\.0\.0|\[::1\])/.test(host)) {
+      const proto = String(req.headers['x-forwarded-proto'] || 'https').split(',')[0].trim();
+      nodeUrl = `${proto === 'http' ? 'http' : 'https'}://${host}`;
+    }
+  }
   if (req.method === 'OPTIONS') {
     res.writeHead(204, { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'range', 'Access-Control-Max-Age': '600' });
     res.end();
     return;
   }
   if (u.pathname === '/ping') { res.writeHead(200, { 'Access-Control-Allow-Origin': '*' }); res.end('ok'); return; }
+  if (u.pathname === '/usage') {
+    drainMeter();
+    const MB = 1048576;
+    json(res, 200, {
+      name: NODE_NAME || null,
+      url: nodeUrl || null,
+      reporting: Boolean(FDSFLIX_URL && NODE_KEY),
+      fdsflix: FDSFLIX_URL || null,
+      uploadSlots: UPLOAD_SLOTS,
+      sinceMinutes: Math.round((Date.now() - meter.since) / 60000),
+      egressMB: +(meter.total.egress / MB).toFixed(1),
+      ingressMB: +(meter.total.ingress / MB).toFixed(1),
+      awakeHours: +(meter.total.awake / 3600).toFixed(2),
+      streams: meter.total.streams,
+      pendingMB: +(meter.pend.egress / MB).toFixed(1),
+      report: meter.reports
+    });
+    return;
+  }
   if (u.pathname === '/diag') { diag().then((d) => json(res, 200, d)).catch((e) => json(res, 500, { error: String(e) })); return; }
   if (u.pathname === '/health') {
     const list = [];
@@ -455,8 +565,20 @@ const server = http.createServer((req, res) => {
 setInterval(() => {
   const now = Date.now();
   for (const [k, v] of engines) {
-    if (now - v.last > IDLE_MS) { try { v.engine.destroy(); } catch (e) {} engines.delete(k); }
+    if (now - v.last > IDLE_MS) { sample(v); try { v.engine.destroy(); } catch (e) {} engines.delete(k); }
   }
 }, 60 * 1000).unref();
 
-server.listen(PORT, () => log(`torrent streamer em :${PORT} (cache ${CACHE}, dht ${USE_DHT ? 'on' : 'off'})`));
+// Relatório de consumo: o 1º logo no começo (o nó aparece no painel), depois a cada REPORT_MS enquanto ligado.
+setTimeout(() => reportNow(), 20000).unref();
+setInterval(() => reportNow(), REPORT_MS).unref();
+// Ao desligar (sleep/redeploy) tenta enviar o que faltou; o container pode ser morto logo depois.
+let bye = false;
+function goodbye() {
+  if (bye) return; bye = true;
+  Promise.race([reportNow(3000), new Promise((r) => setTimeout(r, 3500))]).then(() => process.exit(0));
+}
+process.on('SIGTERM', goodbye);
+process.on('SIGINT', goodbye);
+
+server.listen(PORT, () => log(`torrent streamer em :${PORT} (cache ${CACHE}, dht ${USE_DHT ? 'on' : 'off'}, upload ${UPLOAD_SLOTS}, relatório ${FDSFLIX_URL && NODE_KEY ? 'ligado' : 'DESLIGADO (sem FDSFLIX_URL/NODE_KEY)'})`));

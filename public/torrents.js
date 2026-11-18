@@ -135,6 +135,7 @@
   var wt = null;
   var blobURL = '';
   var nodes = [];
+  var nodeRank = [];   // nós com banda/horas sobrando, do mais folgado ao menos (vem do servidor)
   var nodeEl = document.getElementById('torrentNode');
   var logEl = document.getElementById('torrentLog');
 
@@ -162,11 +163,19 @@
     note(nodes.length + ' nó(s) salvo(s).');
   }
 
-  // Rodízio "preso ao arquivo": o mesmo infoHash cai sempre no mesmo nó.
+  // Rodízio "preso ao arquivo": o mesmo infoHash cai sempre no mesmo nó (o cache do torrent fica lá).
+  // Nó esgotado (banda ou horas, segundo o painel abaixo) sai do rodízio enquanto houver outro.
+  function normNode(u) { return String(u || '').trim().replace(/\/+$/, '').toLowerCase(); }
+
   function nodeFor(hash) {
     if (!nodes.length) return '';
+    var pool = nodes;
+    if (nodeRank.length) {
+      var ok = nodes.filter(function (n) { return nodeRank.indexOf(normNode(n)) !== -1; });
+      if (ok.length) pool = ok;
+    }
     var n = parseInt(String(hash || '').slice(0, 8), 16) || 0;
-    return nodes[n % nodes.length];
+    return pool[n % pool.length];
   }
 
   function stopTorrent() {
@@ -235,6 +244,7 @@
       log('abrindo stream: ' + url.slice(0, 120) + '…');
       note('Pronto — carregando o vídeo…');
       showVideo(url);
+      setTimeout(nodesRefresh, 15000); // o nó avisa o consumo a cada ~2 min; confere depois
     }
     return tick();
   }
@@ -441,6 +451,136 @@
       })
       .catch(function (e) { note('Não consegui baixar o streamer: ' + e.message, 'warn'); });
   }
+
+  /* --------------------------- banda dos nós (abaixo do log) --------------------------- */
+
+  var tnRows = document.getElementById('tnRows');
+  var tnSummary = document.getElementById('tnSummary');
+  var tnFoot = document.getElementById('tnFoot');
+  var tnData = null;
+
+  function fmtBytes(n) {
+    n = Number(n) || 0;
+    if (n >= 1073741824) return (n / 1073741824).toFixed(2) + ' GB';
+    if (n >= 1048576) return (n / 1048576).toFixed(n >= 104857600 ? 0 : 1) + ' MB';
+    return Math.round(n / 1024) + ' KB';
+  }
+
+  function ago(ts) {
+    if (!ts) return 'nunca';
+    var m = Math.round((Date.now() - ts) / 60000);
+    if (m < 1) return 'agora há pouco';
+    if (m < 90) return 'há ' + m + ' min';
+    return 'há ' + Math.round(m / 60) + ' h';
+  }
+
+  function barOf(pct, small) {
+    var bar = document.createElement('div');
+    bar.className = 'usage-bar' + (pct >= 85 ? ' crit' : (pct >= 60 ? ' warn' : ''));
+    if (small) bar.style.height = '6px';
+    var i = document.createElement('i');
+    i.className = 'used';
+    i.style.width = Math.min(100, pct) + '%';
+    bar.appendChild(i);
+    return bar;
+  }
+
+  function rowFor(n, isTotal) {
+    var row = document.createElement('div');
+    row.className = 'usage-row';
+    var name = document.createElement('div');
+    name.className = 'name';
+    var a = document.createElement('span');
+    var state = isTotal ? '' : (n.exhausted ? ' · ⛔ esgotado (' + n.exhaustedBy + ')' : (n.asleep ? ' · 💤 dormindo' : ' · 🟢 ligado'));
+    a.textContent = n.label + state;
+    if (!isTotal) a.title = n.node + '\nÚltimo aviso do nó: ' + ago(n.lastSeenAt);
+    var b = document.createElement('span');
+    b.textContent = fmtBytes(n.egressBytes) + ' / ' + fmtBytes(n.quotaBytes) + ' (' + n.pct.toFixed(1) + '%)';
+    name.appendChild(a);
+    name.appendChild(b);
+    row.appendChild(name);
+    row.appendChild(barOf(n.pct, false));
+    var meta = document.createElement('div');
+    meta.className = 'usage-meta';
+    meta.textContent = 'restam ' + fmtBytes(n.remainingBytes) + ' ≈ ' + n.filmsLeft + ' filme(s)' +
+      (isTotal ? '' : ' (' + n.gbPerStream + ' GB/filme' + (n.gbPerStreamMeasured ? '' : ', estimado') + ')') +
+      (isTotal ? '' : ' · hoje ' + fmtBytes(n.todayEgressBytes) + ' · entrou ' + fmtBytes(n.ingressBytes) + ' · ' + n.streams + ' vídeo(s)');
+    row.appendChild(meta);
+    var hrs = document.createElement('div');
+    hrs.className = 'name';
+    var h1 = document.createElement('span');
+    h1.textContent = 'Horas ligado (limite de container-horas)';
+    var h2 = document.createElement('span');
+    h2.textContent = n.hoursUsed.toFixed(1) + ' / ' + n.hoursQuota + ' h (' + n.pctHours.toFixed(1) + '%)';
+    hrs.appendChild(h1);
+    hrs.appendChild(h2);
+    row.appendChild(hrs);
+    row.appendChild(barOf(n.pctHours, true));
+    return row;
+  }
+
+  function nodesPaint(d) {
+    if (!tnRows) return;
+    tnData = d;
+    nodeRank = (d.rank || []).map(normNode);
+    tnRows.textContent = '';
+    var list = d.nodes || [];
+    if (!list.length) {
+      tnSummary.textContent = 'nenhum nó ainda';
+      tnFoot.textContent = 'Suba o streamer (zip acima) e cole a URL em "Salvar nós". O consumo aparece aqui assim que o nó reportar (até ~2 min depois de ligado).';
+      return;
+    }
+    var t = d.total;
+    tnSummary.textContent = list.length + ' nó(s) · ' + fmtBytes(t.remainingBytes) + ' livres (≈ ' + t.filmsLeft + ' filmes) · renova em ' + d.daysLeft + ' d';
+    list.forEach(function (n) { tnRows.appendChild(rowFor(n, false)); });
+    if (list.length > 1) {
+      tnRows.appendChild(rowFor({
+        label: 'TOTAL (' + list.length + ' nós)', egressBytes: t.egressBytes, quotaBytes: t.quotaBytes, pct: t.pct,
+        remainingBytes: t.remainingBytes, filmsLeft: t.filmsLeft, ingressBytes: t.ingressBytes, todayEgressBytes: 0,
+        hoursUsed: t.hoursUsed, hoursQuota: t.hoursQuota, pctHours: t.hoursQuota ? Math.min(100, t.hoursUsed / t.hoursQuota * 100) : 0
+      }, true));
+    }
+    var st = d.storage || {};
+    var where = !st.configured ? 'Sem Supabase: o histórico some quando o servidor reinicia.'
+      : (st.tablesMissing ? '⚠ Tabela não criada: clique em "SQL do Supabase", cole no SQL Editor e rode.'
+        : (st.error ? '⚠ Supabase: ' + st.error : 'Histórico no Supabase.'));
+    tnFoot.textContent = 'Saída = vídeo para o navegador + upload para peers, medida pelo próprio nó. A cota (' +
+      (list[0] ? fmtBytes(list[0].quotaBytes) : '?') + '/nó) é uma ASSUNÇÃO: o SnapDeploy não publica o limite de banda; ' +
+      'o limite documentado é ' + d.hoursQuota + ' container-horas/mês por conta. ' + where;
+    // Sem nó salvo neste navegador: usa os que o servidor conhece por TORRENT_NODES.
+    if (!nodes.length && (d.configured || []).length) {
+      nodes = d.configured.slice();
+      if (nodeEl) nodeEl.value = nodes.join('\n');
+    }
+  }
+
+  function nodesRefresh() {
+    if (!tnRows) return Promise.resolve();
+    var qs = nodes.length ? '?nodes=' + encodeURIComponent(nodes.join(',')) : '';
+    return fetch(API_BASE + '/api/admin/torrent-nodes' + qs, { headers: headers(), cache: 'no-store' })
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(nodesPaint)
+      .catch(function (e) { if (tnSummary) tnSummary.textContent = 'sem resposta do servidor (' + e.message + ')'; });
+  }
+
+  function copySql() {
+    fetch(API_BASE + '/api/admin/torrent-nodes/schema', { headers: headers(), cache: 'no-store' })
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
+      .then(function (sql) {
+        var done = function () { note('SQL copiado. Supabase → SQL Editor → cole → Run.'); };
+        if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(sql).then(done).catch(function () { if (legacyCopy(sql)) done(); });
+        else if (legacyCopy(sql)) done();
+      })
+      .catch(function (e) { note('Não consegui pegar o SQL: ' + e.message, 'warn'); });
+  }
+
+  var tnRefreshBtn = document.getElementById('tnRefresh');
+  var tnSqlBtn = document.getElementById('tnSql');
+  if (tnRefreshBtn) tnRefreshBtn.addEventListener('click', nodesRefresh);
+  if (tnSqlBtn) tnSqlBtn.addEventListener('click', copySql);
+  // Atualiza ao carregar e a cada 60 s só enquanto o painel está na tela (não gasta chamada à toa).
+  setTimeout(nodesRefresh, 1500);
+  setInterval(function () { if (tnRows && tnRows.offsetParent !== null && document.visibilityState === 'visible') nodesRefresh(); }, 60000);
 
   var streamerBtn = document.getElementById('torrentStreamer');
   var nodeSaveBtn = document.getElementById('torrentNodeSave');

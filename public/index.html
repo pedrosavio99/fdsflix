@@ -1212,6 +1212,18 @@ docker save fdsflix-torrent-streamer -o fdsflix-torrent-streamer.tar</pre>
         <div id="torrentResults" class="src-list"></div>
         <div id="torrentPlayerBox" hidden style="margin-top:.6rem"></div>
         <pre id="torrentLog" class="pix-note" hidden style="max-height:10rem;overflow:auto;white-space:pre-wrap;margin:.4rem 0 0;font-size:.78rem"></pre>
+        <div id="torrentNodesBox" class="usage">
+          <div class="usage-head">
+            <b>📶 Banda dos nós</b>
+            <span id="tnSummary">carregando…</span>
+            <span>
+              <button id="tnRefresh" class="ghost" type="button" title="Atualizar agora">↻</button>
+              <button id="tnSql" class="ghost" type="button" title="Copia o SQL das tabelas para colar no SQL Editor do Supabase">SQL do Supabase</button>
+            </span>
+          </div>
+          <div id="tnRows"></div>
+          <div id="tnFoot" class="usage-foot"></div>
+        </div>
       </div>
     </div>
   </dialog>
