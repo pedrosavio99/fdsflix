@@ -201,7 +201,10 @@ variável própria dele.
   Cloudflare, mas filme recente quase não existe lá (2 de 116 populares).
 - **Descartadas (medido):** Dailymotion (busca aberta, mas o manifesto responde 403 `E005` — trava
   deliberada, não contornar), Odysee (busca aberta; CDN exige Referer do site e devolve 429), ok.ru
-  (login), Rumble (sem resposta).
+  (login), Rumble (sem resposta). **AnimePahe** (`animepahe.ru`): o site responde 200 (casca JS), mas
+  `/api?m=search` dá **301 para o Cloudflare** — API morta (medido 2026-11-18). **HiAnime**
+  (`hianime.to`) e **Goyabu** (`goyabu.io`) dão 000/403 com Cloudflare. Ou seja, para anime a única
+  fonte aberta que entrega segue sendo o **AnimesDigital**; a segunda exige Consumet (deploy do dono).
 - **Busca: o acervo vem dos CANAIS, não da busca do site.** A busca do tokyvideo devolve
   clipe/música para quase tudo ("um sonho de liberdade" → 69 resultados, nenhum o filme), então
   `lib/tokyoVideo.js` monta um índice com `/user/<canal>` (dá o id) + `/channel/<id>/videos?offset=N`
