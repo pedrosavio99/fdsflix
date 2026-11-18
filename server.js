@@ -41,6 +41,7 @@ const poolKit = require('./lib/poolKit');
 const rokuKit = require('./lib/rokuKit');
 const torrentSearch = require('./lib/torrentSearch');
 const torrentKit = require('./lib/torrentKit');
+const torrentStreamerKit = require('./lib/torrentStreamerKit');
 const pixKit = require('./lib/pixKit');
 const pixAuth = require('./lib/pixAuth');
 const siteStatus = require('./lib/siteStatus');
@@ -1261,6 +1262,21 @@ app.get('/api/admin/torrents/kit.zip', requireApiKey, requireStatsKey, (req, res
     res.end(kit.zip);
   } catch (err) {
     res.status(400).json({ error: `Não consegui montar o kit: ${err.message}` });
+  }
+});
+
+// .zip do streamer (Dockerfile + torrent-stream) para subir no Koyeb free / Docker.
+app.get('/api/admin/torrents/streamer.zip', requireApiKey, requireStatsKey, (req, res) => {
+  if (!torrentStreamerKit.kitAvailable()) return res.status(404).json({ error: 'Streamer indisponível neste servidor.' });
+  try {
+    const kit = torrentStreamerKit.buildKit();
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="${kit.filename}"`);
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Content-Length', kit.zip.length);
+    res.end(kit.zip);
+  } catch (err) {
+    res.status(400).json({ error: `Não consegui montar o streamer: ${err.message}` });
   }
 });
 

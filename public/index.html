@@ -1180,6 +1180,14 @@
           </span>
         </div>
         <p class="pix-note" style="margin:.2rem 0">Quando o link de vídeo falhar, procure o mesmo título nos trackers. Dublado PT-BR primeiro; rejeita CAM/TS/sample. Só admin.</p>
+        <div class="src-head" style="flex-wrap:wrap;gap:.4rem">
+          <button id="torrentStreamer" class="ghost" type="button" title="Baixa o streamer (Dockerfile + torrent-stream) para subir no Koyeb free ou Docker">Baixar streamer (zip)</button>
+          <a id="torrentKoyeb" href="https://app.koyeb.com/auth/signup" target="_blank" rel="noopener noreferrer" class="ghost" style="text-decoration:none;display:inline-flex;align-items:center;padding:.45rem .7rem;border-radius:.4rem">Criar conta Koyeb</a>
+        </div>
+        <div class="cfg-row" style="flex-wrap:wrap;gap:.4rem;margin:.4rem 0">
+          <input id="torrentNode" type="url" placeholder="https://seu-app.koyeb.app (nó do streamer)" aria-label="URL do nó do streamer" style="flex:1;min-width:14rem">
+          <button id="torrentNodeSave" class="ghost" type="button">Salvar nó</button>
+        </div>
         <form id="torrentForm" class="tk-form" autocomplete="off" style="position:relative">
           <input id="torrentQ" type="search" placeholder="Título (ex.: Matrix)" aria-label="Título para procurar torrent" required autocomplete="off" aria-autocomplete="list" aria-controls="torrentSuggest">
           <input id="torrentYear" type="number" inputmode="numeric" placeholder="Ano" aria-label="Ano" style="width:6rem">

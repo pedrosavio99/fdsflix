@@ -134,6 +134,16 @@
 
   var wt = null;
   var blobURL = '';
+  var nodeUrl = '';
+  var nodeEl = document.getElementById('torrentNode');
+
+  function savedNode() { try { return localStorage.getItem('fdsflix.torrentNode') || ''; } catch (e) { return ''; } }
+
+  function setNode() {
+    nodeUrl = String((nodeEl && nodeEl.value) || '').trim().replace(/\/+$/, '');
+    try { localStorage.setItem('fdsflix.torrentNode', nodeUrl); } catch (e) { /* ignore */ }
+    note(nodeUrl ? 'Nó salvo: ' + nodeUrl : 'Nó removido.');
+  }
 
   function stopTorrent() {
     if (wt) { try { wt.destroy(); } catch (e) { /* ignore */ } wt = null; }
@@ -142,26 +152,55 @@
     if (box) { box.hidden = true; box.textContent = ''; }
   }
 
+  function showVideo(src) {
+    var box = document.getElementById('torrentPlayerBox');
+    if (!box) return;
+    var video = document.createElement('video');
+    video.controls = true;
+    video.autoplay = true;
+    video.playsInline = true;
+    video.style.cssText = 'width:100%;max-height:60vh;background:#000;border-radius:.5rem';
+    video.src = src;
+    box.appendChild(video);
+  }
+
   function playTorrent(item) {
     var box = document.getElementById('torrentPlayerBox');
     if (!box) return;
-    if (typeof WebTorrent === 'undefined') {
-      note('O player de torrent não carregou (CDN bloqueado).', 'warn');
+    stopTorrent();
+    box.hidden = false;
+    box.textContent = '';
+
+    var node = nodeUrl || savedNode();
+    if (node) {
+      note('Acordando o nó (pode levar alguns segundos)…');
+      fetch(node + '/ping', { cache: 'no-store' })
+        .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
+        .then(function () {
+          note('Nó acordado — carregando o vídeo…');
+          showVideo(node + '/stream/' + item.hash + '?magnet=' + encodeURIComponent(item.magnet || ''));
+        })
+        .catch(function () {
+          note('Nó não respondeu; tentando no navegador (WebTorrent)…', 'warn');
+          playTorrentBrowser(item);
+        });
       return;
     }
-    if (!WebTorrent.WEBRTC_SUPPORT) {
-      note('Este navegador não tem WebRTC para tocar torrent.', 'warn');
-      return;
-    }
+    playTorrentBrowser(item);
+  }
+
+  function playTorrentBrowser(item) {
+    var box = document.getElementById('torrentPlayerBox');
+    if (!box) return;
+    if (typeof WebTorrent === 'undefined') { note('Sem nó e o WebTorrent não carregou (CDN).', 'warn'); return; }
+    if (!WebTorrent.WEBRTC_SUPPORT) { note('Sem nó e este navegador não tem WebRTC.', 'warn'); return; }
     var src = item.magnet || item.torrent;
     if (!src) { note('Sem link para tocar.', 'warn'); return; }
-    stopTorrent();
     box.hidden = false;
     box.textContent = '';
     note('Conectando aos peers (WebTorrent)…');
     wt = new WebTorrent();
     wt.on('error', function (e) { note('Torrent: ' + (e && e.message ? e.message : e), 'warn'); });
-    // trackers WebSocket: trazem peers WebRTC (o navegador não fala TCP/UDP).
     var announce = [
       'wss://tracker.webtorrent.dev',
       'wss://tracker.openwebtorrent.com',
@@ -176,13 +215,7 @@
         if (err) { note('Falha ao baixar: ' + (err.message || err), 'warn'); return; }
         blobURL = url;
         note('Pronto — tocando ' + file.name + '. Use "parar" para apagar do cache.');
-        var video = document.createElement('video');
-        video.controls = true;
-        video.autoplay = true;
-        video.playsInline = true;
-        video.style.cssText = 'width:100%;max-height:60vh;background:#000;border-radius:.5rem';
-        video.src = url;
-        box.appendChild(video);
+        showVideo(url);
       });
     });
   }
@@ -284,6 +317,32 @@
       })
       .catch(function (e) { note('Não consegui baixar o kit: ' + e.message, 'warn'); });
   }
+
+  function downloadStreamer() {
+    note('Montando o streamer…');
+    fetch(API_BASE + '/api/admin/torrents/streamer.zip', { headers: headers(), cache: 'no-store' })
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.blob(); })
+      .then(function (blob) {
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'fdsflix-torrent-streamer.zip';
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+        note('Streamer baixado. Suba no Koyeb (Dockerfile, porta 8080) e cole a URL do nó aqui.');
+      })
+      .catch(function (e) { note('Não consegui baixar o streamer: ' + e.message, 'warn'); });
+  }
+
+  var streamerBtn = document.getElementById('torrentStreamer');
+  var nodeSaveBtn = document.getElementById('torrentNodeSave');
+  if (nodeEl) {
+    nodeUrl = savedNode();
+    nodeEl.value = nodeUrl;
+    nodeEl.addEventListener('change', setNode);
+  }
+  if (nodeSaveBtn) nodeSaveBtn.addEventListener('click', setNode);
+  if (streamerBtn) streamerBtn.addEventListener('click', downloadStreamer);
 
   input.addEventListener('input', function () {
     input.dataset.original = '';
