@@ -278,7 +278,7 @@ variável própria dele.
   `#tokyoFindBtn` nos controles do player, diálogo `#tokyoDialog`): a parte de cima é o **teste de
   todas as fontes** — `GET /api/admin/sources/test?id=&type=&s=&e=&title=` roda a cascata inteira em
   paralelo (teto de 15 s por fonte), devolve por fonte `ok/kind(mp4|hls)/quality/ms/url/cors` e o
-  painel lista "X de 14 entregaram", com ▶ para tocar ali mesmo (mp4 no `<video>`; HLS via hls.js,
+  painel lista "X de 22 entregaram", com ▶ para tocar ali mesmo (mp4 no `<video>`; HLS via hls.js,
   que já vem na página). A parte de baixo é a busca no acervo do TokyVideo.
   O vídeo toca num `<video>` dentro do painel (não mexe no player nem nas estatísticas).
   Falha de fonte mostra o **motivo** (`tempo esgotado`, `HTTP 403`, `sem stream`) — é o que
