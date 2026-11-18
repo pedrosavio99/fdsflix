@@ -1202,6 +1202,19 @@
         <p id="cfgBwNote"></p>
       </div>
 
+      <details class="cfg-sec" open id="cfgDiagSec">
+        <summary>🔎 Diagnóstico do servidor (CinePro e últimas consultas)</summary>
+        <div>
+          <p>O que o servidor respondeu ao CinePro e o motivo da última falha de fonte. Atualize depois de abrir um título.</p>
+          <div class="cfg-row">
+            <button id="cfgDiagRefresh" class="ghost" type="button">⟳ Atualizar agora</button>
+            <span id="cfgDiagAt" style="opacity:.7"></span>
+          </div>
+          <div id="cfgDiag"><p>Carregando…</p></div>
+          <details><summary>Ver o JSON completo</summary><pre id="cfgDiagRaw" style="max-height:260px"></pre></details>
+        </div>
+      </details>
+
       <details class="cfg-sec" open id="stSec">
         <summary>📊 Histórico e previsão de consumo</summary>
         <div>
@@ -5872,6 +5885,77 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
     }
     $('cfgOpen').addEventListener('click', openCfg);
     $('bwCorner').addEventListener('click', openCfg);
+
+    // Diagnóstico do servidor na aba Configs: o CinePro (estado + rotas OMSS) e a última consulta
+    // de cada caminho, formatado. O JSON cru fica num "ver o JSON completo".
+    function cfgEl(tag, text, cls) {
+      var el = document.createElement(tag);
+      if (text !== undefined && text !== null) el.textContent = String(text);
+      if (cls) el.className = cls;
+      return el;
+    }
+    function cfgStatus(r) {
+      r = r || {};
+      return r.status ? ('HTTP ' + r.status + ' em ' + (r.ms || 0) + ' ms') : (r.error || 'sem resposta');
+    }
+    function renderCfgDiag(d) {
+      var box = $('cfgDiag');
+      if (!box) return;
+      box.innerHTML = '';
+      var cp = d.cinepro || {};
+      var card = cfgEl('div', undefined, 'cfg-card');
+      card.appendChild(cfgEl('strong', cp.running ? '✅ CinePro rodando' : (cp.enabled ? '⚠ CinePro parado' : 'ℹ CinePro desligado')));
+      card.appendChild(cfgEl('p', 'pid ' + (cp.pid || '—') + ' · porta ' + (cp.port || '—') + ' · reinícios ' + (cp.restarts || 0) + (cp.base ? ' · ' + cp.base : '')));
+      card.appendChild(cfgEl('p', 'API / → ' + cfgStatus(cp.capabilities)));
+      card.appendChild(cfgEl('p', '/v1/movies/603 → ' + cfgStatus(cp.movie) + '  ·  /v1/tv/1399/… → ' + cfgStatus(cp.tv)));
+      if (cp.capabilities && cp.capabilities.body) card.appendChild(cfgEl('pre', String(cp.capabilities.body).slice(0, 800)));
+      box.appendChild(card);
+      var lc = d.ultimaConsulta || {};
+      var card2 = cfgEl('div', undefined, 'cfg-card');
+      card2.appendChild(cfgEl('strong', 'Última consulta (CinePro)'));
+      card2.appendChild(cfgEl('p', lc.at ? new Date(lc.at).toLocaleString('pt-BR') : '—'));
+      card2.appendChild(cfgEl('p', 'Título ' + (lc.title || '—') + (lc.error ? ' · erro: ' + lc.error : ' · ' + ((lc.sources || []).length) + ' fonte(s)')));
+      (lc.sources || []).slice(0, 6).forEach(function (s) {
+        card2.appendChild(cfgEl('p', '• ' + (s.provider || '?') + ' · ' + (s.type || '') + ' · ' + (s.quality || '') + ' · ' + (s.ok ? 'ok' : (s.motivo || 'falhou'))));
+      });
+      (lc.provedoresSemResultado || []).slice(0, 4).forEach(function (m) { card2.appendChild(cfgEl('p', '• sem resultado: ' + m)); });
+      box.appendChild(card2);
+      var an = d.ultimaConsultaAnime || {};
+      if ((an.etapas || []).length) {
+        var card3 = cfgEl('div', undefined, 'cfg-card');
+        card3.appendChild(cfgEl('strong', 'Última consulta (anime)'));
+        (an.etapas || []).slice(0, 8).forEach(function (m) { card3.appendChild(cfgEl('p', '• ' + m)); });
+        box.appendChild(card3);
+      }
+      var ev = (d.events || []).slice(-6);
+      if (ev.length) {
+        var card4 = cfgEl('div', undefined, 'cfg-card');
+        card4.appendChild(cfgEl('strong', 'Eventos HLS'));
+        ev.forEach(function (e) {
+          card4.appendChild(cfgEl('p', '• ' + (e.kind || '?') + (e.status ? ' HTTP ' + e.status : '') + (e.note ? ' · ' + e.note : '') + (e.at ? ' · ' + new Date(e.at).toLocaleTimeString('pt-BR') : '')));
+        });
+        box.appendChild(card4);
+      }
+      var raw = $('cfgDiagRaw');
+      if (raw) raw.textContent = JSON.stringify(d, null, 2);
+      var at = $('cfgDiagAt');
+      if (at) at.textContent = 'Atualizado ' + new Date().toLocaleTimeString('pt-BR');
+    }
+    function loadCfgDiag() {
+      var box = $('cfgDiag');
+      if (!box) return;
+      box.innerHTML = '';
+      box.appendChild(cfgEl('p', 'Carregando diagnóstico…'));
+      apiFetch('/api/debug/hls', { cache: 'no-store' }).then(function (r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.json();
+      }).then(renderCfgDiag).catch(function (err) {
+        box.innerHTML = '';
+        box.appendChild(cfgEl('p', 'Não consegui buscar o diagnóstico: ' + (err && err.message ? err.message : err)));
+      });
+    }
+    $('cfgDiagRefresh').addEventListener('click', function (ev) { ev.preventDefault(); loadCfgDiag(); });
+    $('cfgOpen').addEventListener('click', loadCfgDiag);
     $('cfgClose').addEventListener('click', function () { $('cfgDialog').close(); });
     $('cfgDialog').addEventListener('click', function (e) { if (e.target === $('cfgDialog')) $('cfgDialog').close(); });
 

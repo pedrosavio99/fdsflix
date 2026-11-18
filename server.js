@@ -2350,9 +2350,32 @@ function hlsEvent(event) {
   if (hlsDebug.length > 60) hlsDebug.shift();
 }
 
-app.get('/api/debug/hls', requireStatsKey, (req, res) => {
+app.get('/api/debug/hls', requireStatsKey, async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
-  res.json({ cinepro: cineproRunner.getStatus(), ultimaConsulta: getCineProReport(), ultimaConsultaAnime: getAnimeReport(), events: hlsDebug.slice(-40) });
+  const cpBase = String(process.env.CINEPRO_API_BASE || 'http://127.0.0.1:3001').replace(/\/+$/, '');
+  const probe = async (path, ms = 2500) => {
+    const started = Date.now();
+    try {
+      const r = await fetch(cpBase + path, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(ms) });
+      const text = await r.text().catch(() => '');
+      return { path, status: r.status, contentType: r.headers.get('content-type') || '', ms: Date.now() - started, body: text.slice(0, 900) };
+    } catch (err) {
+      return { path, error: err && err.name === 'TimeoutError' ? 'tempo esgotado' : ((err && err.message) || 'falha'), ms: Date.now() - started };
+    }
+  };
+  // O CinePro fala OMSS: / é o "home e capacidades" (diz a versão/rotas), /v1/movies e /v1/tv são
+  // os endpoints. O 404 em /v1 vinha do CinePro embutido (build x rota), não do fdsFlix.
+  const [capabilities, movie, tv] = await Promise.all([
+    probe('/'),
+    probe('/v1/movies/603'),
+    probe('/v1/tv/1399/seasons/1/episodes/1')
+  ]);
+  res.json({
+    cinepro: Object.assign({}, cineproRunner.getStatus(), { base: cpBase, capabilities, movie, tv }),
+    ultimaConsulta: getCineProReport(),
+    ultimaConsultaAnime: getAnimeReport(),
+    events: hlsDebug.slice(-40)
+  });
 });
 
 let hlsBridgeLogged = 0;
