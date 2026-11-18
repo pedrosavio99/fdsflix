@@ -263,21 +263,48 @@
 
   // Container dormindo: a plataforma responde 503 com uma página "Waking up…" SEM cabeçalho CORS, e o navegador
   // só mostra "Failed to fetch". Isso NÃO é nó quebrado: insiste a cada 3 s até ele acordar (~1 min).
+  // Um GET no nó dormindo NÃO acorda nada: a página "Waking up your container..." do SnapDeploy acorda o
+  // container com um POST em https://snapdeploy.dev/api/public/wake/<subdomínio> feito pelo JavaScript dela.
+  // Fazemos a mesma chamada daqui (a API aceita qualquer origem). Medido: "already running" (200) num nó
+  // ligado e 404 "Container not found" num que a plataforma não reconhece.
+  function wakeUrlOf(node) {
+    var m = /^https?:\/\/([^./]+)\.containers\.snapdeploy\.app$/i.exec(node);
+    return m ? 'https://snapdeploy.dev/api/public/wake/' + m[1] : '';
+  }
+
   function wakeNode(node, my) {
     var t0 = Date.now();
     var lastLog = 0;
+    var lastWake = 0;
+    var wakeUrl = wakeUrlOf(node);
+    var dead = '';
+    function sendWake() {
+      lastWake = Date.now();
+      if (!wakeUrl) return Promise.resolve();
+      return fetch(wakeUrl, { method: 'POST', cache: 'no-store' })
+        .then(function (r) {
+          if (r.status === 404) { dead = 'o SnapDeploy não reconhece este container (apagado ou parado no painel)'; return; }
+          return r.json().then(function (j) { log('sinal de acordar enviado: ' + ((j && (j.status || j.message)) || r.status)); }, function () {});
+        })
+        .catch(function () {
+          // Sem CORS/rede: manda mesmo assim, sem ler a resposta (o POST sai do mesmo jeito).
+          try { fetch(wakeUrl, { method: 'POST', mode: 'no-cors' }); } catch (e) { /* ok */ }
+        });
+    }
     function attempt() {
       return fetch(node + '/ping', { cache: 'no-store' })
         .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
         .catch(function (e) {
           var secs = Math.round((Date.now() - t0) / 1000);
           if (my !== playSeq) throw e;
+          if (dead) throw new Error(dead);
           if (Date.now() - t0 > 100000) throw new Error('não acordou em ' + secs + 's (' + e.message + ')');
           if (Date.now() - lastLog >= 9000) {
             lastLog = Date.now();
             log('nó dormindo, acordando… ' + secs + 's (' + e.message + ')');
           }
-          return new Promise(function (res) { setTimeout(res, 3000); }).then(attempt);
+          var step = Date.now() - lastWake >= 15000 ? sendWake() : Promise.resolve();
+          return step.then(function () { return new Promise(function (res) { setTimeout(res, 3000); }); }).then(attempt);
         });
     }
     return attempt();
