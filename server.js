@@ -39,6 +39,8 @@ const watchStats = require('./lib/watchStats');
 const egress = require('./lib/egressMeter');
 const poolKit = require('./lib/poolKit');
 const rokuKit = require('./lib/rokuKit');
+const torrentSearch = require('./lib/torrentSearch');
+const torrentKit = require('./lib/torrentKit');
 const pixKit = require('./lib/pixKit');
 const pixAuth = require('./lib/pixAuth');
 const siteStatus = require('./lib/siteStatus');
@@ -1221,6 +1223,42 @@ app.get('/api/admin/devices/roku.zip', requireApiKey, requireStatsKey, (req, res
     res.end(kit.zip);
   } catch (err) {
     res.status(400).json({ error: `Não consegui montar o canal: ${err.message}` });
+  }
+});
+
+/* ------------------------------------------------------------------ */
+/* Torrents (aba admin "Torrents", dentro de Outras fontes)             */
+/* ------------------------------------------------------------------ */
+
+// Busca torrents (magnet/.torrent) para o título. Só admin: é o caminho alternativo quando o link
+// de vídeo falha. Não baixa nada aqui — devolve os links para o admin.
+app.get('/api/admin/torrents', requireApiKey, requireStatsKey, async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  try {
+    const out = await torrentSearch.search({
+      title: req.query.title,
+      year: req.query.year,
+      type: req.query.type,
+      limit: req.query.limit
+    });
+    res.json(out);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// .zip do kit (motor + CLI + README) para o admin rodar no próprio PC.
+app.get('/api/admin/torrents/kit.zip', requireApiKey, requireStatsKey, (req, res) => {
+  if (!torrentKit.kitAvailable()) return res.status(404).json({ error: 'Kit de torrents indisponível neste servidor.' });
+  try {
+    const kit = torrentKit.buildKit();
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="${kit.filename}"`);
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Content-Length', kit.zip.length);
+    res.end(kit.zip);
+  } catch (err) {
+    res.status(400).json({ error: `Não consegui montar o kit: ${err.message}` });
   }
 });
 

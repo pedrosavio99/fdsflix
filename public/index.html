@@ -1171,6 +1171,23 @@
         <video id="tokyoPlayer" controls playsinline preload="auto" crossorigin="anonymous"></video>
         <p id="tokyoPlayerInfo"></p>
       </div>
+
+      <div class="cfg-card" id="torrentBox">
+        <div class="src-head">
+          <b>Torrents (teste)</b>
+          <span>
+            <button id="torrentKit" class="ghost" type="button" title="Baixar o kit (motor + CLI) para procurar no seu PC">Baixar kit (zip)</button>
+          </span>
+        </div>
+        <p class="pix-note" style="margin:.2rem 0">Quando o link de vídeo falhar, procure o mesmo título nos trackers. Dublado PT-BR primeiro; rejeita CAM/TS/sample. Só admin.</p>
+        <form id="torrentForm" class="tk-form" autocomplete="off">
+          <input id="torrentQ" type="search" placeholder="Título (ex.: Matrix)" aria-label="Título para procurar torrent" required>
+          <input id="torrentYear" type="number" inputmode="numeric" placeholder="Ano" aria-label="Ano" style="width:6rem">
+          <button id="torrentRun" type="submit">Procurar</button>
+        </form>
+        <p id="torrentNote" class="pix-note" role="status"></p>
+        <div id="torrentResults" class="src-list"></div>
+      </div>
     </div>
   </dialog>
 
@@ -1684,6 +1701,7 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
 <script src="/pix.js"></script>
 <script src="/site.js"></script>
 <script src="/tokyo.js"></script>
+<script src="/torrents.js"></script>
 <script src="/load.js"></script>
 <script src="/devices.js"></script>
 <script>

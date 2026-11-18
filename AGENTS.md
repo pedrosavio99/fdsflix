@@ -199,6 +199,17 @@ variável própria dele.
 - **PeerTube** (`lib/peertube.js`, `PEERTUBE_ENABLED=0` desliga): SepiaSearch (busca federada) +
   `/api/v1/videos/<uuid>` da instância; MP4 com CORS aberto e `language.id` (pt ⇒ dublado). Aberto, sem
   Cloudflare, mas filme recente quase não existe lá (2 de 116 populares).
+- **Torrents (teste, só admin; DENTRO do modal "Outras fontes"):** quando o link de vídeo falha, o
+  admin procura o MESMO título nos trackers e recebe magnet/.torrent. Motor `lib/torrentSearch.js`
+  (apibay/TPB, YTS e as PT-BR Rede Torrent/ComandoFilmes/Pirateiro/TorrentDosFilmes; 1337x dá 403
+  Cloudflare do datacenter e o motor anota). Ranking: **Dublado PT-BR primeiro**, depois dual e
+  original; rejeita CAM/TS/screener/sample/trailer; casa título + ano (mesmo rigor do `/api/stream`).
+  A seção é um card novo (`#torrentBox`) DENTRO do `#tokyoDialog`; o módulo é `public/torrents.js` —
+  é só adição, nada do que existia foi alterado. Rotas admin: `GET /api/admin/torrents` e
+  `GET /api/admin/torrents/kit.zip` (zip `lib/torrentKit.js`: motor + CLI `scripts/torrent.js` +
+  README, para rodar no PC). Medido em 2026-11-18: Matrix → apibay 100 + YTS 24; DBZ/One Piece → 30.
+  Teste: `test/torrentSearch.test.js` (8). O vídeo não passa por aqui; é só o link. A
+  responsabilidade legal do download é do usuário.
 - **Descartadas (medido):** Dailymotion (busca aberta, mas o manifesto responde 403 `E005` — trava
   deliberada, não contornar), Odysee (busca aberta; CDN exige Referer do site e devolve 429), ok.ru
   (login), Rumble (sem resposta). **AnimePahe** (`animepahe.ru`): o site responde 200 (casca JS), mas
@@ -452,6 +463,6 @@ e `GET /api/admin/devices/roku.zip` (monta na hora com `lib/rokuKit.js`, embute 
 
 ## Como rodar e testar
 
-- `npm start` (porta `PORT`, padrão 3000) · `npm test` (323 testes, `node --test test/*.test.js`).
+- `npm start` (porta `PORT`, padrão 3000) · `npm test` (331 testes, `node --test test/*.test.js`).
 - Manutenção/"mudamos de URL": tela "Site" do admin (`lib/siteStatus.js`, `public/sitegate.js`, `public/site.js`; tabela `pix_settings` no Supabase).
 - Docs: `docs/DEPLOY-RENDER.md`, `docs/VERCEL-POOL.md`, `docs/TV-AO-VIVO.md`, `docs/VISITANTES.md`, `docs/API.md`.
