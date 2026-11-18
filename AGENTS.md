@@ -126,7 +126,10 @@ variável própria dele.
   leem `streamUrl`/`url`; o Consumet resolve `meta/tmdb/info` (episódios) → `meta/tmdb/watch`
   (fontes). Basta subir o serviço com URL pública e pôr a env — aí eu ligo e testo DBZ/One Piece
   (Consumet) e GoT (CineWinx/Stream-Winx). Os **seis** opcionais (CineWinx/Stream-Winx/Consumet/
-  MegaMoviesLibre/API5/KekikStream) têm adaptador e teste com a mesma mock.
+  MegaMoviesLibre/API5/KekikStream) têm adaptador e teste com a mesma mock. **Atenção:** a URL
+  pública que o `.env.example` sugere para o MegaMoviesLibre (`https://libreflix.org/api`) dá **404**
+  (medido 2026-11-18) — o site `libreflix.org` responde 200, mas não expõe essa API; só o self-host
+  serve. As demais (`localhost:300x`) são só exemplo.
 - **Fontes mortas/limitadas (medido em 2026-11-17, de casa e do Render):** **AnimeFire** — a API
   (`api.animefire.one`) continua viva, mas o CDN `akumast.net` devolveu **404 em todos os títulos
   testados** (One Piece, Naruto, Demon Slayer, Jujutsu); o próprio GoAnime já detecta isso
