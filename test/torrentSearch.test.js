@@ -30,6 +30,11 @@ test('titleMatch casa título + ano e recusa outro ano', () => {
   assert.equal(titleMatch('Pulp Fiction', { title: 'Matrix' }), false);
 });
 
+test('titleMatch aceita o título original (mostra PT-BR, busca os dois)', () => {
+  assert.equal(titleMatch('Finding Nemo (2003) 1080p', { title: 'Procurando Nemo', alt: 'Finding Nemo', year: '2003' }), true);
+  assert.equal(titleMatch('Procurando Nemo 2003 Dublado 1080p', { title: 'Procurando Nemo', year: '2003' }), true);
+});
+
 test('parseApibay lê o JSON e gera magnet', () => {
   const body = JSON.stringify([{
     id: '1', name: 'The Matrix (1999) 1080p BrRip', info_hash: 'D7A46713EAEE18C746B3254B7D1492A50FD9D6CE',

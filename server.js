@@ -402,6 +402,7 @@ function mapTmdbItem(item, fallbackType) {
   return {
     id: item.id,
     title: item.title || item.name || 'Sem título',
+    originalTitle: item.original_title || item.original_name || '',
     year: String(item.release_date || item.first_air_date || '').slice(0, 4),
     type,
     poster: item.poster_path || '',
@@ -1237,6 +1238,7 @@ app.get('/api/admin/torrents', requireApiKey, requireStatsKey, async (req, res) 
   try {
     const out = await torrentSearch.search({
       title: req.query.title,
+      alt: req.query.alt,
       year: req.query.year,
       type: req.query.type,
       limit: req.query.limit

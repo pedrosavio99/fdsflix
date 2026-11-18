@@ -56,6 +56,7 @@
 
   function pick(item) {
     input.value = item.title || '';
+    input.dataset.original = item.originalTitle || '';
     if (yearEl && item.year) yearEl.value = item.year;
     hideSuggest();
     search();
@@ -174,10 +175,14 @@
   function search() {
     var title = String(input.value || '').trim();
     if (!title) { note('Informe o título.', 'warn'); return; }
+    var alt = String(input.dataset.original || '').trim();
     var my = ++seq;
-    note('Procurando nos trackers…');
+    note(alt && alt.toLowerCase() !== title.toLowerCase()
+      ? 'Procurando "' + title + '" e "' + alt + '" nos trackers…'
+      : 'Procurando no trackers…');
     resultsEl.textContent = '';
     var url = API_BASE + '/api/admin/torrents?title=' + encodeURIComponent(title) +
+      '&alt=' + encodeURIComponent(alt) +
       '&year=' + encodeURIComponent(yearEl ? yearEl.value || '' : '');
     fetch(url, { headers: headers(), cache: 'no-store' })
       .then(function (r) {
@@ -207,6 +212,7 @@
   }
 
   input.addEventListener('input', function () {
+    input.dataset.original = '';
     clearTimeout(sugTimer);
     sugTimer = setTimeout(suggest, 250);
   });
