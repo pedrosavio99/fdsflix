@@ -133,9 +133,11 @@
   /* --------------------------- tocar no navegador (WebTorrent) --------------------------- */
 
   var wt = null;
+  var blobURL = '';
 
   function stopTorrent() {
     if (wt) { try { wt.destroy(); } catch (e) { /* ignore */ } wt = null; }
+    if (blobURL) { try { URL.revokeObjectURL(blobURL); } catch (e) { /* ignore */ } blobURL = ''; }
     var box = document.getElementById('torrentPlayerBox');
     if (box) { box.hidden = true; box.textContent = ''; }
   }
@@ -159,12 +161,29 @@
     note('Conectando aos peers (WebTorrent)…');
     wt = new WebTorrent();
     wt.on('error', function (e) { note('Torrent: ' + (e && e.message ? e.message : e), 'warn'); });
-    wt.add(src, function (torrent) {
+    // trackers WebSocket: trazem peers WebRTC (o navegador não fala TCP/UDP).
+    var announce = [
+      'wss://tracker.webtorrent.dev',
+      'wss://tracker.openwebtorrent.com',
+      'wss://tracker.files.fm:7073/announce'
+    ];
+    wt.add(src, { announce: announce }, function (torrent) {
       var files = (torrent.files || []).filter(function (f) { return /\.(mp4|m4v|webm|mkv|avi|mov)$/i.test(f.name); });
       var file = files.sort(function (a, b) { return (b.length || 0) - (a.length || 0); })[0];
       if (!file) { note('O torrent não tem arquivo de vídeo.', 'warn'); return; }
-      note('Tocando ' + file.name + ' — pode começar em alguns segundos.');
-      file.appendTo(box);
+      note('Baixando ' + file.name + ' no navegador (fica só no cache; "parar" limpa)…');
+      file.getBlobURL(function (err, url) {
+        if (err) { note('Falha ao baixar: ' + (err.message || err), 'warn'); return; }
+        blobURL = url;
+        note('Pronto — tocando ' + file.name + '. Use "parar" para apagar do cache.');
+        var video = document.createElement('video');
+        video.controls = true;
+        video.autoplay = true;
+        video.playsInline = true;
+        video.style.cssText = 'width:100%;max-height:60vh;background:#000;border-radius:.5rem';
+        video.src = url;
+        box.appendChild(video);
+      });
     });
   }
 
