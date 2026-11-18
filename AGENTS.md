@@ -186,8 +186,10 @@ variável própria dele.
   Render o relay entra automaticamente se estiver configurado. **Não rode em rajada** (uma varredura de
   ~300 chamadas fez o Cloudflare desafiar o IP de casa por horas). Pelo terminal: `npm run harvest --
   --pages=3 --delay=4000` (mesmo job; grava no Supabase se o `.env` tiver as chaves). Testes:
-  `test/catalog.test.js`, `test/catalogStore.test.js`. **Ainda não medido:** se o Render consegue colher
-  direto do BitChute (do PC de casa passa; do Render depende do Cloudflare/relay) — veja `relay` no status.
+  `test/catalog.test.js`, `test/catalogStore.test.js`. **Medido (2026-11-18):** o `relay` do Catálogo
+  no Render está com `worker:true`/`home:false` e a cadeia `worker → direto` — a colheita passa pelo
+  Worker e o "Colher agora" funciona no Render. O que falta é o dono rodar a colheita com calma
+  (o índice público de filmes); a semente local tem só o Chihiro (129).
 - **BitChute ao vivo** (`lib/bitchute.js`, `BITCHUTE_ENABLED=0` desliga): `POST api.bitchute.com/api/beta/
   search/videos` (`sort` válido: `new|old|views`; **`relevance` dá HTTP 400**) + `/api/beta/video/media`
   (devolve o MP4). Do Render o Cloudflare costuma desafiar; por isso existe o catálogo.
