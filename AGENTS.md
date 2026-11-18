@@ -120,6 +120,12 @@ variável própria dele.
   esses). Filmes: **2 a 5** (VidLink + VixSrc + TokyVideo/Catálogo/Archive/BitChute). Os três de
   fonte única só ganham segunda com serviço do dono (**Consumet** para anime; **CineWinx/Stream-Winx**
   para série) — CinePro/JKAnime/VidFast/Vidsrc/MGEB não entregam ad-free do datacenter sem relay.
+- **Fontes opcionais (prontas para deploy):** CineWinx (`CINEWINX_API_BASE`), Stream-Winx
+  (`STREAM_WINX_API_BASE`) e Consumet (`CONSUMET_API_BASE`) já têm adaptadores na cascata (os três
+  em `HEAVY`) e agora **teste com API mockada** (`test/optionalSources.test.js`): CineWinx/Stream-Winx
+  leem `streamUrl`/`url`; o Consumet resolve `meta/tmdb/info` (episódios) → `meta/tmdb/watch`
+  (fontes). Basta subir o serviço com URL pública e pôr a env — aí eu ligo e testo DBZ/One Piece
+  (Consumet) e GoT (CineWinx/Stream-Winx). MegaMoviesLibre/API5/KekikStream seguem sem teste.
 - **Fontes mortas/limitadas (medido em 2026-11-17, de casa e do Render):** **AnimeFire** — a API
   (`api.animefire.one`) continua viva, mas o CDN `akumast.net` devolveu **404 em todos os títulos
   testados** (One Piece, Naruto, Demon Slayer, Jujutsu); o próprio GoAnime já detecta isso
@@ -432,6 +438,6 @@ e `GET /api/admin/devices/roku.zip` (monta na hora com `lib/rokuKit.js`, embute 
 
 ## Como rodar e testar
 
-- `npm start` (porta `PORT`, padrão 3000) · `npm test` (317 testes, `node --test test/*.test.js`).
+- `npm start` (porta `PORT`, padrão 3000) · `npm test` (320 testes, `node --test test/*.test.js`).
 - Manutenção/"mudamos de URL": tela "Site" do admin (`lib/siteStatus.js`, `public/sitegate.js`, `public/site.js`; tabela `pix_settings` no Supabase).
 - Docs: `docs/DEPLOY-RENDER.md`, `docs/VERCEL-POOL.md`, `docs/TV-AO-VIVO.md`, `docs/VISITANTES.md`, `docs/API.md`.
