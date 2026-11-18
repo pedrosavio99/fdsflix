@@ -35,6 +35,17 @@ test('titleMatch aceita o título original (mostra PT-BR, busca os dois)', () =>
   assert.equal(titleMatch('Procurando Nemo 2003 Dublado 1080p', { title: 'Procurando Nemo', year: '2003' }), true);
 });
 
+test('rank prefere 720p e, no empate, mais seeds', () => {
+  const items = [
+    { title: 'Matrix 1080p', audio: 'orig', quality: '1080p', seeds: 500, hash: 'H1' },
+    { title: 'Matrix 720p', audio: 'orig', quality: '720p', seeds: 5, hash: 'H2' },
+    { title: 'Matrix 720p', audio: 'orig', quality: '720p', seeds: 90, hash: 'H3' }
+  ];
+  const out = rank(items, { title: 'Matrix' });
+  assert.equal(out[0].quality, '720p');
+  assert.equal(out[0].hash, 'H3');
+});
+
 test('parseApibay lê o JSON e gera magnet', () => {
   const body = JSON.stringify([{
     id: '1', name: 'The Matrix (1999) 1080p BrRip', info_hash: 'D7A46713EAEE18C746B3254B7D1492A50FD9D6CE',

@@ -130,6 +130,44 @@
     }
   }
 
+  /* --------------------------- tocar no navegador (WebTorrent) --------------------------- */
+
+  var wt = null;
+
+  function stopTorrent() {
+    if (wt) { try { wt.destroy(); } catch (e) { /* ignore */ } wt = null; }
+    var box = document.getElementById('torrentPlayerBox');
+    if (box) { box.hidden = true; box.textContent = ''; }
+  }
+
+  function playTorrent(item) {
+    var box = document.getElementById('torrentPlayerBox');
+    if (!box) return;
+    if (typeof WebTorrent === 'undefined') {
+      note('O player de torrent não carregou (CDN bloqueado).', 'warn');
+      return;
+    }
+    if (!WebTorrent.WEBRTC_SUPPORT) {
+      note('Este navegador não tem WebRTC para tocar torrent.', 'warn');
+      return;
+    }
+    var src = item.magnet || item.torrent;
+    if (!src) { note('Sem link para tocar.', 'warn'); return; }
+    stopTorrent();
+    box.hidden = false;
+    box.textContent = '';
+    note('Conectando aos peers (WebTorrent)…');
+    wt = new WebTorrent();
+    wt.on('error', function (e) { note('Torrent: ' + (e && e.message ? e.message : e), 'warn'); });
+    wt.add(src, function (torrent) {
+      var files = (torrent.files || []).filter(function (f) { return /\.(mp4|m4v|webm|mkv|avi|mov)$/i.test(f.name); });
+      var file = files.sort(function (a, b) { return (b.length || 0) - (a.length || 0); })[0];
+      if (!file) { note('O torrent não tem arquivo de vídeo.', 'warn'); return; }
+      note('Tocando ' + file.name + ' — pode começar em alguns segundos.');
+      file.appendTo(box);
+    });
+  }
+
   /* --------------------------- resultados de torrent --------------------------- */
 
   function rowOf(item) {
@@ -155,6 +193,23 @@
       copy.title = 'Copia o link (o app não abre aba nova). Cole no seu app de torrent.';
       copy.addEventListener('click', function () { copyLink(link, copy); });
       row.appendChild(copy);
+
+      var play = document.createElement('button');
+      play.type = 'button';
+      play.className = 'ghost';
+      play.style.cssText = 'margin-top:.3rem;margin-left:.4rem';
+      play.textContent = 'tocar aqui';
+      play.title = 'Toca o vídeo no próprio navegador (WebTorrent); pode demorar para pegar peers.';
+      play.addEventListener('click', function () { playTorrent(item); });
+      row.appendChild(play);
+      row.appendChild(document.createTextNode(' '));
+      var stop = document.createElement('button');
+      stop.type = 'button';
+      stop.className = 'ghost';
+      stop.style.cssText = 'margin-top:.3rem';
+      stop.textContent = 'parar';
+      stop.addEventListener('click', stopTorrent);
+      row.appendChild(stop);
     }
     return row;
   }
