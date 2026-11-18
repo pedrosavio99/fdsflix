@@ -202,7 +202,9 @@ variável própria dele.
   `lib/tokyoVideo.js` monta um índice com `/user/<canal>` (dá o id) + `/channel/<id>/videos?offset=N`
   (24 por página, com título e duração), guarda 6 h na memória, aquece no boot (`prewarm()`) e casa
   localmente por título + duração. Canais em `TOKYOVIDEO_CHANNELS` (padrão `matrizoculta,cinetel`;
-  hoje ~202 vídeos, quase todos filmes). Busca direta (sem relay, ~3x mais rápida) com o relay de
+  hoje ~202 vídeos, quase todos filmes). **Não há página de canais no site** (`/canais`, `/canal` e
+  `/canales` dão 404, medido 2026-11-18); `/user/<canal>` responde 200 para canal conhecido. Canal
+  novo só entrando na env e conferindo o índice — não dá para descobrir automaticamente. Busca direta (sem relay, ~3x mais rápida) com o relay de
   reserva. Canal que não responde encurta o cache para 10 min.
 - **O CDN do acervo recusa Referer de fora (403) e o Chrome bloqueia os `Range` sem CORS (ORB).**
   Por isso: (a) as páginas HTML saem com `Referrer-Policy: no-referrer` (header em `server.js` +
