@@ -23,7 +23,19 @@ docker save fdsflix-torrent-streamer -o fdsflix-torrent-streamer.tar
 
 - `GET /ping` → `ok` (o fdsFlix usa para acordar o nó)
 - `GET /health` → `{ engines, uptime }`
-- `GET /stream/<infoHash>?magnet=<magnet>` → vídeo (Range/206)
+- `GET /prepare/<infoHash>?magnet=<magnet>` → espera os metadados (até 45 s) e devolve **sempre HTTP 200**
+  com `{ ready, name, size, remux, wires, reason }`. O fdsFlix chama antes de tocar: se `ready:false`, o
+  `reason` diz o motivo real (sem peers, sem vídeo…). Sem isso o `<video>` só mostra "Format error".
+- `GET /diag` → testa DNS, TCP e **UDP de saída** do nó e diz se só os trackers HTTP valem.
+- `GET /stream/<infoHash>?magnet=<magnet>` → vídeo (Range/206). `.mkv`/`.avi` saem como MP4 fragmentado
+  (vídeo copiado, áudio → AAC), sem Content-Length e sem Range (não dá para avançar no tempo).
+
+## Se der "Format error" / "sem peers"
+
+1. Abra `<url-do-nó>/diag`. `udp_tracker_*: ok:false` = a plataforma bloqueia UDP; o nó já soma trackers
+   HTTP(S) ao magnet, então ainda deve achar peers por TCP (só peers que aceitam TCP).
+2. `<url-do-nó>/health` mostra `wires` (peers conectados) por torrent. `0` por minutos = ninguém respondeu.
+3. Torrent com poucos seeds (ou só peers WebRTC) pode não abrir; escolha outro resultado.
 
 ## Limites do free (SnapDeploy)
 

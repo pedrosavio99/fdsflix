@@ -212,10 +212,34 @@
         .then(function (r) { log('ping HTTP ' + r.status); if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
         .then(function (txt) {
           log('ping respondeu: ' + txt);
-          var url = node + '/stream/' + item.hash + '?magnet=' + encodeURIComponent(item.magnet || '');
-          log('abrindo stream: ' + url.slice(0, 120) + '…');
-          note('Nó acordado — carregando o vídeo…');
-          showVideo(url);
+          var qs = '/' + item.hash + '?magnet=' + encodeURIComponent(item.magnet || '');
+          var url = node + '/stream' + qs;
+          note('Nó acordado — procurando peers e metadados (até ~45 s)…');
+          log('preparando torrent (peers + metadados)…');
+          // /prepare devolve sempre JSON com o motivo real. Sem ele o <video> só diria "Format error"
+          // quando o nó responde um 504 (a plataforma troca o corpo por uma página HTML).
+          var ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+          var to = setTimeout(function () { if (ctl) ctl.abort(); }, 70000);
+          return fetch(node + '/prepare' + qs, { cache: 'no-store', signal: ctl ? ctl.signal : undefined })
+            .then(function (r) {
+              clearTimeout(to);
+              if (r.status === 404) { log('nó antigo (sem /prepare) — abrindo direto'); return { legacy: true }; }
+              return r.json();
+            })
+            .then(function (p) {
+              if (p.legacy) { showVideo(url); return; }
+              log('prepare: ' + (p.ready ? 'pronto' : 'NÃO pronto') + ' | peers conectados: ' + (p.wires || 0) +
+                (p.name ? ' | arquivo: ' + p.name + ' (' + Math.round((p.size || 0) / 1048576) + ' MB)' : '') +
+                (p.remux ? ' | vai converter para MP4 (sem avançar no tempo)' : ''));
+              if (!p.ready) {
+                log('motivo: ' + (p.reason || 'desconhecido'));
+                note('O nó não conseguiu abrir este torrent: ' + (p.reason || 'sem resposta') + ' Tente outro resultado.', 'warn');
+                return;
+              }
+              log('abrindo stream: ' + url.slice(0, 120) + '…');
+              note('Pronto — carregando o vídeo…');
+              showVideo(url);
+            });
         })
         .catch(function (e) {
           log('falha no nó: ' + e.message + ' — caindo no WebTorrent');
