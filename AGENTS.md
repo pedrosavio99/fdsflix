@@ -107,6 +107,13 @@ variável própria dele.
   Medido E2E: Jujutsu S1E1/S2E1, One Piece S1E1, Naruto S1E1, Attack on Titan S1E1, My Hero S1E1,
   Demon Slayer S1E1 (legendado — o site não tem a 1ª temporada dublada); HLS dublado/legendado,
   playlist 200 e segmento TS 206.
+- **JKAnime** (`lib/jkAnime.js`, fallback do AnimesDigital; legenda ES): implementado e testado, mas
+  **não entrega a partir do Render/nós**: o player "jk" entrega um MP4 em `jkplayers.com` preso ao
+  **IP de quem abriu o episódio**, e o JKAnime bloqueia o **IP de datacenter** (o nó Wasmer falhou no
+  teste real: "nenhum nó conseguiu abrir o player/MP4"). O `findStream` devolve `null`; o teste de
+  fontes mostra 0. Sem relay residencial ou iframe do player do site (com anúncio), não é viável.
+  A busca (`/buscar`) e os parsers funcionam (o card tem o título num segundo `<a>` dentro do `<h5>`;
+  `stripTags` remove os comentários HTML). Teste: `test/jkAnime.test.js`.
 - **Fontes mortas/limitadas (medido em 2026-11-17, de casa e do Render):** **AnimeFire** — a API
   (`api.animefire.one`) continua viva, mas o CDN `akumast.net` devolveu **404 em todos os títulos
   testados** (One Piece, Naruto, Demon Slayer, Jujutsu); o próprio GoAnime já detecta isso
@@ -419,6 +426,6 @@ e `GET /api/admin/devices/roku.zip` (monta na hora com `lib/rokuKit.js`, embute 
 
 ## Como rodar e testar
 
-- `npm start` (porta `PORT`, padrão 3000) · `npm test` (313 testes, `node --test test/*.test.js`).
+- `npm start` (porta `PORT`, padrão 3000) · `npm test` (317 testes, `node --test test/*.test.js`).
 - Manutenção/"mudamos de URL": tela "Site" do admin (`lib/siteStatus.js`, `public/sitegate.js`, `public/site.js`; tabela `pix_settings` no Supabase).
 - Docs: `docs/DEPLOY-RENDER.md`, `docs/VERCEL-POOL.md`, `docs/TV-AO-VIVO.md`, `docs/VISITANTES.md`, `docs/API.md`.
