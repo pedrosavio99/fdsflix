@@ -8,6 +8,7 @@
     "start": "node index.js"
   },
   "dependencies": {
+    "bittorrent-tracker": "^7.7.0",
     "torrent-stream": "^1.2.1"
   },
   "engines": {

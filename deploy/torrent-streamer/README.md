@@ -26,6 +26,8 @@ docker save fdsflix-torrent-streamer -o fdsflix-torrent-streamer.tar
 - `GET /prepare/<infoHash>?magnet=<magnet>` → espera os metadados (até 45 s) e devolve **sempre HTTP 200**
   com `{ ready, name, size, remux, wires, reason }`. O fdsFlix chama antes de tocar: se `ready:false`, o
   `reason` diz o motivo real (sem peers, sem vídeo…). Sem isso o `<video>` só mostra "Format error".
+- `GET /status/<infoHash>?magnet=<magnet>` → instantâneo: `{ ready, wires, speedKBs, downloadedMB, warm }`. O fdsFlix
+  consulta a cada 2 s e só monta o `<video>` quando `warm.done` (começo + `moov` baixados), mostrando o progresso no log.
 - `GET /diag` → testa DNS, TCP e **UDP de saída** do nó e diz se só os trackers HTTP valem.
 - `GET /stream/<infoHash>?magnet=<magnet>` → vídeo (Range/206). `.mkv`/`.avi` saem como MP4 fragmentado
   (vídeo copiado, áudio → AAC), sem Content-Length e sem Range (não dá para avançar no tempo).
@@ -47,3 +49,11 @@ docker save fdsflix-torrent-streamer -o fdsflix-torrent-streamer.tar
 ## Cache
 
 `/tmp/fdsflix-torrent` (some ao dormir/redeploy). `MAX_ENGINES` (padrão 4) e `IDLE_MS` (padrão 20 min).
+
+## Velocidade (o que o nó faz sozinho)
+
+- **Mais peers:** sem UDP/DHT só os trackers HTTP entregam peers. O nó pede 200 peers a vários deles, conecta
+  todos (`engine.connect`) e repete aos 8/20/45/90 s enquanto houver menos de 40 conectados. Medido só-TCP: ~10 peers, 0,5–1 MB/s.
+- **Aquecimento:** lê as caixas do MP4 para achar o `moov`. No começo (YIFY é assim) já vem junto com os primeiros 6 MB;
+  no fim (MP4 comum), baixa só esse trecho. Depois o Chrome lê do disco do nó (início em ~40 ms).
+- `TCP_ONLY=1` simula plataforma sem UDP (teste local); `HEAD_BYTES` muda o tanto de começo aquecido (padrão 6 MB).

@@ -193,6 +193,52 @@
     box.appendChild(video);
   }
 
+  // Espera o nó baixar o começo do vídeo (e o trecho final, se o moov estiver lá) ANTES de montar o
+  // <video>: assim o Chrome acha tudo no disco do nó e começa na hora, e o log mostra por que demora.
+  function warmUp(node, qs, url, prep) {
+    var t0 = Date.now();
+    var lastLog = 0;
+    var MAX_MS = 240000;
+    note('Baixando o começo do filme no nó…');
+    function tick() {
+      return fetch(node + '/status' + qs, { cache: 'no-store' })
+        .then(function (r) {
+          if (r.status === 404) return { legacy: true };
+          return r.json();
+        })
+        .then(function (st) {
+          if (st.legacy) { log('nó sem /status — abrindo direto'); open(); return; }
+          var w = st.warm || {};
+          var secs = Math.round((Date.now() - t0) / 1000);
+          if (w.done) {
+            log('aquecido em ' + secs + 's | peers ' + st.wires + ' | ' + st.speedKBs + ' KB/s');
+            open();
+            return;
+          }
+          if (Date.now() - lastLog >= 5000) {
+            lastLog = Date.now();
+            log('baixando… ' + secs + 's | peers ' + st.wires + ' | ' + st.speedKBs + ' KB/s | começo ' +
+              (w.headMB || 0) + '/' + (w.headNeedMB || '?') + ' MB' +
+              (w.tailNeedMB ? ' | final ' + (w.tailMB || 0) + '/' + w.tailNeedMB + ' MB' : ''));
+            note('Baixando o começo no nó… ' + (w.headMB || 0) + '/' + (w.headNeedMB || '?') + ' MB · ' + st.wires + ' peers · ' + st.speedKBs + ' KB/s');
+          }
+          if (Date.now() - t0 > MAX_MS) {
+            log('demorou demais (' + secs + 's) — abrindo mesmo assim');
+            note('Poucos peers: pode demorar para começar ou travar.', 'warn');
+            open();
+            return;
+          }
+          return new Promise(function (res) { setTimeout(res, 2000); }).then(tick);
+        });
+    }
+    function open() {
+      log('abrindo stream: ' + url.slice(0, 120) + '…');
+      note('Pronto — carregando o vídeo…');
+      showVideo(url);
+    }
+    return tick();
+  }
+
   function playTorrent(item) {
     var box = document.getElementById('torrentPlayerBox');
     if (!box) return;
@@ -236,9 +282,7 @@
                 note('O nó não conseguiu abrir este torrent: ' + (p.reason || 'sem resposta') + ' Tente outro resultado.', 'warn');
                 return;
               }
-              log('abrindo stream: ' + url.slice(0, 120) + '…');
-              note('Pronto — carregando o vídeo…');
-              showVideo(url);
+              return warmUp(node, qs, url, p);
             });
         })
         .catch(function (e) {

@@ -29,6 +29,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 const torrentStream = require('torrent-stream');
+const Tracker = require('bittorrent-tracker');
 
 const PORT = Number(process.env.PORT) || 8080;
 const CACHE = process.env.CACHE_DIR || '/tmp/fdsflix-torrent';
@@ -36,7 +37,11 @@ const MAX_ENGINES = Number(process.env.MAX_ENGINES) || 4;
 const IDLE_MS = Number(process.env.IDLE_MS) || 20 * 60 * 1000;
 const META_WAIT_MS = Number(process.env.META_WAIT_MS) || 45 * 1000; // /prepare
 const STREAM_WAIT_MS = Number(process.env.STREAM_WAIT_MS) || 25 * 1000; // /stream sem /prepare
-const USE_DHT = process.env.DHT !== '0';
+// TCP_ONLY=1 simula plataforma sem UDP (só para teste local): sem DHT e sem trackers UDP.
+const TCP_ONLY = process.env.TCP_ONLY === '1';
+const USE_DHT = process.env.DHT !== '0' && !TCP_ONLY;
+const HEAD_BYTES = Number(process.env.HEAD_BYTES) || 6 * 1024 * 1024; // começo do vídeo, baixado antes de liberar
+const MAX_TAIL = 24 * 1024 * 1024; // teto do trecho final (moov) que aquecemos
 
 // Trackers HTTP(S) (TCP) somados ao magnet: se a plataforma bloquear UDP, os UDP e o DHT não
 // acham ninguém, mas estes ainda respondem. Os UDP continuam valendo quando UDP funciona.
@@ -51,6 +56,9 @@ const EXTRA_TRACKERS = [
   'udp://open.stealth.si:80/announce',
   'udp://exodus.desync.com:6969/announce'
 ];
+
+// Só trackers por TCP (HTTP/HTTPS): são os que funcionam quando a plataforma bloqueia UDP.
+const HTTP_TRACKERS = EXTRA_TRACKERS.filter((t) => /^https?:/i.test(t));
 
 const engines = new Map(); // hash -> { engine, file, ready, last, err }
 
@@ -77,6 +85,7 @@ function buildMagnet(hash, magnet) {
   for (const t of EXTRA_TRACKERS) {
     if (!m.includes(encodeURIComponent(t)) && !m.includes(t)) m += '&tr=' + encodeURIComponent(t);
   }
+  if (TCP_ONLY) m = m.replace(/&tr=udp[^&]*/gi, '');
   return m;
 }
 
@@ -103,16 +112,115 @@ function engineFor(hash, magnet) {
     connections: 80,
     dht: USE_DHT
   });
-  const entry = { engine, file: null, ready: false, last: Date.now(), err: '', t0: Date.now() };
+  const entry = { engine, hash: key, file: null, ready: false, last: Date.now(), err: '', t0: Date.now(), warm: null };
   engines.set(key, entry);
   engine.on('ready', () => {
     entry.ready = true;
     entry.file = pickVideo(engine);
     log('ready', key.slice(0, 8), `${((Date.now() - entry.t0) / 1000).toFixed(1)}s`, entry.file ? entry.file.name : 'SEM VÍDEO');
+    if (entry.file) startWarm(entry);
   });
   engine.on('error', (e) => { entry.err = String((e && e.message) || e); log('erro', key.slice(0, 8), entry.err); });
   log('novo', key.slice(0, 8), USE_DHT ? 'dht on' : 'dht off');
+  // Sem UDP/DHT só o tracker HTTP entrega peers, e o do próprio torrent-stream pede poucos. Pedimos
+  // muitos, de vários trackers, e repetimos enquanto há poucos peers conectados.
+  [0, 8000, 20000, 45000, 90000].forEach((ms) => {
+    const t = setTimeout(() => { if (engines.get(key) === entry && wiresOf(engine) < 40) harvestPeers(entry); }, ms);
+    t.unref();
+  });
   return entry;
+}
+
+function harvestPeers(entry) {
+  const peerId = Buffer.from('-TS0008-' + Math.random().toString(36).slice(2, 14).padEnd(12, 'x'));
+  let n = 0;
+  let c;
+  try {
+    c = new Tracker(peerId, 6881, { infoHash: entry.hash, announce: HTTP_TRACKERS });
+  } catch (e) { return; }
+  c.on('error', () => {});
+  c.on('warning', () => {});
+  c.on('peer', (addr) => { n++; try { entry.engine.connect(addr); } catch (e) { /* ignore */ } });
+  try { c.start({ numwant: 200 }); } catch (e) { return; }
+  setTimeout(() => {
+    try { c.destroy(); } catch (e) { /* ignore */ }
+    log('peers', entry.hash.slice(0, 8), `+${n} do tracker, conectados ${wiresOf(entry.engine)}`);
+  }, 15000).unref();
+}
+
+/* --------------------- aquecimento (moov + começo do vídeo) --------------------- */
+
+// Um MP4 só toca depois que o Chrome lê o `moov`. Em muitos (YIFY) ele fica NO FIM do arquivo: o
+// navegador pede o final, espera os peers entregarem e só então começa. Aqui lemos os primeiros bytes,
+// achamos onde o moov começa (caixas ftyp/free/mdat) e baixamos esse trecho + o começo ANTES de
+// liberar o vídeo. Depois o Chrome só lê do disco.
+// Devolve: offset do moov no FIM do arquivo; -2 se está no começo; -1 se não deu para saber.
+function moovStartOf(buf, total) {
+  let off = 0;
+  for (let i = 0; i < 12 && off + 8 <= buf.length; i++) {
+    let size = buf.readUInt32BE(off);
+    const type = buf.toString('latin1', off + 4, off + 8);
+    if (type === 'moov') return -2; // faststart: o moov já está no começo (coberto pelo começo do vídeo)
+    if (size === 1) { if (off + 16 > buf.length) return -1; size = Number(buf.readBigUInt64BE(off + 8)); }
+    if (size === 0) return -1; // a caixa vai até o fim do arquivo: não há moov depois
+    if (type === 'mdat') return off + size < total ? off + size : -1;
+    off += size;
+  }
+  return -1;
+}
+
+function drain(stream, onBytes, onEnd) {
+  stream.on('data', (d) => onBytes(d));
+  stream.on('end', onEnd);
+  stream.on('error', onEnd);
+}
+
+function startWarm(entry) {
+  const file = entry.file;
+  const total = file.length;
+  const w = { headNeed: Math.min(HEAD_BYTES, total), headHave: 0, tailNeed: 0, tailHave: 0, headDone: false, tailDone: false, parsed: false, done: false, t0: Date.now() };
+  entry.warm = w;
+  try { file.select(); } catch (e) { /* ignore */ }
+  const remux = needsRemux(file.name);
+  const check = () => {
+    if (!w.done && w.headDone && (w.tailDone || !w.tailNeed)) { w.done = true; log('aquecido', entry.hash.slice(0, 8), `${((Date.now() - w.t0) / 1000).toFixed(1)}s`); }
+  };
+  const first = [];
+  let firstLen = 0;
+  const head = file.createReadStream({ start: 0, end: w.headNeed - 1 });
+  entry.warmStreams = [head];
+  drain(head, (d) => {
+    w.headHave += d.length;
+    if (!w.parsed && firstLen < 4096) { first.push(d); firstLen += d.length; }
+    if (!w.parsed && (firstLen >= 4096 || w.headHave >= w.headNeed)) {
+      w.parsed = true;
+      let at = -1;
+      if (!remux && /\.(mp4|m4v|mov)$/i.test(file.name)) at = moovStartOf(Buffer.concat(first), total);
+      if (at === -1 && !remux) at = Math.max(1, total - 3 * 1024 * 1024); // não deu para ler: chuta os últimos 3 MB
+      if (at > 0) {
+        w.tailNeed = Math.min(total - at + 65536, MAX_TAIL, total); // +64 KB de folga
+        const tail = file.createReadStream({ start: total - w.tailNeed, end: total - 1 });
+        entry.warmStreams.push(tail);
+        drain(tail, (x) => { w.tailHave += x.length; }, () => { w.tailDone = true; check(); });
+      }
+    }
+  }, () => { w.headDone = true; if (!w.parsed) w.parsed = true; check(); });
+}
+
+function warmInfo(entry) {
+  const w = entry.warm;
+  if (!w) return null;
+  const MB = 1048576;
+  return {
+    done: w.done,
+    headMB: +(w.headHave / MB).toFixed(1), headNeedMB: +(w.headNeed / MB).toFixed(1),
+    tailMB: +(w.tailHave / MB).toFixed(1), tailNeedMB: +(w.tailNeed / MB).toFixed(1),
+    parsed: w.parsed
+  };
+}
+
+function speedOf(entry) {
+  try { return Math.round(entry.engine.swarm.downloadSpeed() / 1024); } catch (e) { return 0; }
 }
 
 // Resolve true quando os metadados chegaram, false se estourar o tempo.
@@ -147,6 +255,20 @@ async function prepare(res, entry) {
     remux: file ? needsRemux(file.name) : false,
     wires: wiresOf(entry.engine),
     waitedMs: Date.now() - entry.t0,
+    reason: file ? '' : whyNot(entry)
+  });
+}
+
+// Instantâneo (não espera nada): o front consulta de 2 em 2 s para mostrar o progresso e liberar o vídeo.
+function status(res, entry) {
+  const file = entry.ready ? entry.file : null;
+  json(res, 200, {
+    ready: !!file,
+    name: file ? file.name : null,
+    wires: wiresOf(entry.engine),
+    speedKBs: speedOf(entry),
+    downloadedMB: entry.engine.swarm ? +(entry.engine.swarm.downloaded / 1048576).toFixed(1) : 0,
+    warm: warmInfo(entry),
     reason: file ? '' : whyNot(entry)
   });
 }
@@ -322,10 +444,11 @@ const server = http.createServer((req, res) => {
     json(res, 200, { engines: list, uptime: process.uptime() });
     return;
   }
-  const m = u.pathname.match(/^\/(stream|prepare)\/([a-fA-F0-9]{40})$/);
+  const m = u.pathname.match(/^\/(stream|prepare|status)\/([a-fA-F0-9]{40})$/);
   if (!m) { json(res, 404, { error: 'rota' }); return; }
   const entry = engineFor(m[2], u.searchParams.get('magnet') || '');
   if (m[1] === 'prepare') prepare(res, entry);
+  else if (m[1] === 'status') status(res, entry);
   else stream(req, res, entry);
 });
 
