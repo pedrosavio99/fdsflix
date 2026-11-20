@@ -37,6 +37,7 @@ const usageLedger = require('./lib/usageLedger');
 const visitors = require('./lib/visitors');
 const watchStats = require('./lib/watchStats');
 const egress = require('./lib/egressMeter');
+egress.install(); // mede também o que o servidor ENVIA por iniciativa própria (o "Service-Initiated" do Render)
 const poolKit = require('./lib/poolKit');
 const rokuKit = require('./lib/rokuKit');
 const torrentSearch = require('./lib/torrentSearch');
@@ -745,6 +746,16 @@ app.get('/api/config', (req, res) => {
 app.get('/api/egress', requireStatsKey, (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   res.json(egress.snapshot());
+});
+
+// Painel "Carga" (admin): banda por DIA e no mês, com histórico durável (Supabase) — sobrevive a deploy e reinício.
+app.get('/api/admin/egress', requireApiKey, requireStatsKey, async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  try {
+    res.json(await egress.report({ days: Math.max(1, Math.min(62, Number(req.query.days) || 31)) }));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // Tela "Carga" do administrador: o servidor está aguentando? (números reais, alertas e histórico de ~30 min)
@@ -1665,11 +1676,20 @@ async function renderBound(info, { hevcOk, direct }) {
 }
 
 // Rede de segurança: mesmo que alguma rota escape da checagem acima, o Render não serve vídeo a clientes
-// externos. Só aceita chamadas do próprio servidor (o ffmpeg lê de 127.0.0.1).
+// externos. A única chamada interna legítima é o ffmpeg lendo o próprio /api/proxy, e ela leva um segredo
+// gerado a cada boot (`_i`). NÃO se confia no endereço da conexão: em produção o pedido de um visitante
+// externo passava por "loopback" (medido: /api/proxy respondeu 404 e /hls 400, em vez de 403, sem a variável
+// ALLOW_RENDER_VIDEO definida), então a trava antiga não barrava nada.
+const INTERNAL_VIDEO_SECRET = crypto.randomBytes(16).toString('hex');
+function isInternalVideoCall(req) {
+  const given = Buffer.from(String((req.query && req.query._i) || ''));
+  const want = Buffer.from(INTERNAL_VIDEO_SECRET);
+  return given.length === want.length && crypto.timingSafeEqual(given, want);
+}
 function blockRenderVideo(req, res, next) {
-  if (ALLOW_RENDER_VIDEO) return next();
-  const addr = String((req.socket && req.socket.remoteAddress) || '');
-  if (addr === '::1' || addr.startsWith('127.') || addr.startsWith('::ffff:127.')) return next();
+  if (ALLOW_RENDER_VIDEO) { egress.noteGuard('env', req); return next(); }
+  if (isInternalVideoCall(req)) { egress.noteGuard('internal', req); return next(); }
+  egress.noteGuard('rejected', req);
   return res.status(403).json({ error: RENDER_VIDEO_MSG });
 }
 
@@ -2175,7 +2195,7 @@ app.get('/api/stream', requireApiKey, streamGuard.middleware, async (req, res) =
     }
 
     // A origem é HEVC: converte para H.264 em HLS (respeitando MAX_TRANSCODE_HEIGHT).
-    const inputUrl = `http://127.0.0.1:${PORT}/api/proxy?t=${token}`;
+    const inputUrl = `http://127.0.0.1:${PORT}/api/proxy?t=${token}&_i=${INTERNAL_VIDEO_SECRET}`;
     const session = await startHlsSession({ source: inputUrl, height: outHeight, startAt });
 
     console.log(`[stream] HLS ${session.id} ${outHeight}p (${streamInfo.provider}, origem ${codec} ${qualityKey || 'auto'})`);
@@ -2796,7 +2816,7 @@ function gracefulExit() {
   shutdown();
   // Envia os acessos que ainda não subiram ao Supabase antes de sair (o teto de 3 s continua valendo).
   const closing = () => server.close(() => process.exit(0));
-  Promise.allSettled([visitors.flush(), watchStats.flush()]).then(closing, closing);
+  Promise.allSettled([visitors.flush(), watchStats.flush(), egress.flush()]).then(closing, closing);
   setTimeout(() => process.exit(0), 3000).unref();
 }
 

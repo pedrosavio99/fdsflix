@@ -196,6 +196,127 @@
     paintNav('', 'Carga do servidor: sem resposta');
   }
 
+  /* ------------------------- banda de saída do Render ------------------------- */
+
+  var EG_MS = 20000;
+  var egLast = 0;
+  var egBusy = false;
+
+  function fmtMB(v) {
+    if (v == null) return '–';
+    if (v >= 1024) return (v / 1024).toFixed(2).replace('.', ',') + ' GB';
+    if (v >= 1) return (v >= 10 ? Math.round(v) : v.toFixed(2).replace('.', ',')) + ' MB';
+    if (v >= 0.001) return Math.max(1, Math.round(v * 1024)) + ' KB';
+    return '0 KB';
+  }
+
+  /* Barras por dia (um dia só já aparece; a linha de `spark` precisa de 2 pontos). */
+  function bars(svgId, values, color) {
+    var svg = $(svgId);
+    if (!svg) return;
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
+    if (!values.length) return;
+    var NS = 'http://www.w3.org/2000/svg';
+    var max = Math.max.apply(null, values.concat([0.001]));
+    var n = values.length;
+    var slot = 300 / Math.max(n, 14);
+    var w = Math.max(2, slot - 2);
+    values.forEach(function (v, i) {
+      var h = Math.max(v > 0 ? 2 : 0, (v / max) * 60);
+      var r = document.createElementNS(NS, 'rect');
+      r.setAttribute('x', (300 - (n - i) * slot + 1).toFixed(1));
+      r.setAttribute('y', (68 - h).toFixed(1));
+      r.setAttribute('width', w.toFixed(1));
+      r.setAttribute('height', h.toFixed(1));
+      r.setAttribute('rx', 1.5);
+      r.setAttribute('fill', color);
+      r.setAttribute('opacity', i === n - 1 ? '1' : '.6');
+      var t = document.createElementNS(NS, 'title'); t.textContent = fmtMB(v);
+      r.appendChild(t);
+      svg.appendChild(r);
+    });
+  }
+
+  function fillList(id, rows, render) {
+    var ul = $(id);
+    if (!ul) return;
+    while (ul.firstChild) ul.removeChild(ul.firstChild);
+    if (!rows.length) {
+      var e = document.createElement('li'); e.className = 'eg-empty'; e.textContent = 'ainda sem dados neste mês';
+      ul.appendChild(e);
+      return;
+    }
+    rows.forEach(function (r) {
+      var o = render(r);
+      var li = document.createElement('li');
+      if (o.hot) li.className = 'hot';
+      var sp = document.createElement('span'); sp.textContent = o.name; sp.title = o.name;
+      var b = document.createElement('b'); b.textContent = o.value;
+      if (o.extra) { var sm = document.createElement('small'); sm.textContent = ' ' + o.extra; b.appendChild(sm); }
+      li.appendChild(sp); li.appendChild(b); ul.appendChild(li);
+    });
+  }
+
+  function paintEgress(d) {
+    var t = d.today || {};
+    var m = d.month || {};
+    var guard = d.videoGuard || {};
+    var totalToday = (t.httpMb || 0) + (t.outSentMb || 0);
+    var totalMonth = (m.httpMb || 0) + (m.outSentMb || 0);
+
+    setText('egToday', fmtMB(totalToday));
+    setText('egTodaySub', 'respostas ' + fmtMB(t.httpMb || 0) + ' + saída própria ' + fmtMB(t.outSentMb || 0) + ' (recebido de fora: ' + fmtMB(t.outRecvMb || 0) + ')');
+    setText('egMonth', fmtMB(totalMonth));
+    setText('egMonthSub', 'respostas ' + fmtMB(m.httpMb || 0) + ' + saída própria ' + fmtMB(m.outSentMb || 0) + ' · ' + (m.days || 0) + ' dia(s) medido(s)');
+
+    setText('egVideo', fmtMB(m.videoMb || 0));
+    setLevel(tileOf('egVideo'), (m.videoMb || 0) >= 500 ? 'bad' : ((m.videoMb || 0) >= 20 ? 'warn' : 'ok'));
+    setText('egVideoSub', (m.videoMb || 0) > 0 ? 'vídeo saiu pelo servidor: veja a linha "video:" abaixo' : 'nenhum vídeo passou pelo servidor neste mês');
+
+    var rejected = guard.rejected || 0;
+    setText('egGuard', rejected ? 'barrou ' + rejected : 'sem pedidos');
+    var gs = rejected ? 'pedidos de vídeo ao servidor recusados desde o último reinício' : 'ninguém tentou pegar vídeo pelo servidor desde o último reinício';
+    if (guard.allowedEnv) gs += ' · ATENÇÃO: ALLOW_RENDER_VIDEO está ligada e liberou ' + guard.allowedEnv;
+    if (guard.last) gs += ' · último: ' + guard.last.path + (guard.last.forwarded ? ' (via proxy)' : '');
+    setText('egGuardSub', gs);
+    setLevel(tileOf('egGuard'), guard.allowedEnv ? 'bad' : 'ok');
+
+    var days = d.days || [];
+    bars('egChHttp', days.map(function (x) { return x.httpMb; }), '#6ea8fe');
+    bars('egChOut', days.map(function (x) { return x.outSentMb; }), '#c792ea');
+    var last = days.length ? days[days.length - 1] : null;
+    setText('egChHttpNow', last ? fmtMB(last.httpMb) + ' hoje' : '');
+    setText('egChOutNow', last ? fmtMB(last.outSentMb) + ' hoje' : '');
+
+    fillList('egHttpList', (m.http || []).filter(function (r) { return r.mb > 0; }).slice(0, 8), function (r) {
+      return { name: r.name, value: fmtMB(r.mb), extra: r.requests + ' req', hot: /^video:/.test(r.name) && r.mb > 0 };
+    });
+    fillList('egOutList', (m.out || []).slice(0, 10), function (r) {
+      return { name: r.host, value: '↑' + fmtMB(r.sentMb) + ' ↓' + fmtMB(r.recvMb), extra: r.conns + ' conex.', hot: r.sentMb >= 100 };
+    });
+
+    var p = d.persistence || {};
+    setText('egWhen', p.kind ? '· histórico em ' + (p.kind === 'supabase' ? 'Supabase (sobrevive a deploy)' : 'arquivo local (some quando o Render reinicia)') : '');
+    setText('egNote', 'Medido pelo próprio servidor, por dia em UTC, e gravado a cada 10 min e ao desligar. O painel do Render soma o mesmo em duas contas: "HTTP Responses" = respostas; "Service-Initiated" = saída própria (↑). ' +
+      'O que o app mede passa de cabeçalhos HTTP e TLS por cima, então o painel do Render costuma mostrar um pouco mais. ' +
+      (p.error ? 'Aviso do histórico: ' + p.error + '. ' : '') +
+      (p.lastSaveAt ? 'Última gravação: ' + new Date(p.lastSaveAt).toLocaleTimeString() + '.' : 'Ainda não gravou neste início.'));
+  }
+
+  function egressTick(force) {
+    if (egBusy || !adminKey() || (!force && Date.now() - egLast < EG_MS)) return;
+    egBusy = true;
+    egLast = Date.now();
+    var headers = { 'x-stats-key': adminKey() };
+    if (CONFIG.apiKey) headers['x-api-key'] = CONFIG.apiKey;
+    fetch(API_BASE + '/api/admin/egress?days=31', { headers: headers, cache: 'no-store' }).then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    }).then(paintEgress).catch(function (err) {
+      setText('egNote', 'Não consegui ler a banda (' + err.message + ').');
+    }).then(function () { egBusy = false; });
+  }
+
   /* --------------------------------- ciclo --------------------------------- */
 
   function tick() {
@@ -204,7 +325,7 @@
     var live = dlg.open;
     fetchLoad(!live).then(function (d) {
       track(d.current);
-      if (live) paint(d);
+      if (live) { paint(d); egressTick(false); }
     }).catch(function (err) {
       if (live) paintOffline(err.message === 'HTTP 403' || err.message === 'HTTP 401' ? 'A senha de administrador não foi aceita.' : 'Não consegui falar com a API (' + err.message + ').');
       else paintNav('', 'Carga do servidor: sem resposta');
@@ -222,6 +343,7 @@
     schedule();
     inFlight = false;
     tick();
+    egressTick(true);
   });
   $('loadClose').addEventListener('click', function () { dlg.close(); });
   dlg.addEventListener('click', function (e) { if (e.target === dlg) dlg.close(); });

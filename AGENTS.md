@@ -54,6 +54,14 @@ Botão **Carga** na barra do admin (`#loadOpen`, `public/load.js`; servidor em `
 - O atraso do servidor desconta o piso de 20 ms do medidor do Node. Histórico só em memória (zera quando o Render dorme/reinicia).
 - Para o **teste de carga no Render real** (próximo passo 3): deixe esta tela aberta durante o teste; ela já mostra a RAM do CinePro e a CPU real, que eram as incógnitas.
 
+## Banda do Render: medidor persistente + painel (admin)
+
+O painel do Render conta a saída em duas contas e as duas pesam: **HTTP Responses** (o que o servidor responde) e **Service-Initiated** (o que ELE envia por conta própria: chamadas a TMDB/Supabase/provedores/relays). Em 2026-11-20 o mês estava em 968 MB + 1,02 GB, com o app medindo só ~7 MB/dia de HTTP: o consumo veio de um pico antigo que o contador em memória já tinha perdido num deploy.
+- `lib/egressMeter.js`: HTTP por tipo de rota (middleware) **e** saída iniciada pelo servidor **por host** (intercepta `net.Socket.connect`, soma `bytesWritten`=enviado e `bytesRead`=recebido; loopback não conta). Totais **por dia (UTC)** gravados no Supabase (`pix_settings`, chave `egress:AAAA-MM-DD`, sem tabela nova) a cada 10 min e no SIGTERM; sem Supabase vai para `data/egress.json` (some no restart). Ao subir lê o que já estava gravado e soma, sem contar duas vezes; se a leitura falhar NÃO sobrescreve.
+- Rotas: `GET /api/egress` (só o processo atual) e `GET /api/admin/egress?days=31` (histórico por dia, mês, hosts, estado da trava). Front: seção "Banda de saída do Render" dentro da tela **Carga** (`public/load.js`, atualiza a cada 20 s com a tela aberta). Testes: `test/egressMeter.test.js`.
+- **A trava `blockRenderVideo` era inócua em produção** (sem `ALLOW_RENDER_VIDEO` definida, um visitante externo recebeu 404/400 em `/api/proxy` e `/hls/` em vez de 403: a conexão chegava como "loopback"). Agora exige um segredo gerado no boot (`_i`), que só o ffmpeg local recebe (`server.js`, `INTERNAL_VIDEO_SECRET`). Não confie no endereço da conexão atrás do proxy do Render. Conferir após o deploy: `curl -i https://<api>/api/proxy?t=x` deve dar **403**; a tela Carga mostra "Trava de vídeo: barrou N".
+- Sinal de diagnóstico: se "Service-Initiated" do Render for ~igual ao HTTP, é proxy de passagem (baixa de fora e entrega ao navegador). O app só mede o que ENVIA; tráfego "recebido" aparece em ↓ por host para comparar.
+
 ## Fontes de vídeo (onde mexer)
 
 A cascata é `ALL_PROVIDERS` em `lib/fallbackCascade.js`: cada provedor é uma função

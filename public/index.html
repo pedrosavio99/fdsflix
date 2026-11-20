@@ -909,6 +909,16 @@
   .ld-charts figcaption span{color:var(--text)}
   .ld-charts svg{display:block;width:100%;height:70px;margin-top:.3rem}
   .ld-note{font-size:.76rem;color:var(--muted);margin-top:.8rem}
+  .eg-cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:.7rem;margin-top:.7rem}
+  .eg-cols section{padding:.55rem .65rem;border-radius:12px;border:1px solid var(--line);background:var(--panel-2)}
+  .eg-cols h5{margin:0 0 .35rem;font-size:.76rem;color:var(--muted);font-weight:600}
+  .eg-list{list-style:none;margin:0;padding:0;display:grid;gap:.25rem;font-size:.8rem}
+  .eg-list li{display:flex;justify-content:space-between;gap:.6rem;align-items:baseline}
+  .eg-list li span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+  .eg-list li b{flex:none;font-variant-numeric:tabular-nums}
+  .eg-list li small{color:var(--muted);font-weight:400}
+  .eg-list li.hot b{color:#ffcf7a}
+  .eg-list .eg-empty{color:var(--muted)}
   .ld-float{position:fixed;left:50%;top:4.6rem;transform:translateX(-50%);z-index:2147482000;max-width:min(92vw,520px);padding:.7rem 1rem;border-radius:12px;font-weight:700;font-size:.9rem;box-shadow:0 12px 40px rgba(0,0,0,.6);cursor:pointer;color:#fff}
   .ld-float.warn{background:#8a5a00}.ld-float.bad{background:#a3202a}
   .ld-float[hidden]{display:none}
@@ -1029,6 +1039,22 @@
         <figure><figcaption>Atraso do servidor (ms) <span id="ldChLagNow"></span></figcaption><svg id="ldChLag" viewBox="0 0 300 70" preserveAspectRatio="none" role="img" aria-label="Atraso do servidor nos últimos 30 minutos"></svg></figure>
         <figure><figcaption>Memória (MB) <span id="ldChMemNow"></span></figcaption><svg id="ldChMem" viewBox="0 0 300 70" preserveAspectRatio="none" role="img" aria-label="Memória nos últimos 30 minutos"></svg></figure>
       </div>
+      <h4>Banda de saída do Render <small id="egWhen" style="font-weight:400;color:var(--muted)"></small></h4>
+      <div class="ld-grid">
+        <div class="ld-tile"><span class="ld-k">Hoje (UTC)</span><b id="egToday">–</b><small id="egTodaySub"></small></div>
+        <div class="ld-tile"><span class="ld-k">Este mês</span><b id="egMonth">–</b><small id="egMonthSub"></small></div>
+        <div class="ld-tile"><span class="ld-k">Vídeo passando pelo Render (mês)</span><b id="egVideo">–</b><small id="egVideoSub">deveria ficar em 0 MB</small></div>
+        <div class="ld-tile"><span class="ld-k">Trava de vídeo</span><b id="egGuard">–</b><small id="egGuardSub"></small></div>
+      </div>
+      <div class="ld-charts" style="margin-top:.7rem">
+        <figure><figcaption>Respostas HTTP por dia (MB) <span id="egChHttpNow"></span></figcaption><svg id="egChHttp" viewBox="0 0 300 70" preserveAspectRatio="none" role="img" aria-label="Respostas HTTP por dia"></svg></figure>
+        <figure><figcaption>Saída iniciada pelo servidor por dia (MB) <span id="egChOutNow"></span></figcaption><svg id="egChOut" viewBox="0 0 300 70" preserveAspectRatio="none" role="img" aria-label="Saída iniciada pelo servidor por dia"></svg></figure>
+      </div>
+      <div class="eg-cols">
+        <section><h5>Respostas HTTP no mês, por tipo</h5><ul id="egHttpList" class="eg-list"></ul></section>
+        <section><h5>Servidor chamando fora no mês (↑ enviado · ↓ recebido)</h5><ul id="egOutList" class="eg-list"></ul></section>
+      </div>
+      <p id="egNote" class="ld-note"></p>
       <p id="ldNote" class="ld-note"></p>
     </div>
   </dialog>
