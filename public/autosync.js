@@ -386,6 +386,26 @@
   }
 
   /**
+   * Compara VÁRIAS legendas candidatas com o áudio já ouvido e diz qual casa melhor (a prova final de qual arquivo
+   * é "deste vídeo": a que o áudio confirma ganha de qualquer palpite pelo nome/ranking).
+   * @param candidates [{ id, cues: [{ s, e }] }]  (cada uma na linha do tempo "sem o ajuste que se quer descobrir")
+   * @returns [{ id, ok, offset, ratio, conf, reason }]  melhor primeiro: as confirmadas pelo áudio, por confiança
+   *          (empate de ~1 ponto: a que precisa de menos correção).
+   */
+  function rankByAudio(collector, candidates, opts) {
+    var out = (candidates || []).map(function (c) {
+      var r = estimateAuto(collector, c.cues || [], opts);
+      return { id: c.id, ok: Boolean(r.ok), offset: r.offset || 0, ratio: r.ratio || 1, conf: r.conf || 0, reason: r.reason || '' };
+    });
+    out.sort(function (a, b) {
+      if (a.ok !== b.ok) return a.ok ? -1 : 1;
+      if (Math.abs(b.conf - a.conf) < 1) return Math.abs(a.offset) - Math.abs(b.offset);
+      return b.conf - a.conf;
+    });
+    return out;
+  }
+
+  /**
    * Divide o que já foi ouvido em janelas de ~`winSeconds` de áudio coberto (cada uma dá uma estimativa local).
    * @returns [{ from, to, mid, seconds }]  `mid` = instante mediano do que foi coberto na janela.
    */
@@ -544,6 +564,7 @@
     estimate: estimate,
     estimateChecked: estimateChecked,
     estimateAuto: estimateAuto,
+    rankByAudio: rankByAudio,
     FPS_RATIOS: FPS_RATIOS,
     fitScale: fitScale,
     windows: windows,

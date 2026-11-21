@@ -3158,7 +3158,9 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
   /* ---------------------------------------------------------------- */
 
   function subtitleKey(item, season, episode) {
-    return 'fdsflix.sub.' + item.type + ':' + item.id +
+    // sub2: as correções salvas pelo sistema antigo eram de OUTRO arquivo de legenda (o padrão mudou: agora é o pt-BR
+    // conferido pelo servidor), então valem de novo do zero. A preferência de idioma (fdsflix.sub.pref) continua.
+    return 'fdsflix.sub2.' + item.type + ':' + item.id +
       (item.type === 'tv' ? ':' + season + ':' + episode : '');
   }
 
@@ -3356,7 +3358,11 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
 
   function applySavedSubLang(captions) {
     var pref = loadSubPref();
+    if (pref === 'und') pref = null;   // valor que o bug antigo gravava ao escolher o pt-BR do OpenSubtitles: não é uma preferência
     var saved = state.subKey ? loadSubLang(state.subKey) : null;
+    // O rótulo salvo por título era gravado até nas trocas AUTOMÁTICAS e prendia o título numa legenda velha (ex.: a
+    // tradução automática, mesmo com pt-BR conferida disponível). Só "desligada" vale; idioma é a preferência global.
+    if (saved !== 'off') saved = null;
     var index = -1;
 
     if (pref === 'off') {
@@ -3537,25 +3543,32 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
     if (reveal) setTimeout(function () { revealInModal(box); }, 30);
   }
 
-  // Índice da legenda "português (gerado automaticamente)" que ainda não deu problema, ou -1.
+  // Próxima legenda em PORTUGUÊS DO BRASIL que ainda não deu problema, ou -1: primeiro as conferidas pelo servidor
+  // (a melhor 1ª), depois a tradução automática. NUNCA outro idioma: trocar de idioma é escolha da pessoa.
   function subAutoPtIndex(except) {
-    for (var i = 0; i < state.captions.length; i++) {
-      if (i !== except && state.captions[i].translated && !(state.subBad && state.subBad[i])) return i;
+    var order = [];
+    state.captions.forEach(function (c, i) { if (c.ptbr) order.push(i); });
+    state.captions.forEach(function (c, i) { if (c.translated) order.push(i); });
+    for (var k = 0; k < order.length; k++) {
+      if (order[k] !== except && !(state.subBad && state.subBad[order[k]])) return order[k];
     }
     return -1;
   }
 
-  // A legenda em uso falhou: vai direto para o pt-BR gerado automaticamente (se existir).
+  // A legenda em uso falhou: vai direto para a próxima em português do Brasil (se existir).
   function subFailover(failedIndex, why) {
     if (failedIndex < 0 || !state.captions[failedIndex]) return;
     state.subBad = state.subBad || {};
     state.subBad[failedIndex] = true;
-    var wasActive = activeSubIndex() === failedIndex || (activeSubIndex() === -1 && state.captions[failedIndex].default);
-    if (!wasActive || state.captions[failedIndex].translated) return;
-    var auto = subAutoPtIndex(failedIndex);
-    if (auto < 0) return;
-    applySubLangByIndex(auto);
-    subShowWarn('A legenda ' + why + '. Troquei para o português gerado automaticamente.', 'info');
+    var failed = state.captions[failedIndex];
+    var wasActive = activeSubIndex() === failedIndex || (activeSubIndex() === -1 && failed.default);
+    if (!wasActive || failed.translated) return;
+    // A pessoa escolheu de propósito outro idioma e ele falhou: não troca por conta própria.
+    if (state.subUserChose && !failed.ptbr) return;
+    var next = subAutoPtIndex(failedIndex);
+    if (next < 0) return;
+    applySubLangByIndex(next);
+    subShowWarn('A legenda ' + why + '. Troquei para outra em português.', 'info');
   }
 
   // Conferência no próprio navegador: texto já carregado na faixa com caracteres quebrados (�, "Ã£", "Ã§"…).
@@ -3601,12 +3614,15 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
       var note = info && info.spamRemoved ? ' (removemos ' + info.spamRemoved + ' anúncio(s) do arquivo)' : '';
 
       if (verdict.bad && !state.subUserChose) {
-        // O padrão escolhido é ruim: troca sozinho por outro idioma bom (pt > en > resto).
-        var order = state.captions.map(function (c, i) { return i; }).sort(function (a, b) {
-          // Primeiro o pt-BR gerado automaticamente; depois pt, en e o resto.
-          var rank = function (i) { var c = state.captions[i]; var l = c.srclang; return c.translated ? 0 : l === 'pt' ? 1 : l === 'en' ? 2 : 3; };
-          return rank(a) - rank(b);
-        }).filter(function (i) { return i !== index && !(state.subBad && state.subBad[i]); });
+        // O padrão escolhido é ruim: troca sozinho por OUTRA legenda em português do Brasil (conferidas primeiro, tradução
+        // por último). Nunca vai para inglês nem outro idioma: isso só acontece se a pessoa escolher.
+        var order = state.captions.map(function (c, i) { return i; }).filter(function (i) {
+          var c = state.captions[i];
+          return (c.ptbr || c.translated) && i !== index && !(state.subBad && state.subBad[i]);
+        }).sort(function (a, b) {
+          var ra = state.captions[a].translated ? 1 : 0, rb = state.captions[b].translated ? 1 : 0;
+          return ra - rb || a - b;
+        });
         state.subBad = state.subBad || {};
         state.subBad[index] = true;
         var tryNext = function (n) {
@@ -3616,8 +3632,7 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
             var v = subJudge(ci, total);
             if (v.bad) { state.subBad[cand] = true; return tryNext(n + 1); }
             applySubLangByIndex(cand);
-            subShowWarn('Troquei a legenda de ' + state.captions[index].label + ' para ' + state.captions[cand].label +
-              '. Motivo: ' + verdict.text.replace(/ Tente outro idioma\.$/, '') + '.', 'info');
+            subShowWarn('Troquei para outra legenda em português. Motivo: ' + verdict.text.replace(/ Tente outro idioma\.$/, '') + '.', 'info');
           });
         };
         return tryNext(0);
@@ -3799,6 +3814,56 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
 
   function autoSyncNum(x) { return (Math.round(x * 100) / 100).toString().replace('.', ','); }
 
+  // Há mais de uma legenda pt-BR candidata e a atual NÃO bate com o áudio: o áudio decide qual é DESTE vídeo
+  // (a 1ª é só o melhor palpite do servidor). Carrega as falas das outras sem mostrá-las, compara e troca se uma
+  // delas for confirmada. Uma vez por filme; nunca se a pessoa já escolheu ou mexeu no ajuste.
+  function autoSyncCompare(a) {
+    if (a.compared || a.covered < 240 || state.subUserChose || state.subManual) return;
+    var video = $('nativePlayer');
+    var active = activeSubIndex();
+    var pts = [];
+    state.captions.forEach(function (c, i) { if (c.ptbr && !(state.subBad && state.subBad[i])) pts.push(i); });
+    if (pts.length < 2 || pts.indexOf(active) === -1) return;
+    a.compared = true;
+    pts.forEach(function (i) {
+      var t = video.textTracks[i];
+      if (t && i !== active && t.mode === 'disabled') t.mode = 'hidden';   // 'hidden' carrega as falas sem desenhar
+    });
+    var tries = 0;
+    var settle = function () {
+      if (a.token !== state.playToken) return;
+      var ready = pts.every(function (i) { var t = video.textTracks[i]; return t && t.cues && t.cues.length >= 20; });
+      if (!ready && tries++ < 8) { setTimeout(settle, 700); return; }
+      var cands = [];
+      pts.forEach(function (i) {
+        var t = video.textTracks[i];
+        if (!t || !t.cues || t.cues.length < 20) return;
+        var cs = [];
+        for (var k = 0; k < t.cues.length; k++) {
+          var c = t.cues[k];
+          if (c.endTime > c.startTime) cs.push({ s: c.startTime - state.subOffset, e: c.endTime - state.subOffset });
+        }
+        cands.push({ id: i, cues: cs });
+      });
+      pts.forEach(function (i) {
+        var t = video.textTracks[i];
+        if (t && i !== active && t.mode === 'hidden') t.mode = 'disabled';
+      });
+      if (cands.length < 2 || state.subUserChose || state.subManual || activeSubIndex() !== active) return;
+      var ranked = FdsAutoSync.rankByAudio(a.sess.collector, cands, { maxLag: 120, scaleMinSeconds: 1e9 });
+      diag('info', '[sincronia automática] comparei ' + ranked.length + ' legendas pt-BR com o áudio: ' + ranked.map(function (r) {
+        return '#' + r.id + (r.ok ? ' ok (conf ' + r.conf.toFixed(1) + ', ' + autoSyncNum(r.offset) + ' s)' : ' sem prova');
+      }).join(' · '));
+      var best = ranked[0];
+      var cur = ranked.filter(function (r) { return r.id === active; })[0];
+      if (best.ok && best.id !== active && (!cur || !cur.ok)) {
+        applySubLangByIndex(best.id);   // o autoSyncKick dela aplica o atraso medido
+        subShowWarn('🤖 Troquei para outra legenda em português: esta bate com o áudio deste filme.', 'info');
+      }
+    };
+    setTimeout(settle, 900);
+  }
+
   function autoSyncRun() {
     var a = state.auto;
     if (!a) return;
@@ -3831,6 +3896,7 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
         a.reason = chk.reason;
         diag('dim', '[sincronia automática] ainda sem certeza (' + chk.reason + ') com ' + Math.round(a.covered) + ' s de áudio.');
       }
+      autoSyncCompare(a);
       return;
     }
 

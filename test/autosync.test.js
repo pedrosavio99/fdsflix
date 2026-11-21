@@ -335,3 +335,21 @@ test('estimateAuto: legenda sem relação com o áudio não vira escala nem atra
   }
   assert.ok(accepted <= 1, `${accepted}/${tries} falsos positivos`);
 });
+
+test('rankByAudio: a legenda que o áudio confirma ganha da de outro corte/filme', () => {
+  const { speech, pcm } = makeScene(600, 0, 21);
+  const col = AS.createCollector();
+  feed(col, pcm, 0, 600);
+  const wrong = makeSpeech(600, 777);   // outro filme: falas sem relação com o áudio
+  const ranked = AS.rankByAudio(col, [
+    { id: 'outroFilme', cues: wrong },
+    { id: 'certa', cues: speech },
+    { id: 'tambemCerta', cues: speech.map((c) => ({ s: c.s + 6, e: c.e + 6 })) }   // mesma fala, 6 s adiantada
+  ], { maxLag: 120, scaleMinSeconds: 1e9 });
+  assert.equal(ranked[0].id, 'certa', JSON.stringify(ranked));
+  assert.ok(ranked[0].ok && Math.abs(ranked[0].offset) < 0.3);
+  assert.equal(ranked[1].id, 'tambemCerta');
+  assert.ok(ranked[1].ok && Math.abs(ranked[1].offset + 6) < 0.4, 'recupera a correção necessária');
+  assert.equal(ranked[2].id, 'outroFilme');
+  assert.equal(ranked[2].ok, false);
+});

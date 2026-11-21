@@ -10,13 +10,15 @@ process.env.TORRENT_NODE_FILE = path.join(os.tmpdir(), `fdsflix-nodes-test-${pro
 delete process.env.SUPABASE_URL;
 delete process.env.SUPABASE_SECRET_KEY;
 delete process.env.SUPABASE_SERVICE_ROLE_KEY;
-process.env.TORRENT_NODES = 'https://n1.containers.snapdeploy.app, https://n2.containers.snapdeploy.app/';
+const ENV_NODES = 'https://n1.containers.snapdeploy.app, https://n2.containers.snapdeploy.app/';
+process.env.TORRENT_NODES = ENV_NODES;
 process.env.TORRENT_NODE_QUOTA_GB = '10';
 process.env.TORRENT_NODE_QUOTAS = 'https://n2.containers.snapdeploy.app=4';
 process.env.TORRENT_NODE_HOURS = '100';
 process.env.TORRENT_NODE_KEY = 'segredo-de-teste';
 
 const nodes = require('../lib/torrentNodes');
+nodes._setFetch(async () => { throw new Error('offline (teste)'); }); // nunca sai para a rede
 const GB = 1024 ** 3;
 const N1 = 'https://n1.containers.snapdeploy.app';
 const N2 = 'https://n2.containers.snapdeploy.app';
@@ -89,8 +91,9 @@ test('esgotado por banda ou por horas sai do rank; o mais folgado vem primeiro',
   assert.equal(n2.exhaustedBy, 'banda');
   assert.deepEqual(snap.rank, [N1]);
 
-  // Um terceiro nó esgota as HORAS (100 h) sem gastar banda.
+  // Um terceiro nó (que está na env) esgota as HORAS (100 h) sem gastar banda.
   const N3 = 'https://n3.containers.snapdeploy.app';
+  process.env.TORRENT_NODES = `${N1}, ${N2}, ${N3}`;
   nodes.record(N3, { egressBytes: 1, awakeSeconds: 24 * 3600 });
   nodes.record(N3, { awakeSeconds: 24 * 3600 });
   nodes.record(N3, { awakeSeconds: 24 * 3600 });
@@ -102,6 +105,7 @@ test('esgotado por banda ou por horas sai do rank; o mais folgado vem primeiro',
   assert.equal(n3.exhausted, true);
   assert.equal(n3.exhaustedBy, 'horas');
   assert.ok(!snap.rank.includes(N3));
+  process.env.TORRENT_NODES = ENV_NODES;
 });
 
 test('números absurdos ou negativos são ignorados/limitados', () => {
@@ -119,15 +123,144 @@ test('recusa URL inválida', () => {
 });
 
 test('nome do nó é saneado', () => {
+  process.env.TORRENT_NODES = `${ENV_NODES}, https://n9.containers.snapdeploy.app`;
   nodes.record('https://n9.containers.snapdeploy.app', { egressBytes: 1, name: '<script>alert(1)</script> conta' });
   const n = nodes.snapshot().nodes.find((x) => x.node === 'https://n9.containers.snapdeploy.app');
   assert.ok(!/[<>()]/.test(n.label));
+  process.env.TORRENT_NODES = ENV_NODES;
 });
 
-test('nós extras do navegador entram no snapshot', () => {
+test('SEM a env TORRENT_NODES vale o modo antigo: nós extras do navegador entram', () => {
+  delete process.env.TORRENT_NODES;
   const snap = nodes.snapshot(['https://so-no-navegador.containers.snapdeploy.app', 'lixo']);
   assert.ok(snap.nodes.some((n) => n.node === 'https://so-no-navegador.containers.snapdeploy.app'));
   assert.ok(!snap.nodes.some((n) => n.node === 'lixo'));
+  process.env.TORRENT_NODES = ENV_NODES;
+});
+
+// O bug: a lista de nós crescia todo dia. O nó se batizava pelo Host da 1ª requisição (sonda interna
+// 10.0.11.x:8080, ou http em vez de https) e cada URL nova virava um nó novo no painel.
+test('COM a env, o painel tem exatamente os nós da env, aconteça o que acontecer', () => {
+  const before = nodes.snapshot().nodes.length;
+  assert.equal(before, 2);
+  for (const url of ['https://10.0.11.39:8080', 'http://10.0.11.48:8080', 'https://container-novo-7d2fb.containers.snapdeploy.app', 'https://n1.containers.snapdeploy.app:8443/x'.replace('/x', '')]) {
+    nodes.record(url, { egressBytes: 5 * GB, awakeSeconds: 3600, streams: 1 });
+  }
+  const snap = nodes.snapshot(['https://so-no-navegador.containers.snapdeploy.app', 'https://outro.exemplo.com']);
+  assert.deepEqual(snap.nodes.map((n) => n.node).sort(), [N1, N2].sort());
+  assert.equal(snap.total.hoursQuota, 2 * 100, 'cota total = nº de envs x horas');
+});
+
+test('URL desconhecida não cria nó: o consumo fica retido e o painel avisa', () => {
+  nodes._resetAliases();
+  const r = nodes.record('https://10.0.11.7:8080', { egressBytes: 1 });
+  assert.equal(r.ok, true);
+  assert.equal(r.held, true);
+  const snap = nodes.snapshot();
+  assert.equal(snap.nodes.length, 2);
+  assert.deepEqual(snap.ignored.unresolved, ['https://10.0.11.7:8080']);
+});
+
+test('http e https do mesmo host são o MESMO nó (o consumo soma no da env)', () => {
+  const base = nodes.snapshot().nodes.find((n) => n.node === N1).egressBytes;
+  assert.equal(nodes.record('http://n1.containers.snapdeploy.app', { egressBytes: 2 * GB }).ok, true);
+  assert.equal(nodes.record('https://N1.containers.snapdeploy.app:443'.replace(':443', ''), { egressBytes: 1 * GB }).ok, true);
+  const snap = nodes.snapshot();
+  assert.equal(snap.nodes.length, 2);
+  assert.equal(snap.nodes.find((n) => n.node === N1).egressBytes, base + 3 * GB);
+  assert.equal(nodes.resolveNode('http://n1.containers.snapdeploy.app'), N1);
+  assert.equal(nodes.resolveNode('https://10.0.11.39:8080'), '');
+});
+
+const tick = (ms = 30) => new Promise((r) => setTimeout(r, ms));
+const usageReply = (url) => async () => ({ ok: true, json: async () => ({ url, name: null }) });
+const asleepReply = async () => ({ ok: false, status: 503, json: async () => { throw new Error('html'); } });
+
+// O caso real do dono: os nós antigos se anunciam com o IP interno (10.0.11.x:8080) e ele não consegue reenviá-los.
+test('nó que se anuncia por IP interno: o servidor descobre de qual nó da env é e NADA se perde', async () => {
+  nodes._resetAliases();
+  const IP = 'https://10.0.11.39:8080';
+  const asked = [];
+  nodes._setFetch(async (url) => {
+    asked.push(url);
+    if (url.startsWith(N2)) return asleepReply();            // N2 dormindo: pula, não acorda
+    return usageReply(IP)();                                 // N1 acordado e se anuncia com esse IP
+  });
+  const before = nodes.snapshot().nodes.find((n) => n.node === N1).egressBytes;
+  assert.equal(nodes.record(IP, { egressBytes: 5 * GB, awakeSeconds: 120, streams: 1 }).held, true);
+  await tick();
+  const mid = nodes.snapshot();
+  assert.equal(mid.nodes.length, 2, 'continua sendo só os nós da env');
+  assert.equal(mid.nodes.find((n) => n.node === N1).egressBytes, before + 5 * GB, 'o que estava retido entrou no N1');
+  assert.deepEqual(mid.ignored.unresolved, []);
+  assert.ok(asked.every((u) => u.endsWith('/usage')), 'só leu /usage (GET não acorda nó dormindo)');
+
+  // próximo relatório do mesmo IP já cai direto no N1, sem perguntar de novo
+  asked.length = 0;
+  assert.deepEqual(nodes.record(IP, { egressBytes: 1 * GB }), { ok: true });
+  assert.equal(asked.length, 0);
+  assert.equal(nodes.snapshot().nodes.find((n) => n.node === N1).egressBytes, before + 6 * GB);
+  nodes._setFetch(async () => { throw new Error('offline (teste)'); });
+});
+
+test('todos os nós da env dormindo/fora: relatório fica retido, sem erro e sem nó novo', async () => {
+  nodes._resetAliases();
+  nodes._setFetch(asleepReply);
+  const r = nodes.record('https://10.0.11.48:8080', { egressBytes: 2 * GB });
+  assert.equal(r.ok, true);
+  await tick();
+  const snap = nodes.snapshot();
+  assert.equal(snap.nodes.length, 2);
+  assert.deepEqual(snap.ignored.unresolved, ['https://10.0.11.48:8080']);
+  nodes._setFetch(async () => { throw new Error('offline (teste)'); });
+});
+
+test('o vínculo vence quando o nó some (o IP pode ser reaproveitado por outro container)', async (t) => {
+  nodes._resetAliases();
+  const IP = 'https://10.0.11.99:8080';
+  nodes._setFetch(async (url) => (url.startsWith(N1) ? usageReply(IP)() : asleepReply()));
+  nodes.record(IP, { egressBytes: 1 });
+  await tick();
+  assert.equal(nodes.record(IP, { egressBytes: 1 }).held, undefined, 'vinculado ao N1');
+  t.mock.timers.enable({ apis: ['Date'], now: Date.now() });
+  t.mock.timers.tick(25 * 60000); // 25 min sem relatório
+  // agora o mesmo IP pertence ao N2
+  nodes._setFetch(async (url) => (url.startsWith(N2) ? usageReply(IP)() : asleepReply()));
+  assert.equal(nodes.record(IP, { egressBytes: 7 * GB }).held, true, 'vínculo velho não vale mais');
+  t.mock.timers.reset();
+  await tick();
+  nodes._setFetch(async () => { throw new Error('offline (teste)'); });
+});
+
+// Histórico JÁ gravado no Supabase em produção: o mesmo nó com http://, IPs internos e um nó de teste.
+test('pull do Supabase: junta http/https do mesmo host e descarta o que não está na env', async () => {
+  const usageStore = require('../lib/usageStore');
+  const day = new Date().toISOString().slice(0, 10);
+  const row = (node, egress, awake) => ({ day, node, name: '', egress_bytes: egress, ingress_bytes: 0, awake_seconds: awake, streams: 1, reports: 1 });
+  const rows = [
+    row('http://n1.containers.snapdeploy.app', 88 * 1048576, 1800),
+    row('https://n2.containers.snapdeploy.app', 10 * 1048576, 600),
+    row('http://n2.containers.snapdeploy.app', 173 * 1048576, 1650),
+    row('https://10.0.11.39:8080', 44 * 1048576, 1300),
+    row('https://10.0.11.48:8080', 52 * 1048576, 2500),
+    row('https://10.0.11.7:8080', 15 * 1048576, 1100),
+    row('https://conta-teste-antiga.containers.snapdeploy.app', 1, 36)
+  ];
+  const real = { enabled: usageStore.enabled, call: usageStore.call };
+  usageStore.enabled = () => true;
+  usageStore.call = async (method, path) => (method === 'GET' ? rows : null);
+  try {
+    await nodes.pull();
+  } finally {
+    usageStore.enabled = real.enabled;
+    usageStore.call = real.call;
+  }
+  const snap = nodes.snapshot();
+  assert.deepEqual(snap.nodes.map((n) => n.node).sort(), [N1, N2].sort(), 'só os 2 nós da env, não 7');
+  const n2 = snap.nodes.find((n) => n.node === N2);
+  assert.ok(n2.egressBytes >= 183 * 1048576, 'http + https do n2 somados');
+  assert.equal(snap.total.egressBytes, snap.nodes.reduce((a, n) => a + n.egressBytes, 0), 'total = só os nós da env');
+  assert.ok(!snap.nodes.some((n) => /10\.0\.11|conta-teste/.test(n.node)), 'IP interno e nó de teste não aparecem');
 });
 
 test('ciclo mensal: dia de renovação respeita o dia configurado', () => {

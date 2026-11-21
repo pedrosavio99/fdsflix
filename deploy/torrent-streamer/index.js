@@ -507,10 +507,11 @@ const server = http.createServer((req, res) => {
   // Só o Host (x-forwarded-host seria forjável por qualquer visitante e batizaria o nó errado).
   if (!nodeUrl) {
     const host = String(req.headers.host || '').split(',')[0].trim().toLowerCase();
-    if (host && !/^(localhost|127\.|0\.0\.0\.0|\[::1\])/.test(host)) {
-      const proto = String(req.headers['x-forwarded-proto'] || 'https').split(',')[0].trim();
-      nodeUrl = `${proto === 'http' ? 'http' : 'https'}://${host}`;
-    }
+    // Só NOME DE DOMÍNIO público, sem porta e sem IP. A 1ª requisição costuma ser a sonda interna do provedor
+    // (Host `10.0.11.39:8080`): batizar o nó com ela criava um nó NOVO no painel a cada reinício do container.
+    // Sempre https (o proto interno vem como http e duplicava o nó). Quem quiser fixar: variável NODE_URL.
+    const isDomain = /^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(host) && !/^\d+(\.\d+){3}$/.test(host) && !/\.(local|internal|localhost)$/.test(host);
+    if (isDomain) nodeUrl = `https://${host}`;
   }
   if (req.method === 'OPTIONS') {
     res.writeHead(204, { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'range', 'Access-Control-Max-Age': '600' });

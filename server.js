@@ -31,6 +31,8 @@ const {
 } = require('./lib/transcoder');
 const { proxyVideo, USER_AGENT, TOKEN_TTL_MS } = require('./lib/proxy');
 const { srtToVtt, shiftVtt, decodeSubtitle, stripSpamCues, analyzeVtt, vttToSrt } = require('./lib/subtitles');
+const { buildCaptions, smartCaptions } = require('./lib/captionPlan');
+const subtitleBrain = require('./lib/subtitleBrain');
 const { translateVtt } = require('./lib/translate');
 const registry = require('./lib/registry');
 const usageLedger = require('./lib/usageLedger');
@@ -201,69 +203,6 @@ function requireApiKey(req, res, next) {
   });
 }
 
-const LANG_MAP = {
-  'português': 'pt',
-  'portugues': 'pt',
-  'portuguese': 'pt',
-  'english': 'en',
-  'inglês': 'en',
-  'ingles': 'en',
-  'español': 'es',
-  'espanhol': 'es',
-  'spanish': 'es',
-  'français': 'fr',
-  'francês': 'fr',
-  'frances': 'fr',
-  'french': 'fr',
-  'deutsch': 'de',
-  'alemão': 'de',
-  'italiano': 'it',
-  'italian': 'it',
-  '日本語': 'ja',
-  '한국어': 'ko',
-  '中文': 'zh',
-  'русский': 'ru',
-  'russian': 'ru',
-  'हिन्दी': 'hi',
-  'العربية': 'ar',
-  'اَلْعَرَبِيَّةُ': 'ar',
-  'türkçe': 'tr',
-  'polski': 'pl',
-  'nederlands': 'nl',
-  'bahasa indonesia': 'id',
-  'indonesian': 'id',
-  'melayu': 'ms',
-  'malay': 'ms',
-  'filipino': 'fil',
-  'tiếng việt': 'vi',
-  'ไทย': 'th',
-  'svenska': 'sv',
-  'suomi': 'fi',
-  'norsk': 'no',
-  'dansk': 'da',
-  'čeština': 'cs',
-  'magyar': 'hu',
-  'română': 'ro',
-  'български': 'bg',
-  'українська': 'uk',
-  'עברית': 'he',
-  'فارسی': 'fa',
-  'eesti': 'et',
-  'latviešu': 'lv',
-  'lietuvių': 'lt'
-};
-
-/* ------------------------------------------------------------------ */
-/* Helpers                                                             */
-/* ------------------------------------------------------------------ */
-
-function normalizeLang(label) {
-  const key = String(label || '').trim().toLowerCase();
-  if (LANG_MAP[key]) return LANG_MAP[key];
-  if (/^[a-z]{2}$/.test(key)) return key;
-  return 'und';
-}
-
 /** A borda (Worker) pode entregar esse vídeo? Liga + URL pública + sonda de 1 byte passou. */
 async function edgeDecision(url, extra = {}) {
   if (!edgeEnabled() || !canUseEdge(url)) return { use: false, reason: null };
@@ -301,67 +240,6 @@ function pickQualityKeyAtMost(qualities, limit) {
   const lower = available.find((item) => item.height <= limit);
   if (lower) return lower.key;
   return available[available.length - 1].key;
-}
-
-// Idioma-base para traduzir quando a faixa não tem legenda em português: inglês primeiro
-// (é a que as fontes mais têm e a que melhor traduz), depois idiomas próximos.
-const TRANSLATE_SOURCE_ORDER = ['en', 'es', 'fr', 'it', 'de'];
-const TRANSLATE_TARGET = 'pt';
-const TRANSLATE_LABEL = 'Português (Brasil) · tradução automática';
-
-// A legenda é pedida quando a pessoa a ESCOLHE, às vezes no meio do filme: o link precisa durar o filme inteiro
-// (antes valia 4 min e a faixa escolhida depois disso respondia 404 "Legenda expirada"). O token é minúsculo;
-// o TEXTO baixado fica num cache compartilhado e limitado (loadSubtitleVtt), não preso a cada token.
-const SUBTITLE_TTL_MS = 3 * 60 * 60 * 1000;
-
-function buildCaptions(rawCaptions, autoShift = 0) {
-  const captions = (Array.isArray(rawCaptions) ? rawCaptions : []).map((caption) => {
-    const lang = normalizeLang(caption.language);
-    const token = registry.register('subtitle', { url: caption.url, autoShift, lang }, SUBTITLE_TTL_MS);
-    return {
-      label: caption.language || 'Legenda',
-      srclang: lang,
-      default: false,
-      url: `/api/subtitle?t=${token}`
-    };
-  });
-
-  // Tradução automática para PT-BR: o servidor baixa a legenda de origem e troca só o texto,
-  // sem mexer nos tempos (continua sincronizada). Só é feita quando alguém abre a faixa.
-  const hasPt = captions.some((caption) => caption.srclang === TRANSLATE_TARGET);
-  const sources = (Array.isArray(rawCaptions) ? rawCaptions : []).filter((c) => c && c.url && normalizeLang(c.language) !== TRANSLATE_TARGET);
-  if (sources.length) {
-    const rank = (c) => {
-      const i = TRANSLATE_SOURCE_ORDER.indexOf(normalizeLang(c.language));
-      return i === -1 ? TRANSLATE_SOURCE_ORDER.length : i;
-    };
-    const source = sources.slice().sort((a, b) => rank(a) - rank(b))[0];
-    const token = registry.register('subtitle', {
-      url: source.url,
-      autoShift,
-      lang: normalizeLang(source.language),
-      translateTo: TRANSLATE_TARGET
-    }, SUBTITLE_TTL_MS);
-    const translated = {
-      label: TRANSLATE_LABEL,
-      srclang: TRANSLATE_TARGET,
-      translated: true,
-      from: normalizeLang(source.language),
-      default: false,
-      url: `/api/subtitle?t=${token}`
-    };
-    // Sem PT nativo: a tradução vira a primeira opção (e o padrão). Com PT nativo: fica no fim,
-    // como reserva caso o arquivo nativo venha quebrado/incompleto.
-    if (hasPt) captions.push(translated); else captions.unshift(translated);
-  }
-
-  const preferred =
-    captions.find((caption) => caption.srclang === 'pt') ||
-    captions.find((caption) => caption.srclang === 'en') ||
-    captions[0];
-
-  if (preferred) preferred.default = true;
-  return captions;
 }
 
 function makeRefresher({ id, type, season, episode, qualityKey, provider, title }) {
@@ -1716,7 +1594,7 @@ function codecHint(url) {
  *
  * @returns {Promise<boolean>} true se já respondeu ao cliente.
  */
-async function rescueMovieWithAdShield(req, res, { candidates, trace, hevcOk, forced = false }) {
+async function rescueMovieWithAdShield(req, res, { candidates, trace, hevcOk, forced = false, captionsFor = null }) {
   const entry = { provider: 'AdFallback', outcome: 'sem resultado', ms: 0, notes: [] };
   if (trace) trace.push(entry);
   const started = Date.now();
@@ -1755,7 +1633,7 @@ async function rescueMovieWithAdShield(req, res, { candidates, trace, hevcOk, fo
       entry.notes.push(`${info.provider}: HEVC entregue pelo nó` + (hevcOk ? '' : ' (o navegador disse "sem HEVC", entrega assim mesmo)') + (prepared.hvc1 ? ' · hvc1' : ''));
     }
 
-    const captions = buildCaptions(info.captions, 0).map((caption) => ({
+    const captions = (captionsFor ? await captionsFor(info.captions, info.provider, 0, []) : buildCaptions(info.captions, 0)).map((caption) => ({
       ...caption,
       url: absoluteUrl(req, caption.url)
     }));
@@ -1791,6 +1669,16 @@ const streamGuard = createStreamGuard({ isAdmin: statsKeyOK });
 
 // "Dublado ou original?": descobre as versões do título ANTES de tocar (ver lib/streamOptions.js).
 // Devolve só o que o ouvinte precisa decidir; o `pick` é um token curto que o /api/stream reaproveita.
+// Começa a achar/conferir as legendas pt-BR do título. `prepare` divide o trabalho entre chamadas iguais (em voo e em cache),
+// então começar já na escolha dublado/original dá vários segundos de vantagem ao /api/stream, que só colhe o resultado.
+function startSubtitleBrain({ id, type, season, episode }) {
+  return (async () => {
+    const info = type === 'movie' ? await tokyoVideo.tmdbInfo(id, 'movie').catch(() => null) : null;
+    const runtimeSec = info && info.runtimeSec ? info.runtimeSec : 0;
+    return { prep: await subtitleBrain.prepare({ id, type, season, episode, runtimeSec }), runtimeSec };
+  })().catch(() => null);
+}
+
 app.get('/api/stream/options', requireApiKey, async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   const id = String(req.query.id || '');
@@ -1804,6 +1692,7 @@ app.get('/api/stream/options', requireApiKey, async (req, res) => {
   const admin = statsKeyOK(req);
   const hevcOk = String(req.query.hevc || '') === '1';
   const direct = String(req.query.direct || '') === '1';
+  startSubtitleBrain({ id, type, season, episode });   // aquece as legendas pt-BR enquanto a pessoa escolhe dublado/original
   try {
     const found = await streamOptions.discover({
       id, type, season, episode, title,
@@ -1881,6 +1770,12 @@ app.get('/api/stream', requireApiKey, streamGuard.middleware, async (req, res) =
   // original ficaria sem legenda nenhuma.
   const capsStartedAt = Date.now();
   const capsPromise = companionCaptions(id, type, season, episode).catch(() => []);
+  // "Cérebro" de legendas: acha, confere e compara as pt-BR (OpenSubtitles legado/Stremio/…) em paralelo com a cascata.
+  // Título repetido vem da biblioteca (Supabase) sem rede. Nunca atrasa o vídeo além do orçamento de 8 s do pedido.
+  const captionBudgetEnd = capsStartedAt + 8000;
+  const brainJob = startSubtitleBrain({ id, type, season, episode });
+  const captionsFor = (own, provider, shift, companion) =>
+    smartCaptions({ own, companion, provider, shift, brainJob, budgetEnd: captionBudgetEnd, trace });
 
   console.log(
     `[stream] id=${id} type=${type} s=${season} e=${episode} res=${preferred || 'auto'} hevc=${hevcOk ? 'sim' : 'não'} start=${startAt}s${title ? ` title="${title}"` : ''}`
@@ -1940,7 +1835,7 @@ app.get('/api/stream', requireApiKey, streamGuard.middleware, async (req, res) =
         // O ouvinte ESCOLHEU esta versão: se o AdFallback está ligado, entrega por ele agora, em vez
         // de cair na cascata e devolver outra (ex.: escolheu VidLink 1080p e recebia o VixSrc).
         if (!forceDev && adshieldFallback.isEnabled()) {
-          if (await rescueMovieWithAdShield(req, res, { candidates: [streamInfo], trace, hevcOk, forced: false })) return;
+          if (await rescueMovieWithAdShield(req, res, { candidates: [streamInfo], trace, hevcOk, forced: false, captionsFor })) return;
         }
         streamInfo = null;
       }
@@ -1984,7 +1879,7 @@ app.get('/api/stream', requireApiKey, streamGuard.middleware, async (req, res) =
     }
 
     if (!streamInfo && boundCandidates.length && adshieldFallback.isEnabled()) {
-      if (await rescueMovieWithAdShield(req, res, { candidates: boundCandidates, trace, hevcOk, forced: forceDev })) return;
+      if (await rescueMovieWithAdShield(req, res, { candidates: boundCandidates, trace, hevcOk, forced: forceDev, captionsFor })) return;
     }
 
     if (!streamInfo && skip.length) {
@@ -2016,16 +1911,21 @@ app.get('/api/stream', requireApiKey, streamGuard.middleware, async (req, res) =
     }
 
     // Sem legenda da própria fonte? Usa as de companhia (espera só o que falta dos 7 s da busca).
+    let companionAttached = false;
     if (!Array.isArray(streamInfo.captions) || !streamInfo.captions.length) {
       try {
         const left = Math.max(0, 7000 - (Date.now() - capsStartedAt));
         const extra = await Promise.race([capsPromise, new Promise((resolve) => setTimeout(() => resolve([]), left))]);
         if (extra && extra.length) {
           streamInfo = { ...streamInfo, captions: formatCaptions(extra) };
+          companionAttached = true;
           trace.push({ provider: 'Legendas', outcome: 'USADO', ms: Date.now() - capsStartedAt, notes: [`${extra.length} faixa(s) de companhia anexada(s)`] });
         }
       } catch (err) { /* sem legenda extra: segue */ }
     }
+    // A fonte trouxe legenda própria (feita para ESTE vídeo) ou é de companhia (só vale como referência de tempo no VidLink)?
+    const ownCaps = () => (companionAttached ? [] : streamInfo.captions);
+    const companionCaps = () => (companionAttached ? streamInfo.captions : []);
 
     // VidLink Pro mantém sempre o fluxo original (proxy + sonda de codec + transcodificação).
     // O atalho HLS direto é só para as fontes externas da cascata.
@@ -2064,7 +1964,7 @@ app.get('/api/stream', requireApiKey, streamGuard.middleware, async (req, res) =
           ? absoluteUrl(req, `/api/hls-proxy?t=${registry.register('hls', { url: streamInfo.url, profile: bridgeProfile })}`)
           : absoluteUrl(req, streamInfo.url);
       if (viaEdge) console.log('[stream] HLS entregue pela borda (Worker)');
-      const captions = buildCaptions(streamInfo.captions, 0).map((caption) => ({
+      const captions = (await captionsFor(ownCaps(), streamInfo.provider, 0, companionCaps())).map((caption) => ({
         ...caption,
         url: absoluteUrl(req, caption.url)
       }));
@@ -2117,7 +2017,7 @@ app.get('/api/stream', requireApiKey, streamGuard.middleware, async (req, res) =
     // tempo para 0; então as legendas precisam voltar `startAt` segundos.
     // No modo direct o vídeo é o arquivo original (o cliente só faz seek),
     // logo a legenda já está alinhada.
-    const captions = buildCaptions(streamInfo.captions, transcode ? -startAt : 0).map((caption) => ({
+    const captions = (await captionsFor(ownCaps(), streamInfo.provider, transcode ? -startAt : 0, companionCaps())).map((caption) => ({
       ...caption,
       url: absoluteUrl(req, caption.url)
     }));
@@ -2652,8 +2552,19 @@ function fetchSubtitleSource(url, lang) {
 
 // O texto NÃO fica preso ao token (os tokens de legenda vivem 3 h): vem do cache compartilhado por URL de
 // origem (`fetchSubtitleSource`: 30 min, máx. 80, pedidos simultâneos dividem o mesmo download).
-function loadSubtitleVtt(entry) {
-  return fetchSubtitleSource(entry.url, entry.lang);
+async function loadSubtitleVtt(entry) {
+  // Legenda do cérebro (lib/subtitleBrain.js) já vem com o texto; vem de fonte externa só se não houver.
+  const src = entry.local || await fetchSubtitleSource(entry.url, entry.lang);
+  // Correção de base (atraso/fps medidos contra uma referência do próprio vídeo): vale ANTES de qualquer ajuste
+  // do navegador, que continua enxergando esta versão como "o arquivo" (a conta de sincronia dele não muda).
+  const shift = Number(entry.baseShift) || 0;
+  const scale = Number(entry.baseScale) || 1;
+  if (!shift && scale === 1) return src;
+  if (!entry._based) {
+    const vtt = shiftVtt(src.vtt, shift, scale);
+    entry._based = { vtt, spamRemoved: src.spamRemoved || 0, info: { ...analyzeVtt(vtt), spamRemoved: src.spamRemoved || 0 } };
+  }
+  return entry._based;
 }
 
 // Tradução pronta (por conteúdo da legenda + idioma). Pedidos simultâneos da mesma legenda

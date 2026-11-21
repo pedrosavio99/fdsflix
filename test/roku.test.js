@@ -219,7 +219,8 @@ test('canal Roku: tela de detalhe tem "Menu inicial" (filme: botão; série: úl
 });
 
 test('servidor: link da legenda vale mais que 4 min e o texto não fica preso ao token', () => {
-  const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'server.js'), 'utf8');
+  const read = (f) => require('fs').readFileSync(require('path').join(__dirname, '..', f), 'utf8');
+  const src = read('server.js') + '\n' + read('lib/captionPlan.js');   // a montagem da lista de legendas mora em lib/captionPlan.js
   const ttl = /const SUBTITLE_TTL_MS = (\d+) \* (\d+) \* (\d+) \* (\d+);/.exec(src);
   assert.ok(ttl, 'SUBTITLE_TTL_MS não encontrado');
   assert.ok(ttl[1] * ttl[2] * ttl[3] * ttl[4] >= 60 * 60 * 1000, 'legenda precisa durar pelo menos 1 h');

@@ -624,12 +624,18 @@
     tnFoot.textContent = 'Saída = vídeo para o navegador + upload para peers, medida pelo próprio nó. A cota (' +
       (list[0] ? fmtBytes(list[0].quotaBytes) : '?') + '/nó) é uma ASSUNÇÃO: o SnapDeploy não publica o limite de banda; ' +
       'o limite documentado é ' + d.hoursQuota + ' container-horas/mês por conta. ' + where;
-    // Nós de TORRENT_NODES (env do Render) entram sempre, somados aos salvos neste navegador.
-    var known = nodes.map(normNode);
-    var added = (d.configured || []).filter(function (u) { return known.indexOf(normNode(u)) === -1; });
-    if (added.length) {
-      nodes = nodes.concat(added);
+    // Com TORRENT_NODES no Render, a lista é EXATAMENTE a da env (não soma o que ficou salvo neste navegador).
+    var cfg = (d.configured || []).map(function (u) { return String(u || '').replace(/\/+$/, ''); });
+    if (cfg.length) {
+      nodes = cfg;
       if (nodeEl) nodeEl.value = nodes.join('\n');
+      try { localStorage.setItem('fdsflix.torrentNodes', JSON.stringify(nodes)); } catch (e) { /* ignore */ }
+    }
+    var ig = d.ignored || {};
+    if (ig.unresolved && ig.unresolved.length) {
+      tnFoot.textContent += ' ⏳ Identificando de qual nó da env é: ' + ig.unresolved.join(', ') + ' (o consumo já está guardado e entra sozinho quando o nó acordado responder).';
+    } else if (ig.count) {
+      tnFoot.textContent += ' ⚠ ' + ig.count + ' relatório(s) de uma URL que não é de nenhum nó da env não puderam ser atribuídos (último: ' + ig.last + ').';
     }
   }
 
