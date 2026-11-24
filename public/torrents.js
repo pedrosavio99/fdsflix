@@ -163,23 +163,15 @@
     note(nodes.length + ' nó(s) salvo(s).');
   }
 
-  // Rodízio "preso ao arquivo": o mesmo infoHash cai sempre no mesmo nó (o cache do torrent fica lá).
-  // Nó esgotado (banda ou horas, segundo o painel abaixo) sai do rodízio enquanto houver outro.
+  // Quais nós estão com banda/horas sobrando vem do servidor (`nodeRank`); quem escolhe o nó e toca é o
+  // public/torplayer.js (sonda /health, prefere nó já acordado, acorda em paralelo, colchão e pausa inteligente).
   function normNode(u) { return String(u || '').trim().replace(/\/+$/, '').toLowerCase(); }
 
-  function nodeFor(hash) {
-    if (!nodes.length) return '';
-    var pool = nodes;
-    if (nodeRank.length) {
-      var ok = nodes.filter(function (n) { return nodeRank.indexOf(normNode(n)) !== -1; });
-      if (ok.length) pool = ok;
-    }
-    var n = parseInt(String(hash || '').slice(0, 8), 16) || 0;
-    return pool[n % pool.length];
-  }
+  var player = null; // controlador do FdsTorPlayer (nós)
 
   function stopTorrent() {
     playSeq += 1;
+    if (player) { try { player.destroy(); } catch (e) { /* ignore */ } player = null; }
     if (wt) { try { wt.destroy(); } catch (e) { /* ignore */ } wt = null; }
     if (blobURL) { try { URL.revokeObjectURL(blobURL); } catch (e) { /* ignore */ } blobURL = ''; }
     var box = document.getElementById('torrentPlayerBox');
@@ -203,142 +195,7 @@
     box.appendChild(video);
   }
 
-  // Espera o nó baixar o começo do vídeo (e o trecho final, se o moov estiver lá) ANTES de montar o
-  // <video>: assim o Chrome acha tudo no disco do nó e começa na hora, e o log mostra por que demora.
-  function warmUp(node, qs, url, prep) {
-    var t0 = Date.now();
-    var lastLog = 0;
-    var MAX_MS = 240000;
-    note('Baixando o começo do filme no nó…');
-    function tick() {
-      return fetch(node + '/status' + qs, { cache: 'no-store' })
-        .then(function (r) {
-          if (r.status === 404) return { legacy: true };
-          return r.json();
-        })
-        .then(function (st) {
-          if (st.legacy) { log('nó sem /status — abrindo direto'); open(); return; }
-          var w = st.warm || {};
-          var secs = Math.round((Date.now() - t0) / 1000);
-          if (w.done) {
-            log('aquecido em ' + secs + 's | peers ' + st.wires + ' | ' + st.speedKBs + ' KB/s');
-            open();
-            return;
-          }
-          if (Date.now() - lastLog >= 5000) {
-            lastLog = Date.now();
-            log('baixando… ' + secs + 's | peers ' + st.wires + ' | ' + st.speedKBs + ' KB/s | começo ' +
-              (w.headMB || 0) + '/' + (w.headNeedMB || '?') + ' MB' +
-              (w.tailNeedMB ? ' | final ' + (w.tailMB || 0) + '/' + w.tailNeedMB + ' MB' : ''));
-            note('Baixando o começo no nó… ' + (w.headMB || 0) + '/' + (w.headNeedMB || '?') + ' MB · ' + st.wires + ' peers · ' + st.speedKBs + ' KB/s');
-          }
-          if (Date.now() - t0 > MAX_MS) {
-            log('demorou demais (' + secs + 's) — abrindo mesmo assim');
-            note('Poucos peers: pode demorar para começar ou travar.', 'warn');
-            open();
-            return;
-          }
-          return new Promise(function (res) { setTimeout(res, 2000); }).then(tick);
-        });
-    }
-    function open() {
-      log('abrindo stream: ' + url.slice(0, 120) + '…');
-      note('Pronto — carregando o vídeo…');
-      showVideo(url);
-      setTimeout(nodesRefresh, 15000); // o nó avisa o consumo a cada ~2 min; confere depois
-    }
-    return tick();
-  }
-
   var playSeq = 0;
-
-  // Ordem de tentativa: o nó "preso" ao arquivo primeiro, depois os outros (os com mais sobra de banda na frente).
-  function candidates(hash) {
-    var first = nodeFor(hash);
-    if (!first) return [];
-    var rank = function (n) { var i = nodeRank.indexOf(normNode(n)); return i === -1 ? 999 : i; };
-    var rest = nodes.filter(function (n) { return n !== first; }).sort(function (a, b) { return rank(a) - rank(b); });
-    return [first].concat(rest);
-  }
-
-  // Container dormindo: a plataforma responde 503 com uma página "Waking up…" SEM cabeçalho CORS, e o navegador
-  // só mostra "Failed to fetch". Isso NÃO é nó quebrado: insiste a cada 3 s até ele acordar (~1 min).
-  // Um GET no nó dormindo NÃO acorda nada: a página "Waking up your container..." do SnapDeploy acorda o
-  // container com um POST em https://snapdeploy.dev/api/public/wake/<subdomínio> feito pelo JavaScript dela.
-  // Fazemos a mesma chamada daqui (a API aceita qualquer origem). Medido: "already running" (200) num nó
-  // ligado e 404 "Container not found" num que a plataforma não reconhece.
-  function wakeUrlOf(node) {
-    var m = /^https?:\/\/([^./]+)\.containers\.snapdeploy\.app$/i.exec(node);
-    return m ? 'https://snapdeploy.dev/api/public/wake/' + m[1] : '';
-  }
-
-  function wakeNode(node, my) {
-    var t0 = Date.now();
-    var lastLog = 0;
-    var lastWake = 0;
-    var wakeUrl = wakeUrlOf(node);
-    var dead = '';
-    function sendWake() {
-      lastWake = Date.now();
-      if (!wakeUrl) return Promise.resolve();
-      return fetch(wakeUrl, { method: 'POST', cache: 'no-store' })
-        .then(function (r) {
-          if (r.status === 404) { dead = 'o SnapDeploy não reconhece este container (apagado ou parado no painel)'; return; }
-          return r.json().then(function (j) { log('sinal de acordar enviado: ' + ((j && (j.status || j.message)) || r.status)); }, function () {});
-        })
-        .catch(function () {
-          // Sem CORS/rede: manda mesmo assim, sem ler a resposta (o POST sai do mesmo jeito).
-          try { fetch(wakeUrl, { method: 'POST', mode: 'no-cors' }); } catch (e) { /* ok */ }
-        });
-    }
-    function attempt() {
-      return fetch(node + '/ping', { cache: 'no-store' })
-        .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
-        .catch(function (e) {
-          var secs = Math.round((Date.now() - t0) / 1000);
-          if (my !== playSeq) throw e;
-          if (dead) throw new Error(dead);
-          if (Date.now() - t0 > 100000) throw new Error('não acordou em ' + secs + 's (' + e.message + ')');
-          if (Date.now() - lastLog >= 9000) {
-            lastLog = Date.now();
-            log('nó dormindo, acordando… ' + secs + 's (' + e.message + ')');
-          }
-          var step = Date.now() - lastWake >= 15000 ? sendWake() : Promise.resolve();
-          return step.then(function () { return new Promise(function (res) { setTimeout(res, 3000); }); }).then(attempt);
-        });
-    }
-    return attempt();
-  }
-
-  // Com o nó acordado: prepara o torrent (peers + metadados), aquece o começo e só então monta o <video>.
-  function openOnNode(node, item) {
-    var qs = '/' + item.hash + '?magnet=' + encodeURIComponent(item.magnet || '');
-    var url = node + '/stream' + qs;
-    note('Nó acordado — procurando peers e metadados (até ~45 s)…');
-    log('preparando torrent (peers + metadados)…');
-    // /prepare devolve sempre JSON com o motivo real. Sem ele o <video> só diria "Format error"
-    // quando o nó responde um 504 (a plataforma troca o corpo por uma página HTML).
-    var ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
-    var to = setTimeout(function () { if (ctl) ctl.abort(); }, 70000);
-    return fetch(node + '/prepare' + qs, { cache: 'no-store', signal: ctl ? ctl.signal : undefined })
-      .then(function (r) {
-        clearTimeout(to);
-        if (r.status === 404) { log('nó antigo (sem /prepare) — abrindo direto'); return { legacy: true }; }
-        return r.json();
-      })
-      .then(function (p) {
-        if (p.legacy) { showVideo(url); return; }
-        log('prepare: ' + (p.ready ? 'pronto' : 'NÃO pronto') + ' | peers conectados: ' + (p.wires || 0) +
-          (p.name ? ' | arquivo: ' + p.name + ' (' + Math.round((p.size || 0) / 1048576) + ' MB)' : '') +
-          (p.remux ? ' | vai converter para MP4 (sem avançar no tempo)' : ''));
-        if (!p.ready) {
-          log('motivo: ' + (p.reason || 'desconhecido'));
-          note('O nó não conseguiu abrir este torrent: ' + (p.reason || 'sem resposta') + ' Tente outro resultado.', 'warn');
-          return;
-        }
-        return warmUp(node, qs, url, p);
-      });
-  }
 
   function playTorrent(item) {
     var box = document.getElementById('torrentPlayerBox');
@@ -350,33 +207,22 @@
     log('título: ' + (item.title || '') + ' | hash: ' + (item.hash || '') + ' | seeds: ' + (item.seeds || 0));
     log('nós configurados: ' + nodes.length + (nodes.length ? ' (' + nodes.join(', ') + ')' : ''));
 
-    var list = candidates(item.hash);
-    if (list.length) {
+    if (nodes.length && window.FdsTorPlayer) {
       var my = ++playSeq;
-      var tryAt = function (i) {
-        if (my !== playSeq) return; // outro vídeo foi aberto / "parar"
-        if (i >= list.length) {
-          log('nenhum nó respondeu — caindo no WebTorrent');
-          note('Nenhum nó respondeu; tentando no navegador (WebTorrent)…', 'warn');
-          playTorrentBrowser(item);
-          return;
+      player = window.FdsTorPlayer.play({
+        host: box,
+        item: item,
+        nodes: nodes,
+        rank: nodeRank,
+        log: log,
+        note: note,
+        onUsage: nodesRefresh,
+        onRetry: function () { if (my === playSeq) playTorrent(item); },
+        onFail: function (reason, tech) {
+          if (my !== playSeq) return;
+          note('Não consegui abrir este torrent nos nós: ' + (tech || reason) + ' Tente outro resultado.', 'warn');
         }
-        var node = list[i];
-        log('nó escolhido: ' + node + (list.length > 1 ? ' (' + (i + 1) + '/' + list.length + ')' : ''));
-        note('Acordando o nó… (pode levar ~1 min)');
-        wakeNode(node, my)
-          .then(function (txt) {
-            if (my !== playSeq) return;
-            log('ping respondeu: ' + txt);
-            return openOnNode(node, item);
-          })
-          .catch(function (e) {
-            if (my !== playSeq) return;
-            log('falha no nó: ' + e.message + (i + 1 < list.length ? ' — tentando o próximo nó' : ''));
-            tryAt(i + 1);
-          });
-      };
-      tryAt(0);
+      });
       return;
     }
     log('sem nó configurado — usando WebTorrent do navegador');
@@ -446,8 +292,19 @@
       play.className = 'ghost';
       play.style.cssText = 'margin-top:.3rem;margin-left:.4rem';
       play.textContent = 'tocar aqui';
-      play.title = 'Toca o vídeo no próprio navegador (WebTorrent); pode demorar para pegar peers.';
+      play.title = 'Toca o vídeo (nós do streamer; sem nó, WebTorrent no navegador). Mostra o progresso e junta um colchão para não travar.';
       play.addEventListener('click', function () { playTorrent(item); });
+      // Mouse parado em cima (0,7 s) ou dedo encostando: já acorda o nó e abre o torrent lá (ganha alguns segundos no
+      // clique). A espera evita acordar nó / baixar o começo de todo resultado por onde o mouse só passou.
+      var warmTimer = null;
+      var warmIt = function () { if (window.FdsTorPlayer && nodes.length) window.FdsTorPlayer.prewarm(item, nodes, nodeRank); };
+      var warmSoon = function () { clearTimeout(warmTimer); warmTimer = setTimeout(warmIt, 700); };
+      var warmCancel = function () { clearTimeout(warmTimer); };
+      play.addEventListener('mouseenter', warmSoon);
+      play.addEventListener('focus', warmSoon);
+      play.addEventListener('mouseleave', warmCancel);
+      play.addEventListener('blur', warmCancel);
+      play.addEventListener('touchstart', warmIt, { passive: true });
       row.appendChild(play);
       row.appendChild(document.createTextNode(' '));
       var stop = document.createElement('button');

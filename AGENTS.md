@@ -248,6 +248,31 @@ variável própria dele.
   "re-streaming de mídia" como proibidos, com suspensão imediata sem aviso ("multi-account abuse" também). O dono foi avisado; decisão dele.
   Testes: `test/torrentNodes.test.js`. E2E local (nó → servidor → painel) medido: 20 MB de saída contados exatos.
 - **Nós de torrent: a lista são as ENVS (corrigido 2026-11-20).** Com `TORRENT_NODES` definida o painel mostra **exatamente** esses nós (nº de nós = nº de URLs da env; cota de horas = nº × 100). Bug antigo: a lista crescia a cada reinício de container, porque o nó se batizava pelo `Host` da 1ª requisição (a sonda interna do provedor: `https://10.0.11.39:8080`, ou `http://` em vez de `https://`) e o servidor aceitava toda URL nova como nó novo; o consumo real ficava nas linhas `http://` e as linhas da env mostravam 0. **O dono NÃO consegue reenviar os nós**, então a correção é toda no servidor (`lib/torrentNodes.js`): (1) o nó é casado pelo **nome do host** (`resolveNode`; http/https/porta não criam nó); (2) relatório de URL desconhecida (IP interno) **não é descartado**: fica retido (`held`) e o servidor pergunta ao `/usage` PÚBLICO de cada nó da env qual `url` ele usa para se anunciar (`learnAlias`; GET em nó dormindo não acorda nada, só devolve a página "Waking up", então só o acordado responde, que é o que está reportando); achou ⇒ o retido entra no nó certo e os próximos relatórios caem direto; (3) o vínculo vence após 20 min sem relatório (o IP interno pode ser reaproveitado por outro container) e é refeito; sondagem no máx. 1x/3 min por URL, retém até 10 URLs por 6 h; (4) linhas antigas do Supabase com http/https do mesmo host somam no nó da env, com IP interno ou nó de teste ficam de fora; (5) `?nodes=` do navegador só vale SEM a env e o front substitui a lista salva pelo `configured`. O painel avisa "⏳ Identificando de qual nó da env é: …" enquanto há retido. O streamer novo (`deploy/torrent-streamer/index.js`) só se batiza com nome de domínio público, sempre `https`, mas **não precisa ser reenviado** para nada disso funcionar. Sem a env, vale o modo antigo. Linhas velhas em `torrent_node_usage_daily` continuam lá, só não aparecem. Testes: `test/torrentNodes.test.js` (inclui o caso do IP interno com nó dormindo).
+- **Player de torrent "esperto" (`public/torplayer.js`, 2026-11-24; só admin por enquanto).** Os 2 nós das envs rodam num Docker que o dono
+  **não consegue mais reenviar**, então TUDO é feito no navegador, só com as rotas que os nós já têm (`/health`, `/ping`, `/status`, `/prepare`,
+  `/stream`). **Não mexa em `deploy/torrent-streamer` esperando que valha para os nós no ar.** `torrents.js` só liga o botão "tocar aqui" a
+  `FdsTorPlayer.play(...)`; o caminho WebTorrent (sem nó) segue como estava. O módulo faz:
+  1. **Escolha do nó** (`probe`/`orderNodes`): `/health` em todos ao mesmo tempo (nó dormindo responde página sem CORS = falha rápida). Vence quem já
+     tem o filme pronto > acordado (menos engines) > dormindo ("preso" ao hash, esgotados do painel por último). Todos dormindo ⇒ `wakeRace`
+     acorda o preferido e, se passar de 20 s, o próximo em paralelo (quem perde para de tentar). `prewarm()` no botão (mouse parado 0,7 s ou toque).
+  2. **Magnet com mais trackers HTTP(S)** (`boostMagnet`): o nó só consegue TCP e a lista dele tem tracker morto (bt4g dá 521). Lista conferida viva em 2026-11-24;
+     **não medido o ganho de peers no SnapDeploy real** (só dá para medir lá).
+  3. **Colchão antes de tocar** (`needBytes`): `/status` dá `downloadedMB`/velocidade; com a duração do `<video>` escondido tira o bitrate.
+     Libera quando `baixado ≥ 14 s de filme + max(0, bitrate − 0,85·velocidade) × min(duração, 300 s)` (tocar sem parar por ~5 min), ou colchão parcial
+     (≥45 s de filme) após 90 s de espera, ou 240 s no máximo, ou botão "Tocar assim mesmo" (aparece após 12 s). **Download parado** (arquivo já no disco do
+     nó ou sem peers) libera na hora se o navegador já guardou ≥10 s; sem isso esperaria 4 min à toa (medido).
+  4. **Pausa inteligente durante o filme** (`monitorTick`): com <1,2 s à frente PAUSA sozinho e retoma ao juntar 6–30 s (maior quanto pior a conexão);
+     avançar para trecho sem dados pausa na hora ("Indo para 1:50…", retoma com ≤8 s). Respeita pausa/play da pessoa; erro de rede reconecta e volta ao ponto.
+     Tela cheia é botão próprio (⛶ ou `f`) para o overlay aparecer; `controlslist=nofullscreen` no `<video>`.
+  5. **Progresso sem detalhe técnico:** anel com %, barra, 4 etapas e frases neutras (`TIPS`); peers/KB/s/nome do nó só em `.tp-tech.admin-only` e no log do admin.
+     `test/torplayer.test.js` varre os textos visíveis contra palavras proibidas. O overlay se adapta à altura (container query) para caber no celular.
+  **Medido num laboratório local (Firefox/Playwright, seeder com limite de upload, filme de 150 s ≈ 199 KB/s; NÃO é o SnapDeploy):** seeder a 100 KB/s — antigo: tocou aos 67 s
+  e engasgou 5× (46 s parado em 160 s); novo: tocou aos 158 s, **0 engasgos**, terminou aos 308 s (o limite é o download: nenhum jeito termina antes). Seeder a 160 KB/s com avanço
+  para 1:50 — antigo: 6 engasgos (7 s) e ficou vivendo com ~1 s à frente; novo: pausou ~10 s, retomou e terminou sem engasgar. Swarm rápido: 1º play em 6,8 s (sem espera extra).
+  Arquivo no disco do nó sem peers: 5,1 s. App real (index.html em modo admin, resultado de torrent simulado): hover → clique → etapas → tocando, ok.
+  **Limite físico:** com velocidade < bitrate não existe "começar já E nunca travar"; o player troca várias travadinhas por uma espera inicial clara + pausas raras e longas.
+  **Pendente (precisa dos nós reais):** conferir em Chrome (testei só Firefox), o ganho dos trackers extras, e o tempo real de acordar o SnapDeploy. Próximo passo: fila para o público
+  (reaproveitar `FdsTorPlayer`; o texto já é neutro).
 - **Descartadas (medido):** Dailymotion (busca aberta, mas o manifesto responde 403 `E005` — trava
   deliberada, não contornar), Odysee (busca aberta; CDN exige Referer do site e devolve 429), ok.ru
   (login), Rumble (sem resposta). **AnimePahe** (`animepahe.ru`): o site responde 200 (casca JS), mas
@@ -501,6 +526,6 @@ e `GET /api/admin/devices/roku.zip` (monta na hora com `lib/rokuKit.js`, embute 
 
 ## Como rodar e testar
 
-- `npm start` (porta `PORT`, padrão 3000) · `npm test` (331 testes, `node --test test/*.test.js`).
+- `npm start` (porta `PORT`, padrão 3000) · `npm test` (386 testes, `node --test test/*.test.js`).
 - Manutenção/"mudamos de URL": tela "Site" do admin (`lib/siteStatus.js`, `public/sitegate.js`, `public/site.js`; tabela `pix_settings` no Supabase).
 - Docs: `docs/DEPLOY-RENDER.md`, `docs/VERCEL-POOL.md`, `docs/TV-AO-VIVO.md`, `docs/VISITANTES.md`, `docs/API.md`.
