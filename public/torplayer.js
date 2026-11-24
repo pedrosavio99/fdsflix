@@ -17,8 +17,13 @@
  *  5. PROGRESSO VISÍVEL em linguagem NEUTRA (etapas, % e frases), no lugar do terminal. Nada de nó, peers,
  *     servidor ou banda para quem não é admin: o detalhe técnico fica em `.admin-only` (e no log do admin).
  *
- * API:  FdsTorPlayer.play({ host, item:{hash,magnet,title}, nodes, rank, log, note, onFail, onUsage })
- *         -> { destroy(), video() }       FdsTorPlayer.prewarm(item, nodes, rank)
+ *  6. VÁRIAS CÓPIAS: `item.alts` são candidatos reserva. Se a atual está lenta (>60 s para liberar) ou sem peers, testa a
+ *     próxima EM PARALELO e fica com a que vai ficar pronta primeiro ("mais seeds" nem sempre é a mais rápida).
+ *     Ganchos para aprender: onSpeed(hash,kBs), onReady({hash,kBs}), onBad(hash,motivo).
+ *
+ * API:  FdsTorPlayer.play({ host, item:{hash,magnet,title,size,alts:[{hash,magnet,size}]}, nodes, rank, log, note,
+ *         mode:'public' (textos divertidos), fill (preenche o contêiner), runtimeMin, onFail, onUsage, onReady, onSpeed, onBad })
+ *         -> { destroy(), video(), state() }       FdsTorPlayer.prewarm(item, nodes, rank)
  */
 (function (root) {
   'use strict';
@@ -259,6 +264,7 @@
     '@keyframes tpspin{to{transform:rotate(270deg)}}',
     '@keyframes tpslide{0%{left:-40%}100%{left:102%}}',
     '@keyframes tpfade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}',
+    '.tp.tp-fill{position:absolute;inset:0;aspect-ratio:auto;max-height:none;border-radius:0}',
     '.tp-ov{overflow:hidden}',
     '.tp-sub{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}',
     /* player baixo (janela pequena/celular): tira o que não cabe, na ordem do menos importante */
@@ -283,48 +289,110 @@
     return e;
   }
 
-  var STEPS = [
-    ['connect', 'Iniciando a sessão'],
-    ['find', 'Localizando o filme'],
-    ['load', 'Carregando o começo'],
-    ['buffer', 'Preparando para tocar sem travar']
-  ];
+  /*COPY-BEGIN*/
+  // Tudo o que a PESSOA lê está aqui (test/torplayer.test.js confere contra palavras técnicas).
+  // `std` = neutro; `fun` = variante do público quando o filme não estava na prateleira principal.
+  var COPY = {
+    std: {
+      steps: ['Iniciando a sessão', 'Localizando o filme', 'Carregando o começo', 'Preparando para tocar sem travar'],
+      tips: [
+        'Hora de pegar a pipoca 🍿',
+        'Ajeitando as luzes da sala…',
+        'Quase lá…',
+        'Silenciando o celular, o filme já vai começar',
+        'Caprichando na imagem e no som…',
+        'Segura que vem coisa boa 🎬'
+      ],
+      title: {
+        connect: 'Iniciando…', find: 'Localizando o filme…', load: 'Carregando o começo…',
+        buffer: 'Preparando para tocar sem travar…', ready: 'Tudo pronto!', rebuffer: 'Carregando mais um pouco…',
+        seek: 'Indo para {t}…', reconnect: 'Reconectando…', error: 'Não consegui carregar este filme agora.'
+      },
+      sub: {
+        connectSlow: 'Isso pode levar um minutinho na primeira vez…', load: 'Só mais um pouquinho.',
+        buffer: 'Medindo a velocidade para não travar no meio.', rebuffer: 'Para o filme não travar.',
+        seek: 'Buscando esse ponto do filme.', reconnect: 'Só um instante.', error: 'Tente outra opção da lista.',
+        slow: 'Este filme está chegando devagar; juntando um pouco mais para não travar. ', almost: 'Quase pronto. ',
+        measuring: 'Medindo a velocidade para não travar no meio…'
+      },
+      feed: {
+        start: 'Iniciando a sessão', started: 'Sessão iniciada', find: 'Localizando o filme', found: 'Filme localizado',
+        load: 'Carregando o começo', loaded: 'Começo carregado', buffer: 'Preparando para tocar sem travar', ready: 'Tudo pronto',
+        swap: 'Achei um caminho melhor'
+      }
+    },
+    fun: {
+      steps: ['Chamando o projetista', 'Achando a lata do filme', 'Rebobinando o começo', 'Ajeitando a pipoca e o som'],
+      tips: [
+        'Calma lá! Esse filme não estava na prateleira principal. Fomos buscar num cantinho especial. 🎞️',
+        'Pode demorar um pouquinho, tenha paciência. Vai buscar a pipoca! 🍿',
+        'Gosto peculiar tem seus tesouros. Calma lá…',
+        'Procurando a lata do filme no fundo do arquivo…',
+        'Quase lá… (de verdade, dessa vez)',
+        'Dica: celular no silencioso, o filme vai começar.'
+      ],
+      title: {
+        connect: 'Ora, ora… temos um cinéfilo de gostos peculiares!', find: 'Ora, ora… temos um cinéfilo de gostos peculiares!',
+        load: 'Desenterrando o começo do filme…', buffer: 'Ajeitando a pipoca… 🍿', ready: 'Pronto! Bom filme! 🎬',
+        rebuffer: 'Respira, já volta! 🍿', seek: 'Pulando para {t}…', reconnect: 'Perdemos o fio da meada…',
+        error: 'Poxa, esse filme fugiu da gente.'
+      },
+      sub: {
+        connectSlow: 'Raridade leva tempo. Tenha paciência, cinéfilo!', load: 'Raridade chega devagar, mas chega. 🎞️',
+        buffer: 'Vendo se a entrega aguenta o filme inteiro sem engasgar.', rebuffer: 'Filme raro às vezes atrasa a entrega.',
+        seek: 'Procurando essa cena na lata do filme.', reconnect: 'Já já a gente reencontra.', error: 'Tente outro título ou volte mais tarde.',
+        slow: 'Está vindo devagarzinho; juntando um pouco mais para não engasgar. Paciência, cinéfilo! ', almost: 'Falta pouco! ',
+        measuring: 'Vendo a velocidade da entrega…'
+      },
+      feed: {
+        start: 'Chamando o projetista', started: 'Projetista a postos', find: 'Achando a lata do filme', found: 'Lata encontrada',
+        load: 'Rebobinando o começo', loaded: 'Começo rebobinado', buffer: 'Ajeitando a pipoca e o som', ready: 'Pronto',
+        swap: 'Achei uma cópia melhor'
+      }
+    }
+  };
+  /*COPY-END*/
 
-  var TIPS = [
-    'Hora de pegar a pipoca 🍿',
-    'Ajeitando as luzes da sala…',
-    'Quase lá…',
-    'Silenciando o celular, o filme já vai começar',
-    'Caprichando na imagem e no som…',
-    'Segura que vem coisa boa 🎬'
-  ];
-
+  var STEP_KEYS = ['connect', 'find', 'load', 'buffer'];
   var RING_LEN = 2 * Math.PI * 36; // r = 36
+  var GUESS_BPS = 190 * 1024;      // ~1,5 Mbps quando não dá para saber o bitrate
 
   /* ------------------------------ o player ------------------------------ */
 
   function play(opts) {
     injectCss();
     var host = opts.host;
+    var copy = COPY[opts.mode === 'public' ? 'fun' : 'std'];
     var item = opts.item || {};
+    // Candidatos: o escolhido + alternativas (o 2º às vezes é mais rápido que o 1º, mesmo com menos seeds).
+    var cands = [item].concat((item.alts || []).filter(function (c) { return c && c.hash; }));
+    var nextAlt = 1;
     var hash = String(item.hash || '').toLowerCase();
     var nodes = (opts.nodes || []).slice();
     var rank = opts.rank || [];
     var logFn = opts.log || function () {};
     var noteFn = opts.note || function () {};
     var magnet = boostMagnet(item.magnet, hash);
+    var runtimeSec = (Number(opts.runtimeMin) || 0) * 60;
 
     var dead = false;
+    var gen = 0;          // sobe a cada troca de candidato: os laços antigos se aposentam sozinhos
     var timers = [];
     var ctl = {
       dead: function () { return dead; },
       log: function (m) { logFn(m); },
       tick: function (node, secs) { onConnectTick(secs); }
     };
+    function live(g) { return !dead && g === gen; }
+    function T(group, key, vars) {
+      var t = copy[group][key] || '';
+      if (vars) for (var k in vars) t = t.replace('{' + k + '}', vars[k]);
+      return t;
+    }
 
     /* ---- DOM ---- */
     host.textContent = '';
-    var wrap = el('div', 'tp');
+    var wrap = el('div', 'tp' + (opts.fill ? ' tp-fill' : ''));
     wrap.tabIndex = 0;
     var video = document.createElement('video');
     video.className = 'tp-video';
@@ -339,29 +407,25 @@
     ring.innerHTML = '<svg viewBox="0 0 86 86"><circle class="bg" cx="43" cy="43" r="36"></circle><circle class="fg" cx="43" cy="43" r="36" stroke-dasharray="' + RING_LEN.toFixed(1) + '" stroke-dashoffset="' + RING_LEN.toFixed(1) + '"></circle></svg>';
     var pctEl = el('div', 'tp-pct', '');
     ring.appendChild(pctEl);
-    var titleEl = el('div', 'tp-title', 'Iniciando…');
-    var subEl = el('div', 'tp-sub', TIPS[0]);
+    var titleEl = el('div', 'tp-title', T('title', 'connect'));
+    var subEl = el('div', 'tp-sub', copy.tips[0]);
     var bar = el('div', 'tp-bar indet');
     var barFill = document.createElement('i');
     bar.appendChild(barFill);
     var stepsEl = el('ol', 'tp-steps');
     var stepLis = {};
-    STEPS.forEach(function (s) {
+    STEP_KEYS.forEach(function (k, i) {
       var li = document.createElement('li');
-      var dot = el('span', 'tp-dot', '');
-      li.appendChild(dot);
-      li.appendChild(el('span', '', s[1]));
+      li.appendChild(el('span', 'tp-dot', ''));
+      li.appendChild(el('span', '', copy.steps[i]));
       stepsEl.appendChild(li);
-      stepLis[s[0]] = li;
+      stepLis[k] = li;
     });
     var feedEl = el('div', 'tp-feed');
     var techEl = el('div', 'tp-tech admin-only', '');
     var skipBtn = el('button', 'tp-btn', 'Tocar assim mesmo');
     skipBtn.type = 'button';
     skipBtn.hidden = true;
-    var retryBtn = el('button', 'tp-btn', 'Tentar de novo');
-    retryBtn.type = 'button';
-    retryBtn.hidden = true;
     ov.appendChild(ring);
     ov.appendChild(titleEl);
     ov.appendChild(subEl);
@@ -370,7 +434,6 @@
     ov.appendChild(feedEl);
     ov.appendChild(techEl);
     ov.appendChild(skipBtn);
-    ov.appendChild(retryBtn);
     var fsBtn = el('button', 'tp-fs', '⛶');
     fsBtn.type = 'button';
     fsBtn.title = 'Tela cheia';
@@ -393,19 +456,16 @@
     /* ---- estado de progresso ---- */
     var phase = 'connect';
     var maxPct = 0;
-    var startedAt = now();
     var tipIdx = 0;
     var feed = [];
 
-    function say(text) {
-      if (feed.length && feed[feed.length - 1] === text) return;
+    function say(key) {
+      var text = copy.feed[key];
+      if (!text || (feed.length && feed[feed.length - 1] === text)) return;
       feed.push(text);
       if (feed.length > 3) feed.shift();
       feedEl.textContent = '';
-      feed.forEach(function (t, i) {
-        var d = el('div', '', (i === feed.length - 1 ? '› ' : '✓ ') + t.replace(/^[✓› ]+/, ''));
-        feedEl.appendChild(d);
-      });
+      feed.forEach(function (t, i) { feedEl.appendChild(el('div', '', (i === feed.length - 1 ? '› ' : '✓ ') + t)); });
     }
 
     function setRing(pct, indet) {
@@ -413,34 +473,30 @@
       bar.classList.toggle('indet', !!indet);
       if (indet) { pctEl.textContent = ''; return; }
       pct = clamp(pct, 0, 100);
-      if (pct < maxPct && phase !== 'rebuffer' && phase !== 'seek') pct = maxPct; else if (phase !== 'rebuffer' && phase !== 'seek') maxPct = pct;
+      var pre = phase !== 'rebuffer' && phase !== 'seek';
+      if (pre) { if (pct < maxPct) pct = maxPct; else maxPct = pct; }
       ring.querySelector('.fg').style.strokeDashoffset = (RING_LEN * (1 - pct / 100)).toFixed(1);
       barFill.style.width = pct.toFixed(1) + '%';
       pctEl.textContent = Math.round(pct) + '%';
     }
 
     function setSteps(cur) {
-      var idx = -1;
-      STEPS.forEach(function (s, i) { if (s[0] === cur) idx = i; });
-      STEPS.forEach(function (s, i) {
-        var li = stepLis[s[0]];
+      var idx = STEP_KEYS.indexOf(cur);
+      STEP_KEYS.forEach(function (k, i) {
+        var li = stepLis[k];
         li.className = cur === 'ready' || i < idx ? 'done' : (i === idx ? 'on' : '');
         li.firstChild.textContent = cur === 'ready' || i < idx ? '✓' : '';
       });
     }
 
-    function showOv(lite) {
-      ov.classList.remove('tp-off');
-      ov.classList.toggle('tp-lite', !!lite);
-    }
-
+    function showOv(lite) { ov.classList.remove('tp-off'); ov.classList.toggle('tp-lite', !!lite); }
     function hideOv() { ov.classList.add('tp-off'); }
 
     function setPhase(p, title, sub) {
       phase = p;
       if (title != null) titleEl.textContent = title;
       if (sub != null) subEl.textContent = sub;
-      if (STEPS.some(function (s) { return s[0] === p; })) setSteps(p);
+      if (STEP_KEYS.indexOf(p) !== -1) setSteps(p);
     }
 
     function setTech(text) { techEl.textContent = text || ''; }
@@ -449,8 +505,8 @@
     timers.push(setInterval(function () {
       if (dead || phase === 'error' || phase === 'play' || phase === 'rebuffer' || phase === 'seek') return;
       if (!skipBtn.hidden && phase === 'buffer') return;
-      tipIdx = (tipIdx + 1) % TIPS.length;
-      if (phase === 'connect' || phase === 'find') subEl.textContent = TIPS[tipIdx];
+      tipIdx = (tipIdx + 1) % copy.tips.length;
+      if (phase === 'connect' || phase === 'find') subEl.textContent = copy.tips[tipIdx];
     }, 4500));
 
     /* ---- coleta de números do nó ---- */
@@ -462,56 +518,168 @@
     var prep = null;       // resposta do /prepare (tamanho, remux, nome)
     var legacy = false;
     var statusFails = 0;
+    var candT0 = now();    // quando o candidato atual começou a ser tentado
 
-    function pushSample(st) {
+    function sampleInto(st, smp, prevEma) {
       var dl = (st.downloadedMB || 0) * MB;
       var t = now();
-      samples.push({ t: t, dl: dl });
-      while (samples.length > 2 && t - samples[0].t > 15000) samples.shift();
+      smp.push({ t: t, dl: dl });
+      while (smp.length > 2 && t - smp[0].t > 15000) smp.shift();
       var v = 0;
-      if (samples.length >= 2) {
-        var a = samples[0];
-        var b = samples[samples.length - 1];
+      if (smp.length >= 2) {
+        var a = smp[0];
+        var b = smp[smp.length - 1];
         if (b.t - a.t >= 1500) v = Math.max(0, (b.dl - a.dl) / ((b.t - a.t) / 1000));
       }
       var sp = (st.speedKBs || 0) * 1024;
       if (!v) v = sp; else v = Math.max(v, sp * 0.6);
-      vEma = vEma ? vEma * 0.6 + v * 0.4 : v;
+      return prevEma ? prevEma * 0.6 + v * 0.4 : v;
+    }
+
+    function lastOf(st) {
+      var w = st.warm || {};
+      return {
+        wires: st.wires || 0, speedKBs: st.speedKBs || 0, dl: (st.downloadedMB || 0) * MB,
+        headMB: w.headMB || 0, tailMB: w.tailMB || 0, headNeedMB: w.headNeedMB || 0, tailNeedMB: w.tailNeedMB || 0,
+        warmDone: !!w.done, ready: !!st.ready, reason: st.reason || ''
+      };
     }
 
     function readStatus(st) {
-      var w = st.warm || {};
-      last.wires = st.wires || 0;
-      last.speedKBs = st.speedKBs || 0;
-      last.dl = (st.downloadedMB || 0) * MB;
-      last.headMB = w.headMB || 0; last.tailMB = w.tailMB || 0;
-      last.headNeedMB = w.headNeedMB || 0; last.tailNeedMB = w.tailNeedMB || 0;
-      last.warmDone = !!w.done;
-      last.ready = !!st.ready;
-      last.reason = st.reason || '';
-      pushSample(st);
+      vEma = sampleInto(st, samples, vEma);
+      last = lastOf(st);
     }
 
     function techLine() {
       var host2 = (node || '').replace(/^https?:\/\//, '').split('.')[0];
       return 'nó ' + (host2 || '?') + ' · ' + last.wires + ' peers · ' + Math.round(vEma / 1024) + ' KB/s · baixado ' + (last.dl / MB).toFixed(1) + ' MB' +
-        (prep && prep.size ? ' de ' + (prep.size / MB).toFixed(0) + ' MB' : '');
+        (prep && prep.size ? ' de ' + (prep.size / MB).toFixed(0) + ' MB' : '') + (cands.length > 1 ? ' · cópia ' + (cands.indexOf(curCand) + 1) + '/' + cands.length : '');
     }
 
     function fetchStatus() {
       return fetchJson(base.status, 6000).then(function (st) { statusFails = 0; readStatus(st); return st; });
     }
 
+    var curCand = item;
+
+    /* ---- corrida entre candidatos ---- */
+    var ch = null;          // desafiante { c, t0, base, samples, vEma, last, timer }
+    var tried = 1;
+    var MAX_TRIED = 3;
+
+    function urlsFor(n, c) {
+      var qs = '/' + String(c.hash).toLowerCase() + '?magnet=' + encodeURIComponent(boostMagnet(c.magnet, c.hash));
+      return { status: n + '/status' + qs, prepare: n + '/prepare' + qs, stream: n + '/stream' + qs };
+    }
+
+    // Tempo (s) até poder liberar o filme, com o que se sabe de um candidato. Infinity = ainda não dá para dizer.
+    function etaReady(c, st) {
+      if (!st.last.ready) return Infinity;
+      var size = (c === curCand && prep && prep.size) ? prep.size : (Number(c.size) || 0);
+      var dur = runtimeSec || (c === curCand ? durationSec() : 0);
+      var b = size && dur ? size / dur : GUESS_BPS;
+      var floor = b * 14;
+      var need = size ? clamp(floor + Math.max(0, b - st.vEma * 0.85) * Math.min(dur || 300, 300), Math.min(floor, size), size) : floor;
+      var have = Math.max(0, st.last.dl - st.last.tailMB * MB);
+      if (have >= need) return 0;
+      return st.vEma > 1024 ? (need - have) / st.vEma : Infinity;
+    }
+
+    function curEta() { return etaReady(curCand, { last: last, vEma: vEma }); }
+
+    function maybeChallenge(g) {
+      if (!live(g) || ch || nextAlt >= cands.length || tried >= MAX_TRIED) return;
+      if (phase !== 'find' && phase !== 'load' && phase !== 'buffer') return;
+      if (now() - candT0 < 18000) return;
+      var eta = curEta();
+      if (eta <= 60) return;
+      var c = cands[nextAlt++];
+      tried += 1;
+      ch = { c: c, t0: now(), base: urlsFor(node, c), samples: [], vEma: 0, last: { ready: false, dl: 0, tailMB: 0 }, timer: null, g: g };
+      logFn('a cópia atual está lenta (previsão ' + (isFinite(eta) ? Math.round(eta) + 's' : 'sem dados') + '): testando outra em paralelo');
+      var mine = ch;
+      mine.timer = setInterval(function () {
+        if (!live(mine.g) || ch !== mine) { clearInterval(mine.timer); return; }
+        fetchJson(mine.base.status, 6000).then(function (st) {
+          if (!live(mine.g) || ch !== mine) return;
+          mine.vEma = sampleInto(st, mine.samples, mine.vEma);
+          mine.last = lastOf(st);
+          var age = now() - mine.t0;
+          var etaC = etaReady(mine.c, mine);
+          var etaP = curEta();
+          if (age >= 6000 && isFinite(etaC) && (!isFinite(etaP) || (age >= 12000 && etaC < etaP * 0.6))) {
+            clearInterval(mine.timer);
+            switchTo(mine);
+          } else if (age >= 45000) {
+            logFn('a outra cópia não ficou melhor — fico com a atual');
+            clearInterval(mine.timer);
+            if (opts.onSpeed) opts.onSpeed(mine.c.hash, Math.round(mine.vEma / 1024));
+            ch = null;
+          }
+        }).catch(function () { /* tenta no próximo ciclo */ });
+      }, 1500);
+    }
+
+    function resetForCandidate(c, st) {
+      curCand = c;
+      hash = String(c.hash).toLowerCase();
+      magnet = boostMagnet(c.magnet, hash);
+      base = st.base;
+      samples = st.samples;
+      last = st.last.warmDone !== undefined ? st.last : lastOf({});
+      vEma = st.vEma || 0;
+      prep = null;
+      legacy = false;
+      statusFails = 0;
+      candT0 = st.t0 || now();
+      started = false;
+      D = 0;
+      userGaveUp = false;
+      try { video.removeAttribute('src'); video.load(); } catch (e) { /* ok */ }
+      skipBtn.hidden = true;
+    }
+
+    function switchTo(st) {
+      var old = curCand;
+      logFn('trocando de cópia: ' + Math.round(vEma / 1024) + ' KB/s → ' + Math.round(st.vEma / 1024) + ' KB/s');
+      if (!last.ready && opts.onBad) opts.onBad(old.hash, 'sem fonte');   // nem metadados veio: não serve
+      else if (opts.onSpeed) opts.onSpeed(old.hash, Math.round(vEma / 1024));
+      gen += 1;
+      var g = gen;
+      resetForCandidate(st.c, st);
+      ch = null;
+      setPhase('find', T('title', 'find'), copy.tips[tipIdx]);
+      say('swap');
+      findLoop(g);
+    }
+
+    // A cópia atual não serve (sem metadados / sem vídeo): vai para a próxima, sem corrida.
+    function advanceCandidate(why) {
+      if (nextAlt >= cands.length) return false;
+      if (ch) { clearInterval(ch.timer); ch = null; }
+      var c = cands[nextAlt++];
+      tried += 1;
+      logFn('cópia descartada (' + why + '); tentando outra');
+      if (opts.onBad) opts.onBad(curCand.hash, why);
+      gen += 1;
+      var g = gen;
+      resetForCandidate(c, { base: urlsFor(node, c), samples: [], last: lastOf({}), vEma: 0, t0: now() });
+      setPhase('find', T('title', 'find'), copy.tips[tipIdx]);
+      say('swap');
+      findLoop(g);
+      return true;
+    }
+
     /* ---- etapa 1: escolher/acordar o nó ---- */
     function onConnectTick(secs) {
       if (phase !== 'connect') return;
       setRing(2 + 16 * (1 - Math.exp(-secs / 28)), false);
-      subEl.textContent = secs < 12 ? TIPS[tipIdx] : 'Isso pode levar um minutinho na primeira vez…';
+      subEl.textContent = secs < 12 ? copy.tips[tipIdx] : T('sub', 'connectSlow');
     }
 
     function failNow(reason, techReason) {
       if (dead) return;
-      setPhase('error', 'Não consegui carregar este filme agora.', 'Tente outra opção da lista.');
+      setPhase('error', T('title', 'error'), T('sub', 'error'));
       ring.classList.remove('indet');
       bar.classList.remove('indet');
       barFill.style.width = '0';
@@ -521,13 +689,14 @@
       showOv(false);
       setTech(techReason || reason || '');
       logFn('FALHA: ' + (techReason || reason || ''));
+      if (opts.onBad && /sem fonte|sem vídeo/.test(reason || '')) opts.onBad(curCand.hash, reason);
       if (opts.onFail) opts.onFail(reason || 'falha', techReason || '');
     }
 
     function begin() {
-      setPhase('connect', 'Iniciando…', TIPS[0]);
+      setPhase('connect', T('title', 'connect'), copy.tips[0]);
       setRing(2, true);
-      say('Iniciando a sessão');
+      say('start');
       if (!nodes.length) { failNow('sem nó', 'nenhum nó configurado'); return; }
       Promise.all(nodes.map(probe)).then(function (probes) {
         if (dead) return null;
@@ -538,40 +707,42 @@
       }).then(function (n) {
         if (dead || !n) return;
         node = n;
-        var qs = '/' + hash + '?magnet=' + encodeURIComponent(magnet);
-        base = { status: node + '/status' + qs, prepare: node + '/prepare' + qs, stream: node + '/stream' + qs };
-        setPhase('find', 'Localizando o filme…', TIPS[tipIdx]);
+        base = urlsFor(node, curCand);
+        candT0 = now();
+        setPhase('find', T('title', 'find'), copy.tips[tipIdx]);
         setRing(18, false);
-        say('Sessão iniciada');
-        say('Localizando o filme');
+        say('started');
+        say('find');
         logFn('preparando torrent (peers + metadados)…');
-        findLoop();
+        findLoop(gen);
       }).catch(function (e) {
         failNow('nenhum nó respondeu', 'nenhum nó respondeu: ' + (e && e.message));
       });
     }
 
     /* ---- etapa 2: peers + metadados (acompanha o /status, sem bloquear) ---- */
-    var FIND_MAX = 150000;
-    function findLoop() {
+    function findMax() { return nextAlt < cands.length ? 75000 : 150000; }
+    function findLoop(g) {
       var t0 = now();
       function step() {
-        if (dead) return;
+        if (!live(g)) return;
         fetchStatus().then(function (st) {
-          if (dead) return;
+          if (!live(g)) return;
           setTech(techLine());
-          if (st.ready) { return afterReady(); }
+          if (st.ready) { return afterReady(g); }
           var secs = (now() - t0) / 1000;
           setRing(18 + 20 * (1 - Math.exp(-secs / 22)), false);
-          if (now() - t0 > FIND_MAX) {
+          maybeChallenge(g);
+          if (now() - t0 > findMax()) {
+            if (advanceCandidate('sem metadados em ' + Math.round(secs) + 's')) return;
             failNow('sem fonte', 'sem metadados em ' + Math.round(secs) + 's: ' + (st.reason || 'sem resposta'));
             return;
           }
           if (Math.round(secs) % 6 === 0) logFn('procurando… ' + Math.round(secs) + 's | peers ' + last.wires + ' | ' + last.speedKBs + ' KB/s');
           return sleep(1200).then(step);
         }).catch(function (e) {
-          if (dead) return;
-          if (e && e.status === 404) { legacy = true; logFn('nó antigo (sem /status) — abrindo direto'); return startVideo(); }
+          if (!live(g)) return;
+          if (e && e.status === 404) { legacy = true; logFn('nó antigo (sem /status) — abrindo direto'); return startVideo(g); }
           statusFails += 1;
           if (statusFails >= 6) { failNow('o nó parou de responder', 'o nó parou de responder (' + (e && e.message) + ')'); return; }
           return sleep(1500).then(step);
@@ -580,50 +751,55 @@
       step();
     }
 
-    function afterReady() {
+    function afterReady(g) {
       // Metadados chegaram: pega tamanho/nome/remux (instantâneo agora).
       return fetchJson(base.prepare, 20000).then(function (p) {
-        if (dead) return;
+        if (!live(g)) return;
         prep = p;
         logFn('prepare: ' + (p.ready ? 'pronto' : 'NÃO pronto') + ' | peers ' + (p.wires || 0) +
           (p.name ? ' | arquivo: ' + p.name + ' (' + Math.round((p.size || 0) / MB) + ' MB)' : '') +
           (p.remux ? ' | converte para MP4 (sem avançar no tempo)' : ''));
-        if (!p.ready) { failNow('sem vídeo', 'o nó não conseguiu abrir este torrent: ' + (p.reason || 'sem resposta')); return; }
-        setPhase('load', 'Carregando o começo…', 'Só mais um pouquinho.');
-        say('Filme localizado');
-        say('Carregando o começo');
-        loadLoop();
+        if (!p.ready) {
+          if (advanceCandidate('sem vídeo: ' + (p.reason || ''))) return;
+          failNow('sem vídeo', 'o nó não conseguiu abrir este torrent: ' + (p.reason || 'sem resposta'));
+          return;
+        }
+        setPhase('load', T('title', 'load'), T('sub', 'load'));
+        say('found');
+        say('load');
+        loadLoop(g);
       }).catch(function (e) {
-        if (dead) return;
-        if (e && e.status === 404) { legacy = true; return startVideo(); }
+        if (!live(g)) return;
+        if (e && e.status === 404) { legacy = true; return startVideo(g); }
         failNow('falha ao preparar', 'falha no /prepare: ' + (e && e.message));
       });
     }
 
     /* ---- etapa 3: começo do arquivo (moov + 6 MB) ---- */
     var LOAD_MAX = 240000;
-    function loadLoop() {
+    function loadLoop(g) {
       var t0 = now();
       var lastLog = 0;
       function step() {
-        if (dead) return;
-        fetchStatus().then(function (st) {
-          if (dead) return;
+        if (!live(g)) return;
+        fetchStatus().then(function () {
+          if (!live(g)) return;
           setTech(techLine());
           var need = (last.headNeedMB || 0) + (last.tailNeedMB || 0);
           var have = Math.min(last.headMB, last.headNeedMB || last.headMB) + Math.min(last.tailMB, last.tailNeedMB || last.tailMB);
           var frac = need > 0 ? clamp(have / need, 0, 1) : 0;
           setRing(38 + 24 * frac, false);
           var secs = Math.round((now() - t0) / 1000);
-          if (last.warmDone) { logFn('começo carregado em ' + secs + 's | peers ' + last.wires + ' | ' + last.speedKBs + ' KB/s'); return startVideo(); }
+          if (last.warmDone) { logFn('começo carregado em ' + secs + 's | peers ' + last.wires + ' | ' + last.speedKBs + ' KB/s'); return startVideo(g); }
+          maybeChallenge(g);
           if (now() - lastLog >= 5000) {
             lastLog = now();
             logFn('baixando o começo… ' + secs + 's | peers ' + last.wires + ' | ' + last.speedKBs + ' KB/s | ' + have.toFixed(1) + '/' + need.toFixed(1) + ' MB');
           }
-          if (now() - t0 > LOAD_MAX) { logFn('o começo demorou demais (' + secs + 's) — seguindo mesmo assim'); return startVideo(); }
+          if (now() - t0 > LOAD_MAX) { logFn('o começo demorou demais (' + secs + 's) — seguindo mesmo assim'); return startVideo(g); }
           return sleep(1200).then(step);
         }).catch(function () {
-          if (dead) return;
+          if (!live(g)) return;
           statusFails += 1;
           if (statusFails >= 6) { failNow('o nó parou de responder', 'o nó parou de responder durante o carregamento'); return; }
           return sleep(1500).then(step);
@@ -636,35 +812,40 @@
     var D = 0;            // duração (s)
     var started = false;
     var userGaveUp = false;
+    var listening = false;
 
     function bitrate() {
       // bytes por segundo de vídeo
       var S = prep && prep.size ? prep.size : 0;
       if (S && D && isFinite(D) && D > 30) return S / D;
-      return 190 * 1024; // sem duração (mkv convertido): chuta ~1,5 Mbps
+      if (S && runtimeSec) return S / runtimeSec;
+      return GUESS_BPS;
     }
 
     function durationSec() {
       var S = prep && prep.size ? prep.size : 0;
       if (D && isFinite(D) && D > 30) return D;
-      return S ? S / bitrate() : 0;
+      return S ? S / bitrate() : (runtimeSec || 0);
     }
 
-    function startVideo() {
-      if (dead || started) return;
+    function startVideo(g) {
+      if (!live(g) || started) return;
       started = true;
-      setPhase('buffer', 'Preparando para tocar sem travar…', 'Medindo a velocidade para não travar no meio.');
-      say('Começo carregado');
-      say('Preparando para tocar sem travar');
-      video.addEventListener('loadedmetadata', function () {
-        D = video.duration;
-        logFn('metadata ok: ' + Math.round(D || 0) + 's');
-      });
-      video.addEventListener('error', onVideoError);
+      setPhase('buffer', T('title', 'buffer'), T('sub', 'buffer'));
+      say('loaded');
+      say('buffer');
+      if (!listening) {
+        listening = true;
+        video.addEventListener('loadedmetadata', function () {
+          D = video.duration;
+          logFn('metadata ok: ' + Math.round(D || 0) + 's');
+        });
+        video.addEventListener('error', onVideoError);
+      }
       video.src = base.stream || '';
       try { video.load(); } catch (e) { /* ok */ }
       if (legacy) { beginPlayback(); return; } // nó antigo: sem /status não há como medir o colchão
-      bufferLoop();
+      bufferLoop(g);
     }
 
     // O que precisa estar baixado a partir do início para tocar sem parar nos próximos HORIZON segundos:
@@ -702,7 +883,7 @@
     var SKIP_AFTER = 12000;
     var SOFT_AFTER = 90000;   // passou disso e já há ~45 s de filme no disco do nó: libera (a pausa inteligente cuida do resto)
     var HARD_MAX = 240000;
-    function bufferLoop() {
+    function bufferLoop(g) {
       var t0 = now();
       var lastLog = 0;
       function go(reason) {
@@ -710,9 +891,9 @@
         beginPlayback();
       }
       function step() {
-        if (dead || phase !== 'buffer') return;
+        if (!live(g) || phase !== 'buffer') return;
         fetchStatus().then(function () {
-          if (dead || phase !== 'buffer') return;
+          if (!live(g) || phase !== 'buffer') return;
           setTech(techLine());
           var need = needBytes();
           var have = haveBytes();
@@ -730,20 +911,19 @@
           if (metaOk && waited >= SOFT_AFTER && have >= b * 45) { return go('colchão parcial: ' + Math.round(have / b) + ' s de filme depois de ' + Math.round(waited / 1000) + 's de espera'); }
           if (waited >= HARD_MAX && metaOk) { return go('tempo máximo de espera (' + Math.round(waited / 1000) + 's)'); }
           if (isFinite(eta)) {
-            subEl.textContent = (ratio < 1
-              ? 'Este filme está chegando devagar; juntando um pouco mais para não travar. '
-              : 'Quase pronto. ') + (eta > 5 ? 'Faltam ' + fmtEta(eta) + '.' : '');
+            subEl.textContent = (ratio < 1 ? T('sub', 'slow') : T('sub', 'almost')) + (eta > 5 ? 'Faltam ' + fmtEta(eta) + '.' : '');
           } else {
-            subEl.textContent = 'Medindo a velocidade para não travar no meio…';
+            subEl.textContent = T('sub', 'measuring');
           }
           if (now() - lastLog >= 5000) {
             lastLog = now();
             logFn('colchão ' + (have / MB).toFixed(1) + '/' + (need / MB).toFixed(1) + ' MB (' + Math.round(frac * 100) + '%) | ' + Math.round(vEma / 1024) + ' KB/s vs filme ' + Math.round(b / 1024) + ' KB/s' +
               (isFinite(eta) ? ' | falta ~' + Math.round(eta) + 's' : ''));
           }
+          maybeChallenge(g);
           return sleep(1000).then(step);
         }).catch(function () {
-          if (dead) return;
+          if (!live(g)) return;
           statusFails += 1;
           if (statusFails >= 6) { failNow('o nó parou de responder', 'o nó parou de responder (colchão)'); return; }
           return sleep(1500).then(step);
@@ -788,6 +968,8 @@
 
     function beginPlayback() {
       if (dead) return;
+      gen += 1; // aposenta os laços da fase de preparo (e qualquer desafiante)
+      if (ch) { clearInterval(ch.timer); ch = null; }
       video.style.visibility = 'visible';
       video.controls = true;
       var p = video.play();
@@ -795,21 +977,23 @@
         setPhase('play', null, null);
         setSteps('ready');
         setRing(100, false);
-        titleEl.textContent = 'Tudo pronto!';
-        say('Tudo pronto');
+        titleEl.textContent = T('title', 'ready');
+        say('ready');
         setTimeout(function () { if (!dead && phase === 'play') hideOv(); }, 450);
         startMonitor();
         noteFn('Tocando.');
+        if (opts.onReady) opts.onReady({ hash: curCand.hash, kBs: Math.round(vEma / 1024), bitrateKBs: Math.round(bitrate() / 1024) });
         if (opts.onUsage) setTimeout(opts.onUsage, 15000);
       };
       if (p && p.then) {
         p.then(fin, function (e) {
-          // autoplay barrado: deixa um botão grande
+          // autoplay barrado: deixa os controles para a pessoa dar o play
           logFn('o navegador pediu um clique para tocar (' + (e && e.name) + ')');
           wantPlay = false;
           setPhase('play', null, null);
           hideOv();
           startMonitor();
+          if (opts.onReady) opts.onReady({ hash: curCand.hash, kBs: Math.round(vEma / 1024), bitrateKBs: Math.round(bitrate() / 1024) });
         });
       } else fin();
     }
@@ -837,8 +1021,8 @@
       rebuf = { why: why, t0: now(), H: H, bufEnd: bufferedEnd(t), growAt: now(), target: t };
       autoPaused = true;
       try { video.pause(); } catch (e) { /* ok */ }
-      setPhase(why === 'seek' ? 'seek' : 'rebuffer', why === 'seek' ? 'Indo para ' + fmtTime(t) + '…' : 'Carregando mais um pouco…',
-        why === 'seek' ? 'Buscando esse ponto do filme.' : 'Para o filme não travar.');
+      setPhase(why === 'seek' ? 'seek' : 'rebuffer', why === 'seek' ? T('title', 'seek', { t: fmtTime(t) }) : T('title', 'rebuffer'),
+        why === 'seek' ? T('sub', 'seek') : T('sub', 'rebuffer'));
       setRing(0, false);
       showOv(true);
       skipBtn.hidden = true;
@@ -873,7 +1057,7 @@
         setRing(frac * 100, false);
         var left = rebuf.H - ahead;
         var eta = vEma > 1024 ? (left * bitrate()) / vEma : Infinity;
-        subEl.textContent = (rebuf.why === 'seek' ? 'Buscando esse ponto do filme' : 'Para o filme não travar') + (isFinite(eta) && eta > 3 ? ' · ' + fmtEta(eta) : '') + '.';
+        subEl.textContent = (rebuf.why === 'seek' ? T('sub', 'seek').replace(/\.$/, '') : T('sub', 'rebuffer').replace(/\.$/, '')) + (isFinite(eta) && eta > 3 ? ' · ' + fmtEta(eta) : '') + '.';
         if (isFinite(dur) && be >= dur - 0.5) return leaveRebuffer('o resto do filme já chegou');
         if (ahead >= rebuf.H) return leaveRebuffer('colchão de ' + ahead.toFixed(0) + ' s');
         // o navegador só guarda um tanto à frente: se parou de crescer e já temos o bastante, vai
@@ -891,7 +1075,7 @@
       if (dead || !started || phase === 'buffer' || !wantPlay || now() < graceUntil) return;
       if (bufferedAhead(video.currentTime) >= 2) return; // trecho já guardado: segue normal
       // já estava pausado por nós? só atualiza o destino
-      if (rebuf) { rebuf.why = 'seek'; rebuf.bufEnd = bufferedEnd(video.currentTime); rebuf.growAt = now(); rebuf.t0 = now(); titleEl.textContent = 'Indo para ' + fmtTime(video.currentTime) + '…'; return; }
+      if (rebuf) { rebuf.why = 'seek'; rebuf.bufEnd = bufferedEnd(video.currentTime); rebuf.growAt = now(); rebuf.t0 = now(); titleEl.textContent = T('title', 'seek', { t: fmtTime(video.currentTime) }); return; }
       enterRebuffer('seek');
     });
 
@@ -905,7 +1089,7 @@
       errors += 1;
       if (errors > 3 || !started) { failNow('falha ao reproduzir', 'o navegador não conseguiu reproduzir (' + (err && err.code) + ')'); return; }
       var at = video.currentTime;
-      setPhase('rebuffer', 'Reconectando…', 'Só um instante.');
+      setPhase('rebuffer', T('title', 'reconnect'), T('sub', 'reconnect'));
       setRing(0, true);
       showOv(true);
       autoPaused = true;
@@ -928,6 +1112,7 @@
     function destroy() {
       if (dead) return;
       dead = true;
+      if (ch) { clearInterval(ch.timer); ch = null; }
       timers.forEach(function (t) { clearInterval(t); clearTimeout(t); });
       try { video.pause(); } catch (e) { /* ok */ }
       try { video.removeAttribute('src'); video.load(); } catch (e) { /* ok */ } // fecha a conexão com o nó
@@ -935,21 +1120,38 @@
       if (wrap.parentNode) wrap.parentNode.removeChild(wrap);
     }
 
-    retryBtn.onclick = function () {
-      destroy();
-      if (opts.onRetry) opts.onRetry();
-    };
-
     begin();
 
     return {
       destroy: destroy,
       video: function () { return video; },
       state: function () {
-        return { phase: phase, node: node, vKBs: Math.round(vEma / 1024), have: haveBytes(), need: needBytes(), D: D, wantPlay: wantPlay, rebuffering: !!rebuf };
+        return { phase: phase, node: node, vKBs: Math.round(vEma / 1024), have: haveBytes(), need: needBytes(), D: D, wantPlay: wantPlay, rebuffering: !!rebuf, cand: cands.indexOf(curCand), hash: curCand.hash };
       }
     };
   }
 
-  root.FdsTorPlayer = { play: play, prewarm: prewarm, boostMagnet: boostMagnet, _t: { orderNodes: orderNodes, fmtTime: fmtTime } };
+  // Tela "estou procurando" no mesmo visual, para quando ainda não há candidato (a busca leva alguns segundos).
+  // O play() depois assume o mesmo contêiner.
+  function pending(opts) {
+    injectCss();
+    var copy = COPY[opts.mode === 'public' ? 'fun' : 'std'];
+    var host = opts.host;
+    host.textContent = '';
+    var wrap = el('div', 'tp' + (opts.fill ? ' tp-fill' : ''));
+    var ov = el('div', 'tp-ov');
+    var ring = el('div', 'tp-ring indet');
+    ring.innerHTML = '<svg viewBox="0 0 86 86"><circle class="bg" cx="43" cy="43" r="36"></circle><circle class="fg" cx="43" cy="43" r="36" stroke-dasharray="' + RING_LEN.toFixed(1) + '" stroke-dashoffset="' + RING_LEN.toFixed(1) + '"></circle></svg>';
+    var bar = el('div', 'tp-bar indet');
+    bar.appendChild(document.createElement('i'));
+    var sub = el('div', 'tp-sub', copy.tips[0]);
+    [ring, el('div', 'tp-title', copy.title.connect), sub, bar].forEach(function (n) { ov.appendChild(n); });
+    wrap.appendChild(ov);
+    host.appendChild(wrap);
+    var i = 0;
+    var timer = setInterval(function () { i = (i + 1) % copy.tips.length; sub.textContent = copy.tips[i]; }, 4500);
+    return { destroy: function () { clearInterval(timer); if (wrap.parentNode) wrap.parentNode.removeChild(wrap); } };
+  }
+
+  root.FdsTorPlayer = { pending: pending, play: play, prewarm: prewarm, boostMagnet: boostMagnet, COPY: COPY, _t: { orderNodes: orderNodes, fmtTime: fmtTime } };
 })(window);

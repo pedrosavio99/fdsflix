@@ -1576,6 +1576,7 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
                 <button id="overlayRetry" class="ghost" type="button" hidden>Tentar de novo</button>
                 <button id="overlayCancel" class="ghost" type="button" hidden>Cancelar</button>
               </div>
+              <div id="torFbHost" hidden style="position:absolute;inset:0;z-index:9"></div>
               <div id="langPick" class="lang-pick" hidden role="group" aria-label="Escolha o áudio">
                 <div class="lp-title">Como você quer assistir? 🍿</div>
                 <div class="lp-sub">Achamos as duas versões. É só escolher!</div>
@@ -1766,6 +1767,7 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
 <script src="/tokyo.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/webtorrent@2.5.0/webtorrent.min.js" defer></script>
 <script src="/torplayer.js"></script>
+<script src="/torfallback.js"></script>
 <script src="/torrents.js"></script>
 <script src="/load.js"></script>
 <script src="/devices.js"></script>
@@ -2425,6 +2427,7 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
     var item = state.selected;
     var provider = EMBED_PROVIDERS[index];
     if (!item || !provider) return;
+    if (window.FdsTorFallback) window.FdsTorFallback.stop();
 
     var url = provider.url(item.type, item.id, state.curS, state.curE);
     try { $('nativePlayer').pause(); } catch (err) { /* ignore */ }
@@ -3119,6 +3122,7 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
   }
 
   function stopPlayback() {
+    if (window.FdsTorFallback) window.FdsTorFallback.stop();
     hideLangPick();
     autoSyncStop();
     clearTimeout(state.hlsWatch);
@@ -4390,7 +4394,9 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
         return response.json().catch(function () { return {}; }).then(function (data) {
           if (!response.ok || !data.url) {
             try { diagDebug(data.debug); } catch (err) { /* o rastro é só diagnóstico */ }
-            throw new Error(data.error || 'O servidor não retornou um vídeo.');
+            var httpErr = new Error(data.error || 'O servidor não retornou um vídeo.');
+            httpErr.status = response.status;
+            throw httpErr;
           }
           return data;
         });
@@ -4501,9 +4507,39 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
           showEmbedOptions();
           return;
         }
-        fail(err.message || 'Erro ao preparar o vídeo.');
-        showEmbedOptions();
+        var plainFail = function () {
+          fail(err.message || 'Erro ao preparar o vídeo.');
+          showEmbedOptions();
+        };
+        if (tryTorrentFallback(err, item, playToken, plainFail)) return;
+        plainFail();
       });
+  }
+
+  // ÚLTIMO recurso (só filmes): nenhuma fonte da cascata achou o título (404) ou todas estavam fora (503). Chama o
+  // motor de torrent; se não houver nó/candidato (servidor responde enabled:false), cai no erro de sempre.
+  function tryTorrentFallback(err, item, playToken, plain) {
+    if (!window.FdsTorFallback || !item || item.type !== 'movie') return false;
+    if (!err || (err.status !== 404 && err.status !== 503)) return false;
+    diag('info', 'Nenhuma fonte entregou: chamando o motor de torrent (último recurso).');
+    hideOverlay();
+    setStatus('working', 'Carregando…');
+    window.FdsTorFallback.start({
+      id: item.id,
+      host: $('torFbHost'),
+      log: function (m) { diag('info', 'torrent: ' + m); },
+      onFail: function (reason, tech) {
+        if (playToken !== state.playToken) return;
+        diag('err', 'torrent falhou: ' + (tech || reason));
+        window.FdsTorFallback.stop();
+        plain();
+      }
+    }).then(function (r) {
+      if (playToken !== state.playToken) return;
+      if (r === 'unavailable') { diag('info', 'torrent: indisponível para este título.'); plain(); }
+      else if (r === 'started') setStatus('ok', '');
+    });
+    return true;
   }
 
   /* ---------------------------------------------------------------- */

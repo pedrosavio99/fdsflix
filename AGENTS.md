@@ -273,6 +273,22 @@ variável própria dele.
   **Limite físico:** com velocidade < bitrate não existe "começar já E nunca travar"; o player troca várias travadinhas por uma espera inicial clara + pausas raras e longas.
   **Pendente (precisa dos nós reais):** conferir em Chrome (testei só Firefox), o ganho dos trackers extras, e o tempo real de acordar o SnapDeploy. Próximo passo: fila para o público
   (reaproveitar `FdsTorPlayer`; o texto já é neutro).
+- **Torrent para o PÚBLICO, só como último recurso (2026-11-24; `lib/torrentPublic.js`, `public/torfallback.js`).** Entra no `renderPlayer` do `index.html` **somente** no
+  `.catch` do `/api/stream`, e só para **filme** com HTTP **404** (nenhuma fonte achou) ou **503** (todas fora) e **sem nenhuma versão já tentada** (`tryTorrentFallback`); qualquer outro caminho
+  (cascata entregou, rede caiu, série) segue idêntico. Se o servidor responder `enabled:false` (sem nó, nós sem banda, `TORRENT_PUBLIC=0`, nada achado, limite por IP) cai no `plainFail` de sempre
+  (erro neutro + "Opção N"). `stopPlayback()`/`playEmbed()` param o torrent. Rotas públicas: `GET /api/torrent/find?id=` (TMDB pt/en + `torrentSearch`, cache 30 min, 429 por IP) e
+  `POST /api/torrent/learn` (só aceita hash que o servidor entregou). **Série fica de fora**: o nó toca o MAIOR arquivo do torrent e `/stream` não escolhe arquivo (pacote de temporada tocaria o episódio errado); só
+  dá com nó novo. **Só funciona com `TORRENT_NODES` na env do Render** (os nós vêm de lá, o público não tem `localStorage`).
+  - **Escolha dos candidatos** (`pickCandidates`/`publicScore`): descarta >3,5 GB (`TORRENT_PUBLIC_MAX_GB`) e sem seed; mp4/YTS +12 (o nó converte mkv com ffmpeg e não deixa avançar); 2160p −25; **velocidade medida antes vale mais que
+    seeds** (`learn`: média por hash 24 h, só em memória; falha −30 cada). A resposta pública só leva `hash/magnet/q/dub/size/seeds` (sem nome de fonte, tracker ou título de release).
+  - **"O 2º às vezes é mais rápido" (observação do dono):** `FdsTorPlayer` recebe `item.alts` e, se a cópia atual levaria >60 s para liberar (ou sem metadados) depois de 18 s, **testa a próxima em paralelo no mesmo nó**
+    e troca quando a previsão dela é <60% da atual (`etaReady`); sem metadados em 75 s ⇒ descarta e vai para a próxima; no máx. 3 cópias. O que foi medido volta ao servidor (`onSpeed/onReady/onBad`) para a próxima pessoa. O motor do
+    nó continua baixando a cópia perdedora até ficar ocioso (não há como mandar destruir: nó não mudou).
+  - **Variante pública da animação** (`mode:'public'`, `COPY.fun`): "Ora, ora… temos um cinéfilo de gostos peculiares!" + pedido de paciência, etapas "Chamando o projetista / Achando a lata do filme / Rebobinando o começo / Ajeitando a pipoca";
+    `FdsTorPlayer.pending()` mostra a tela enquanto a busca de candidatos roda. `test/torplayer.test.js` varre `COPY` (as duas variantes) contra palavras técnicas.
+  - **Medido (lab local + app real, Firefox, visitante sem senha; `/api/stream` e `/find` simulados, nó/seeder locais):** cascata 404 → tela divertida → cópia 1 sem peers trocada pela 2 aos ~25 s → tocando aos 45 s, `learn` gravou 394 KB/s;
+    `enabled:false` → erro neutro de sempre, sem torrent. `GET /api/torrent/find?id=603` (Matrix) real: 4 candidatos, limite por IP 429 a partir da 9ª. **Não testado:** nos nós reais do SnapDeploy, em Chrome, nem o impacto na banda assumida de 10 GB/mês/nó
+    (cada sessão de filme gasta ~0,7–2 GB: monitorar o painel "Banda dos nós" antes de divulgar).
 - **Descartadas (medido):** Dailymotion (busca aberta, mas o manifesto responde 403 `E005` — trava
   deliberada, não contornar), Odysee (busca aberta; CDN exige Referer do site e devolve 429), ok.ru
   (login), Rumble (sem resposta). **AnimePahe** (`animepahe.ru`): o site responde 200 (casca JS), mas
@@ -526,6 +542,6 @@ e `GET /api/admin/devices/roku.zip` (monta na hora com `lib/rokuKit.js`, embute 
 
 ## Como rodar e testar
 
-- `npm start` (porta `PORT`, padrão 3000) · `npm test` (386 testes, `node --test test/*.test.js`).
+- `npm start` (porta `PORT`, padrão 3000) · `npm test` (396 testes, `node --test test/*.test.js`).
 - Manutenção/"mudamos de URL": tela "Site" do admin (`lib/siteStatus.js`, `public/sitegate.js`, `public/site.js`; tabela `pix_settings` no Supabase).
 - Docs: `docs/DEPLOY-RENDER.md`, `docs/VERCEL-POOL.md`, `docs/TV-AO-VIVO.md`, `docs/VISITANTES.md`, `docs/API.md`.

@@ -74,18 +74,26 @@ test('fmtTime', () => {
   assert.equal(P._t.fmtTime(0), '0:00');
 });
 
-test('o texto do player não vaza detalhe técnico para quem não é admin', () => {
-  // Tudo o que a pessoa lê está nas listas de etapas/frases/títulos; o detalhe vai só em `.tp-tech admin-only`.
-  const visible = [];
-  // (failNow(reason, tech) só repassa motivo ao admin via onFail/.admin-only; o overlay usa texto fixo)
-  const re = /(?:titleEl\.textContent = |setPhase\('[a-z]+', |subEl\.textContent = )'([^']+)'/g;
-  let m;
-  while ((m = re.exec(src))) visible.push(m[1]);
-  const steps = (src.match(/\['(?:connect|find|load|buffer)', '([^']+)'\]/g) || []).map((x) => x.replace(/^.*', '|'\]$/g, ''));
-  const tips = (src.match(/var TIPS = \[([\s\S]*?)\];/) || ['', ''])[1].match(/'[^']+'/g) || [];
-  const all = visible.concat(steps, tips).join(' | ').toLowerCase();
-  for (const bad of ['servidor', 'render', 'vercel', 'torrent', 'peer', ' nó', 'banda', 'ffmpeg', 'kb/s', 'tracker', 'snapdeploy']) {
-    assert.ok(!all.includes(bad), `texto público não pode conter "${bad}": ${all}`);
+test('o texto do player (padrão E divertido) não vaza detalhe técnico para quem não é admin', () => {
+  // Tudo o que a pessoa lê está no bloco COPY; o detalhe vai só em `.tp-tech admin-only`.
+  const block = src.slice(src.indexOf('/*COPY-BEGIN*/'), src.indexOf('/*COPY-END*/'));
+  const strings = (block.match(/'(?:[^'\\]|\\.)+'/g) || []).map((x) => x.slice(1, -1));
+  assert.ok(strings.length > 60, 'achou o bloco de textos');
+  const all = strings.join(' | ').toLowerCase();
+  for (const bad of ['servidor', 'render', 'vercel', 'torrent', 'peer', ' nó', 'banda', 'ffmpeg', 'kb/s', 'tracker', 'snapdeploy', 'seed', 'magnet']) {
+    assert.ok(!all.includes(bad), `texto público não pode conter "${bad}"`);
   }
   assert.ok(src.includes("el('div', 'tp-tech admin-only'"), 'linha técnica precisa ser .admin-only');
+});
+
+test('as duas variantes de texto têm as mesmas chaves (nada some numa delas)', () => {
+  const { std, fun } = P.COPY;
+  for (const group of ['steps', 'tips', 'title', 'sub', 'feed']) {
+    const a = Array.isArray(std[group]) ? std[group].length : Object.keys(std[group]).sort().join();
+    const b = Array.isArray(fun[group]) ? fun[group].length : Object.keys(fun[group]).sort().join();
+    if (Array.isArray(std[group])) assert.ok(a === b || group === 'tips', `${group}: mesmo tamanho`);
+    else assert.equal(a, b, `${group}: mesmas chaves`);
+  }
+  assert.match(fun.title.connect, /cinéfilo de gostos peculiares/i);
+  assert.match(fun.title.connect + fun.sub.connectSlow + fun.tips.join(' '), /paciência/i);
 });

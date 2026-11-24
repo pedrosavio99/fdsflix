@@ -46,6 +46,7 @@ const torrentSearch = require('./lib/torrentSearch');
 const torrentKit = require('./lib/torrentKit');
 const torrentStreamerKit = require('./lib/torrentStreamerKit');
 const torrentNodes = require('./lib/torrentNodes');
+const torrentPublic = require('./lib/torrentPublic');
 const pixKit = require('./lib/pixKit');
 const pixAuth = require('./lib/pixAuth');
 const siteStatus = require('./lib/siteStatus');
@@ -1185,6 +1186,53 @@ app.get('/api/admin/torrent-nodes', requireApiKey, requireStatsKey, (req, res) =
   res.setHeader('Cache-Control', 'no-store');
   const extra = String(req.query.nodes || '').split(/[\s,;]+/).filter(Boolean);
   res.json(torrentNodes.snapshot(extra));
+});
+
+/* ---- Torrent como ÚLTIMO recurso para o público (só filmes). O front só chama depois que a cascata inteira falhou. ---- */
+
+// Devolve candidatos + nós. Resposta enxuta: o público não recebe nome de fonte, tracker nem título de release.
+// `enabled:false` (sem nó, nós sem banda, TORRENT_PUBLIC=0, série, nada achado) faz o front mostrar o erro de sempre.
+app.get('/api/torrent/find', requireApiKey, async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const id = String(req.query.id || '');
+  const off = (why) => res.json({ enabled: false, why });
+  try {
+    if (!/^\d+$/.test(id) || String(req.query.type || 'movie') !== 'movie') return off('type');
+    if (!torrentPublic.enabled()) return off('off');
+    const nodes = torrentNodes.configuredNodes();
+    if (!nodes.length) return off('nodes');
+    const snap = torrentNodes.snapshot();
+    const rank = (snap.rank || []).filter((n) => nodes.includes(n));
+    if (!rank.length) return off('quota');          // todos os nós esgotaram banda/horas: não liga a fila
+    if (!torrentPublic.allowIp(req.ip)) return res.status(429).json({ enabled: false, why: 'rate' });
+
+    const [pt, en] = await Promise.all([tmdbFetch(`/movie/${id}`), tmdbFetch(`/movie/${id}`, 'en-US')]);
+    const base = pt || en;
+    if (!base) return off('tmdb');
+    const title = (pt && pt.title) || (en && en.title) || '';
+    const alt = (en && en.title) || (base.original_title) || '';
+    const year = String(base.release_date || '').slice(0, 4);
+    if (!title) return off('tmdb');
+
+    const out = await torrentPublic.find(id, { title, alt, year });
+    if (!out.candidates.length) return off('none');
+    res.json({
+      enabled: true,
+      nodes,
+      rank,
+      runtimeMin: Number(base.runtime) || 0,
+      candidates: torrentPublic.issue(out.candidates)
+    });
+  } catch (err) {
+    console.warn('[torrent-public] find:', err.message);
+    off('error');
+  }
+});
+
+// O navegador conta quão rápido o torrent foi (ou que falhou). Só vale para hash que NÓS entregamos.
+app.post('/api/torrent/learn', requireApiKey, (req, res) => {
+  const b = req.body && typeof req.body === 'object' ? req.body : {};
+  res.json({ ok: torrentPublic.learn(b.hash, { kBs: b.kBs, ok: b.ok }) });
 });
 
 app.post('/api/admin/torrent-nodes/sync', requireApiKey, requireStatsKey, async (req, res) => {
