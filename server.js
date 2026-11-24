@@ -1207,7 +1207,7 @@ app.get('/api/torrent/find', requireApiKey, async (req, res) => {
     const snap = torrentNodes.snapshot(nodes);
     const rank = (snap.rank || []).filter((n) => nodes.includes(n));
     if (!rank.length) return off('quota');          // todos os nós esgotaram banda/horas: não liga a fila
-    if (!torrentPublic.allowIp(req.ip)) return res.status(429).json({ enabled: false, why: 'rate' });
+    if (!statsKeyOK(req) && !torrentPublic.isCached(id) && !torrentPublic.allowIp(req.ip)) return res.status(429).json({ enabled: false, why: 'rate' });
 
     const [pt, en] = await Promise.all([tmdbFetch(`/movie/${id}`), tmdbFetch(`/movie/${id}`, 'en-US')]);
     const base = pt || en;
@@ -1220,7 +1220,10 @@ app.get('/api/torrent/find', requireApiKey, async (req, res) => {
     if (!title) return off('tmdb');
 
     const out = await torrentPublic.find(id, { title, alt, alt2, year });
-    if (!out.candidates.length) return off(out.error ? 'search' : 'none');
+    if (!out.candidates.length) {
+      console.warn('[torrent-public] sem candidatos para', id, JSON.stringify(out.debug || {}), out.error || '');
+      return res.json({ enabled: false, why: out.error ? 'search' : 'none', debug: statsKeyOK(req) ? out.debug : undefined });
+    }
     res.json({
       enabled: true,
       nodes,

@@ -86,6 +86,24 @@ test('find: erro da busca não derruba (vira lista vazia, cache curto)', async (
   tp._setSearch(null);
 });
 
+test('isCached: título já buscado não conta no limite por IP', async () => {
+  tp._setSearch(async () => ({ results: [mk(1)], sources: [{ name: 'YTS', ok: true, count: 1 }] }));
+  assert.equal(tp.isCached(77), false);
+  const out = await tp.find(77, { title: 'x' });
+  assert.equal(tp.isCached(77), true);
+  assert.match(out.debug.sources, /YTS:1/);
+  tp._setSearch(null);
+});
+
+test('find: falha passageira da busca tenta de novo e acha', async () => {
+  let n = 0;
+  tp._setSearch(async () => { n += 1; return n === 1 ? { results: [], sources: [{ name: 'YTS', ok: false, error: 'HTTP 429' }] } : { results: [mk(1)], sources: [] }; });
+  const out = await tp.find(88, { title: 'y' });
+  assert.equal(out.candidates.length, 1);
+  assert.equal(n, 2);
+  tp._setSearch(null);
+});
+
 test('TORRENT_PUBLIC=0 desliga', () => {
   const old = process.env.TORRENT_PUBLIC;
   process.env.TORRENT_PUBLIC = '0';

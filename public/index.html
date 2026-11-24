@@ -4536,7 +4536,7 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
       }
     }).then(function (r) {
       if (playToken !== state.playToken) return;
-      if (r === 'unavailable') { diag('info', 'torrent: indisponível (' + (window.FdsTorFallback.lastWhy || '?') + '): nodes=sem nós conhecidos, quota=nós sem banda, none=nenhum torrent achado, search=busca falhou, rate=limite por IP, tmdb=título não achado.'); plain(); }
+      if (r === 'unavailable') { diag('info', 'torrent: indisponível (' + (window.FdsTorFallback.lastWhy || '?') + '): nodes=sem nós conhecidos, quota=nós sem banda, none=nenhum torrent achado, search=busca falhou, rate=limite por IP, tmdb=título não achado.' + (window.FdsTorFallback.lastDebug ? ' Detalhe: ' + window.FdsTorFallback.lastDebug : '')); plain(); }
       else if (r === 'started') setStatus('ok', '');
     });
     return true;

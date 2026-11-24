@@ -61,7 +61,7 @@
       .catch(function () { clearTimeout(to); return {}; })
       .then(function (d) {
         if (my !== seq) return 'stopped';
-        if (!d || !d.enabled || !d.candidates || !d.candidates.length || !d.nodes || !d.nodes.length) { api.lastWhy = (d && d.why) || 'sem resposta'; stop(); return 'unavailable'; }
+        if (!d || !d.enabled || !d.candidates || !d.candidates.length || !d.nodes || !d.nodes.length) { api.lastWhy = (d && d.why) || 'sem resposta'; api.lastDebug = (d && d.debug) ? JSON.stringify(d.debug) : ''; stop(); return 'unavailable'; }
         var first = d.candidates[0];
         var item = { hash: first.hash, magnet: first.magnet, size: first.size, title: '', alts: d.candidates.slice(1) };
         cur.pending.destroy();
@@ -84,6 +84,6 @@
       });
   }
 
-  var api = { start: start, stop: stop, lastWhy: '' };
+  var api = { start: start, stop: stop, lastWhy: '', lastDebug: '' };
   root.FdsTorFallback = api;
 })(window);
