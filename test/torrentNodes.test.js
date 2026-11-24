@@ -272,3 +272,19 @@ test('ciclo mensal: dia de renovação respeita o dia configurado', () => {
 });
 
 test.after(() => { try { require('fs').unlinkSync(process.env.TORRENT_NODE_FILE); } catch (e) { /* ok */ } });
+
+test('nós do admin são lembrados para o público (sem TORRENT_NODES); IP interno e localhost não entram', () => {
+  const old = process.env.TORRENT_NODES;
+  delete process.env.TORRENT_NODES;
+  try {
+    assert.equal(nodes.publicNodes().filter((u) => u.includes('meunode')).length, 0);
+    const added = nodes.rememberNodes(['https://meunode.containers.snapdeploy.app/', 'https://10.0.11.39:8080', 'http://localhost:8091', 'lixo', 'https://semponto']);
+    assert.equal(added, 1);
+    assert.ok(nodes.publicNodes().includes('https://meunode.containers.snapdeploy.app'));
+    assert.ok(!nodes.publicNodes().some((u) => u.includes('10.0.11.39') || u.includes('localhost')));
+    process.env.TORRENT_NODES = 'https://daenv.example.com';
+    assert.deepEqual(nodes.publicNodes(), ['https://daenv.example.com'], 'a env, quando existe, manda');
+  } finally {
+    if (old === undefined) delete process.env.TORRENT_NODES; else process.env.TORRENT_NODES = old;
+  }
+});

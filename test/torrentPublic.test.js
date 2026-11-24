@@ -94,3 +94,12 @@ test('TORRENT_PUBLIC=0 desliga', () => {
   assert.equal(tp.enabled(), true);
   if (old !== undefined) process.env.TORRENT_PUBLIC = old;
 });
+
+test('find: busca com título, original e inglês (como o admin) e junta por hash', async () => {
+  const seen = [];
+  tp._setSearch(async (q) => { seen.push(q.title); return { results: [mk(q.title === 'I\'m Still Here' ? 2 : 1)] }; });
+  const out = await tp.find(1000837, { title: 'Ainda Estou Aqui', alt: 'Ainda Estou Aqui', alt2: 'I\'m Still Here', year: '2024' });
+  assert.deepEqual(seen.sort(), ['Ainda Estou Aqui', 'I\'m Still Here'].sort());
+  assert.equal(out.candidates.length, 2);
+  tp._setSearch(null);
+});

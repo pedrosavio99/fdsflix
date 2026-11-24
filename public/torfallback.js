@@ -52,12 +52,16 @@
 
     var ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
     var to = setTimeout(function () { if (ctl) ctl.abort(); }, 45000);
-    return fetch(API_BASE + '/api/torrent/find?type=movie&id=' + encodeURIComponent(o.id), { headers: headers(), cache: 'no-store', signal: ctl ? ctl.signal : undefined })
+    // Admin: manda os nós salvos neste navegador (o servidor só os aceita com a senha; o público nunca informa nós).
+    var saved = '';
+    try { saved = (JSON.parse(localStorage.getItem('fdsflix.torrentNodes') || '[]') || []).join(','); } catch (e) { /* sem storage */ }
+    var nodesQs = saved && headers()['x-stats-key'] ? '&nodes=' + encodeURIComponent(saved) : '';
+    return fetch(API_BASE + '/api/torrent/find?type=movie&id=' + encodeURIComponent(o.id) + nodesQs, { headers: headers(), cache: 'no-store', signal: ctl ? ctl.signal : undefined })
       .then(function (r) { clearTimeout(to); return r.json().catch(function () { return {}; }); })
       .catch(function () { clearTimeout(to); return {}; })
       .then(function (d) {
         if (my !== seq) return 'stopped';
-        if (!d || !d.enabled || !d.candidates || !d.candidates.length || !d.nodes || !d.nodes.length) { stop(); return 'unavailable'; }
+        if (!d || !d.enabled || !d.candidates || !d.candidates.length || !d.nodes || !d.nodes.length) { api.lastWhy = (d && d.why) || 'sem resposta'; stop(); return 'unavailable'; }
         var first = d.candidates[0];
         var item = { hash: first.hash, magnet: first.magnet, size: first.size, title: '', alts: d.candidates.slice(1) };
         cur.pending.destroy();
@@ -80,5 +84,6 @@
       });
   }
 
-  root.FdsTorFallback = { start: start, stop: stop };
+  var api = { start: start, stop: stop, lastWhy: '' };
+  root.FdsTorFallback = api;
 })(window);

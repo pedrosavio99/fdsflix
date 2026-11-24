@@ -278,7 +278,8 @@ variável própria dele.
   (cascata entregou, rede caiu, série) segue idêntico. Se o servidor responder `enabled:false` (sem nó, nós sem banda, `TORRENT_PUBLIC=0`, nada achado, limite por IP) cai no `plainFail` de sempre
   (erro neutro + "Opção N"). `stopPlayback()`/`playEmbed()` param o torrent. Rotas públicas: `GET /api/torrent/find?id=` (TMDB pt/en + `torrentSearch`, cache 30 min, 429 por IP) e
   `POST /api/torrent/learn` (só aceita hash que o servidor entregou). **Série fica de fora**: o nó toca o MAIOR arquivo do torrent e `/stream` não escolhe arquivo (pacote de temporada tocaria o episódio errado); só
-  dá com nó novo. **Só funciona com `TORRENT_NODES` na env do Render** (os nós vêm de lá, o público não tem `localStorage`).
+  dá com nó novo. **De onde vêm os nós para o público (bug corrigido 2026-11-24):** o admin guarda os nós no `localStorage` (`fdsflix.torrentNodes`), que o visitante e o servidor NÃO veem. A 1ª versão só lia `TORRENT_NODES` e respondia `enabled:false, why:'nodes'` em 0,3 s (o dono viu "torrent: indisponível" com o filme existindo). Agora `torrentNodes.publicNodes()` = env, se houver; senão os nós **lembrados** (`rememberNodes`: arquivo + `pix_settings` chave `torrentnodes:known`), alimentados SÓ pelo admin: o painel manda `?nodes=` a cada 60 s e o `/api/torrent/find` aceita `&nodes=` apenas com a senha (`statsKeyOK`); o público nunca informa host. IP interno/localhost/host sem ponto não entram (`TORRENT_ALLOW_LOCAL=1` só para laboratório). Basta o admin abrir o site uma vez depois do deploy; sem Supabase, um restart do Render esquece e precisa abrir de novo. O log do admin mostra o motivo (`nodes/quota/none/search/rate/tmdb`).
+  A busca usa os mesmos nomes do admin (título pt + título original) e o inglês se for outro (`I'm Still Here`), juntando por hash.
   - **Escolha dos candidatos** (`pickCandidates`/`publicScore`): descarta >3,5 GB (`TORRENT_PUBLIC_MAX_GB`) e sem seed; mp4/YTS +12 (o nó converte mkv com ffmpeg e não deixa avançar); 2160p −25; **velocidade medida antes vale mais que
     seeds** (`learn`: média por hash 24 h, só em memória; falha −30 cada). A resposta pública só leva `hash/magnet/q/dub/size/seeds` (sem nome de fonte, tracker ou título de release).
   - **"O 2º às vezes é mais rápido" (observação do dono):** `FdsTorPlayer` recebe `item.alts` e, se a cópia atual levaria >60 s para liberar (ou sem metadados) depois de 18 s, **testa a próxima em paralelo no mesmo nó**
@@ -542,6 +543,6 @@ e `GET /api/admin/devices/roku.zip` (monta na hora com `lib/rokuKit.js`, embute 
 
 ## Como rodar e testar
 
-- `npm start` (porta `PORT`, padrão 3000) · `npm test` (396 testes, `node --test test/*.test.js`).
+- `npm start` (porta `PORT`, padrão 3000) · `npm test` (398 testes, `node --test test/*.test.js`).
 - Manutenção/"mudamos de URL": tela "Site" do admin (`lib/siteStatus.js`, `public/sitegate.js`, `public/site.js`; tabela `pix_settings` no Supabase).
 - Docs: `docs/DEPLOY-RENDER.md`, `docs/VERCEL-POOL.md`, `docs/TV-AO-VIVO.md`, `docs/VISITANTES.md`, `docs/API.md`.

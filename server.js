@@ -1185,6 +1185,7 @@ app.post('/api/torrent-nodes/report', (req, res) => {
 app.get('/api/admin/torrent-nodes', requireApiKey, requireStatsKey, (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   const extra = String(req.query.nodes || '').split(/[\s,;]+/).filter(Boolean);
+  torrentNodes.rememberNodes(extra);   // o público só recebe nós que o admin já usou
   res.json(torrentNodes.snapshot(extra));
 });
 
@@ -1199,9 +1200,11 @@ app.get('/api/torrent/find', requireApiKey, async (req, res) => {
   try {
     if (!/^\d+$/.test(id) || String(req.query.type || 'movie') !== 'movie') return off('type');
     if (!torrentPublic.enabled()) return off('off');
-    const nodes = torrentNodes.configuredNodes();
+    // Só o ADMIN pode informar nós (vêm do localStorage dele); o público recebe só os da env ou os já lembrados.
+    if (statsKeyOK(req)) torrentNodes.rememberNodes(String(req.query.nodes || '').split(/[\s,;]+/).filter(Boolean));
+    const nodes = torrentNodes.publicNodes();
     if (!nodes.length) return off('nodes');
-    const snap = torrentNodes.snapshot();
+    const snap = torrentNodes.snapshot(nodes);
     const rank = (snap.rank || []).filter((n) => nodes.includes(n));
     if (!rank.length) return off('quota');          // todos os nós esgotaram banda/horas: não liga a fila
     if (!torrentPublic.allowIp(req.ip)) return res.status(429).json({ enabled: false, why: 'rate' });
@@ -1210,12 +1213,14 @@ app.get('/api/torrent/find', requireApiKey, async (req, res) => {
     const base = pt || en;
     if (!base) return off('tmdb');
     const title = (pt && pt.title) || (en && en.title) || '';
-    const alt = (en && en.title) || (base.original_title) || '';
+    // Mesmos nomes do admin (título + título original) e, se for outro, o inglês: release costuma ter o nome gringo.
+    const alt = (base.original_title) || (en && en.title) || '';
+    const alt2 = (en && en.title) || '';
     const year = String(base.release_date || '').slice(0, 4);
     if (!title) return off('tmdb');
 
-    const out = await torrentPublic.find(id, { title, alt, year });
-    if (!out.candidates.length) return off('none');
+    const out = await torrentPublic.find(id, { title, alt, alt2, year });
+    if (!out.candidates.length) return off(out.error ? 'search' : 'none');
     res.json({
       enabled: true,
       nodes,
