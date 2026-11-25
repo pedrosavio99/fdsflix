@@ -57,6 +57,7 @@ export function canvasPlayerSupported() {
 export async function createEngine(video, canvas, url, opts = {}) {
   const ref = { destroy: null };
   try {
+    if (opts.signal) opts.signal.addEventListener('abort', () => { if (ref.destroy) ref.destroy(); }, { once: true });
     return await build(video, canvas, url, opts, ref);
   } catch (err) {
     if (ref.destroy) ref.destroy();      // não deixa Worker, MediaSource nem listeners para trás

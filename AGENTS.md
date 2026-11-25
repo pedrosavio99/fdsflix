@@ -525,6 +525,11 @@ e `GET /api/admin/devices/roku.zip` (monta na hora com `lib/rokuKit.js`, embute 
 - Instalar: modo desenvolvedor da TV (Home×3, ↑↑, →←→←→), `http://IP-DA-TV` (usuário `rokudev`) → Upload → Install. Só um canal de
   desenvolvedor por vez (instalar substitui o anterior).
 
+## Nó lento não prende mais o vídeo (2026-11-25)
+
+Medido: os nós **Wasmer** passaram a entregar ~35–45 KB/s (os da Vercel, ~4,8 MB/s). Como os únicos 2 nós com proxy de mídia eram Wasmer, o que saía via AdFallback (VidLink) ficava em "Carregando…" para sempre, mesmo havendo fonte direta que tocava. O CDN do VidLink responde 428 a User-Agent de navegador (não dá para tocar direto).
+Agora (`watchRelayStart` em `public/index.html`): `via:'adshield'` sem o começo do vídeo em **20 s** ⇒ `switchVersion(true,'slow')` (próxima fonte, sem repetir 503); sem outra versão, filme vai para o torrent e série mostra o erro neutro. O decodificador do navegador que ainda carregava é abortado (`signal` em `cv/player.js`/`cv/engine.js`), senão tomava o `<video>` da versão nova. **A causa continua**: falta um nó de mídia rápido (kit AdFallback na Vercel, ainda não testado com o CDN do VidLink).
+
 ## Dublado ou original (escolha antes de tocar)
 
 - `GET /api/stream/options?id&type&s&e&title` (`lib/streamOptions.js`): roda as fontes **em paralelo**

@@ -18,10 +18,12 @@ export { canvasPlayerSupported };
  */
 export async function startCanvasPlayer(o) {
   const ui = createUI(o.wrap, o.video, { label: o.label, subs: o.subs });
+  if (o.signal) o.signal.addEventListener('abort', () => ui.destroy(), { once: true });
   let engine;
   try {
     engine = await createEngine(o.video, ui.canvas, o.url, {
       startAt: o.startAt,
+      signal: o.signal,
       onFatal: o.onFatal,
       onSlow: o.onSlow,
       onStat: o.onStat,

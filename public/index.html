@@ -2969,13 +2969,13 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
 
   // 503 "retryable": a fonte principal (Vidsrc) caiu por instantes. Espera um pouco e pergunta de novo, até 2 vezes,
   // em vez de entregar o erro na primeira queda.
-  function apiFetchStream(path, opts, playToken) {
+  function apiFetchStream(path, opts, playToken, maxTries) {
     var tries = 0;
     function go() {
       return apiFetch(path, opts).then(function (response) {
         if (response.status !== 503) return response;
         return response.clone().json().catch(function () { return {}; }).then(function (data) {
-          if (!data.retryable || tries >= 2 || playToken !== state.playToken) return response;
+          if (!data.retryable || tries >= (maxTries === 0 ? 0 : 2) || playToken !== state.playToken) return response;
           tries += 1;
           diag('err', 'Fonte principal instável: ' + String(data.error || '').slice(0, 220));
           try { diagDebug(data.debug); } catch (err) { /* só diagnóstico */ }
@@ -3127,6 +3127,9 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
     hideLangPick();
     autoSyncStop();
     clearTimeout(state.hlsWatch);
+    clearTimeout(state.relayWatch);
+    // Decodificador do navegador ainda carregando: sem isto ele termina depois e toma o <video> da próxima versão.
+    if (state.cvpAbort) { state.cvpAbort.abort(); state.cvpAbort = null; }
     state.hlsIssue = '';
     if (state.controller) {
       try { state.controller.abort(); } catch (err) { /* ignore */ }
@@ -4110,6 +4113,8 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
     state.lastMode = 'hevc-wasm';
     state.pendingSeek = 0;
     showOverlay('Preparando o player no seu navegador…', true);
+    var abort = new AbortController();
+    state.cvpAbort = abort;
 
     cvpLoad()
       .then(function (mod) {
@@ -4118,6 +4123,7 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
           wrap: document.querySelector('.video-wrap'),
           video: video,
           url: url,
+          signal: abort.signal,
           startAt: startSeconds,
           label: label,
           subs: cvpSubsApi(),
@@ -4136,6 +4142,7 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
             }
           },
           onAutoplayBlocked: function () {
+            state.autoplayBlocked = true;
             hideOverlay();
             setStatus('warn', 'O navegador bloqueou o autoplay — clique no ▶ do vídeo.');
           }
@@ -4388,7 +4395,10 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
 
         reqStart = Date.now();
         diag('step', 'Pedindo ao servidor: GET ' + apiUrl('/api/stream?' + params.toString()));
-        return apiFetchStream('/api/stream?' + params.toString(), { signal: controller.signal }, playToken);
+        // Troca porque o nó não arrancou: um 503 aqui é "não há outra versão", não adianta insistir antes do torrent.
+        var quick = state.quickSwitch;
+        state.quickSwitch = false;
+        return apiFetchStream('/api/stream?' + params.toString(), { signal: controller.signal }, playToken, quick ? 0 : 2);
       })
       .then(function (response) {
         diag(response.ok ? 'ok' : 'err', 'Servidor respondeu HTTP ' + response.status + ' em ' + (Date.now() - reqStart) + ' ms');
@@ -4435,6 +4445,8 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
         subQualityCheckSoon();
 
         var video = $('nativePlayer');
+        state.autoplayBlocked = false;
+        if (data.via === 'adshield') watchRelayStart(playToken);
 
         if (data.mode === 'hls') {
           showOverlay(data.transcoded ? 'Convertendo para H.264…' : 'Carregando stream…', true);
@@ -4449,7 +4461,8 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
           else if (data.cors === false) video.removeAttribute('crossorigin');
           video.src = apiUrl(data.url);
           startDirectMeter(video, apiUrl(data.url), playToken);
-          video.play().catch(function () {
+          video.play().catch(function (playErr) {
+            if (playErr && playErr.name === 'NotAllowedError') state.autoplayBlocked = true;
             hideOverlay();
             setStatus('warn', 'O navegador bloqueou o autoplay — clique no ▶ do vídeo.');
           });
@@ -4504,8 +4517,12 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
         if ((state.triedSrc[tk] || []).length) {
           // Não há outra versão agora: libera as descartadas (Recarregar volta a tentar tudo) e avisa.
           state.triedSrc[tk] = [];
-          fail('Não achei outra versão deste título agora. Toque em ↻ Recarregar para tentar de novo.');
-          showEmbedOptions();
+          var noOther = function () {
+            fail('Não achei outra versão deste título agora. Toque em ↻ Recarregar para tentar de novo.');
+            showEmbedOptions();
+          };
+          if (tryTorrentFallback(err, item, playToken, noOther)) return;
+          noOther();
           return;
         }
         var plainFail = function () {
@@ -4515,6 +4532,20 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
         if (tryTorrentFallback(err, item, playToken, plainFail)) return;
         plainFail();
       });
+  }
+
+  // Vídeo que vem por um nó pode ficar "carregando" para sempre se o nó estiver lento. Sem o começo do vídeo em 20 s,
+  // passa para a próxima versão; quando acabam as versões, o torrent entra (filmes).
+  var RELAY_START_MS = 20000;
+  function watchRelayStart(playToken) {
+    clearTimeout(state.relayWatch);
+    state.relayWatch = setTimeout(function () {
+      if (playToken !== state.playToken) return;
+      if ($('nativePlayer').readyState >= 2 || state.autoplayBlocked || !navigator.onLine) return;
+      if (document.hidden) { watchRelayStart(playToken); return; }   // aba escondida não carrega vídeo: espera voltar
+      diag('err', 'O nó não entregou o começo do vídeo em ' + (RELAY_START_MS / 1000) + ' s.');
+      switchVersion(true, 'slow');
+    }, RELAY_START_MS);
   }
 
   // ÚLTIMO recurso (só filmes): nenhuma fonte da cascata achou o título (404) ou todas estavam fora (503). Chama o
@@ -5096,7 +5127,7 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
   }
 
   // "Outra versão": descarta a versão em uso (a que abriu errado ou não toca) e busca a próxima disponível.
-  function switchVersion(auto) {
+  function switchVersion(auto, why) {
     if (!state.selected) return;
     var key = titleKeyNow();
     var list = state.triedSrc[key] = state.triedSrc[key] || [];
@@ -5107,7 +5138,8 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
     state.resumePending = false;
     state.freshNext = true;
     state.noOptions = true;
-    toast(auto ? '🔀 Esta versão não parece ser o filme. Procurando outra…' : '🔀 Procurando outra versão…');
+    state.quickSwitch = why === 'slow';
+    toast(auto && why !== 'slow' ? '🔀 Esta versão não parece ser o filme. Procurando outra…' : '🔀 Procurando outra versão…');
     diag('step', (auto ? 'Troca automática' : 'Troca pedida') + ': descartando a versão ' + (state.curSrc || '?') + ' e buscando a próxima.');
     renderPlayer();
   }
