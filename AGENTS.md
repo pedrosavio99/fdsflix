@@ -291,6 +291,12 @@ variável própria dele.
   - **Medido (lab local + app real, Firefox, visitante sem senha; `/api/stream` e `/find` simulados, nó/seeder locais):** cascata 404 → tela divertida → cópia 1 sem peers trocada pela 2 aos ~25 s → tocando aos 45 s, `learn` gravou 394 KB/s;
     `enabled:false` → erro neutro de sempre, sem torrent. `GET /api/torrent/find?id=603` (Matrix) real: 4 candidatos, limite por IP 429 a partir da 9ª. **Não testado:** nos nós reais do SnapDeploy, em Chrome, nem o impacto na banda assumida de 10 GB/mês/nó
     (cada sessão de filme gasta ~0,7–2 GB: monitorar o painel "Banda dos nós" antes de divulgar).
+- **Legendas no player de torrent (`public/torsubs.js` + `GET /api/torrent/subtitles`, 2026-11-25):** opcionais, só português (mesmo
+  `smartCaptions` do site: pt-BR, opções 2/3, tradução automática, Portugal). Botão "Legenda" no canto (tecla `c`) com ajuste de ±0,5 s,
+  guardado por cópia do filme. Sem escolha salva: dublado começa sem, original com; respeita `fdsflix.sub.pref`. Não toca no motor
+  (usa só `controller.video()`); a faixa entra como `blob:` para o `<video>` não precisar de `crossorigin`. No admin precisa escolher o
+  título na lista de sugestões (é de onde vem o id do TMDB). Não há conferência de sincronia contra o arquivo do torrent.
+  Verificado no Firefox com nó falso e legendas reais do Matrix; **não visto nos nós reais**.
 - **Descartadas (medido):** Dailymotion (busca aberta, mas o manifesto responde 403 `E005` — trava
   deliberada, não contornar), Odysee (busca aberta; CDN exige Referer do site e devolve 429), ok.ru
   (login), Rumble (sem resposta). **AnimePahe** (`animepahe.ru`): o site responde 200 (casca JS), mas

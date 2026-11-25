@@ -1237,6 +1237,34 @@ app.get('/api/torrent/find', requireApiKey, async (req, res) => {
   }
 });
 
+// Legendas em português do título que está tocando por torrent (opcionais; o player liga/desliga). Mesmo buscador do resto
+// do site. Só saem faixas em português; sem referência do próprio vídeo, o tempo pode pedir ajuste manual no player.
+app.get('/api/torrent/subtitles', requireApiKey, async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const id = String(req.query.id || '');
+  const type = req.query.type === 'tv' ? 'tv' : 'movie';
+  if (!/^\d+$/.test(id)) return res.status(400).json({ error: 'id inválido' });
+  const season = Math.max(1, Number(req.query.s) || 1);
+  const episode = Math.max(1, Number(req.query.e) || 1);
+  try {
+    const budgetEnd = Date.now() + 20000;
+    const brainJob = startSubtitleBrain({ id, type, season, episode });
+    const companion = await Promise.race([
+      companionCaptions(id, type, season, episode).catch(() => []),
+      new Promise((resolve) => setTimeout(() => resolve([]), 8000).unref())
+    ]);
+    const captions = await smartCaptions({ own: [], companion, provider: 'torrent', shift: 0, brainJob, budgetEnd });
+    res.json({
+      subtitles: captions
+        .filter((c) => c.srclang === 'pt' || c.srclang === 'pt-PT')
+        .map((c) => ({ label: c.label, url: absoluteUrl(req, c.url) }))
+    });
+  } catch (err) {
+    console.warn('[torrent-public] legendas:', err.message);
+    res.json({ subtitles: [] });
+  }
+});
+
 // O navegador conta quão rápido o torrent foi (ou que falhou). Só vale para hash que NÓS entregamos.
 app.post('/api/torrent/learn', requireApiKey, (req, res) => {
   const b = req.body && typeof req.body === 'object' ? req.body : {};

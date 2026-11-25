@@ -54,7 +54,10 @@
     suggestEl.textContent = '';
   }
 
+  var picked = null; // título escolhido na lista (id do TMDB), para achar as legendas
+
   function pick(item) {
+    picked = { id: String(item.id || ''), type: item.type === 'tv' ? 'tv' : 'movie' };
     input.value = item.title || '';
     input.dataset.original = item.originalTitle || '';
     if (yearEl && item.year) yearEl.value = item.year;
@@ -197,6 +200,20 @@
 
   var playSeq = 0;
 
+  function attachSubs(ctl, item) {
+    if (!window.FdsTorSubs) return;
+    if (!picked || !picked.id) { log('legendas: escolha o título na lista de sugestões e busque de novo'); return; }
+    var ep = /S(\d{1,2})[ ._-]?E(\d{1,3})/i.exec(String(item.title || ''));
+    if (picked.type === 'tv' && !ep) { log('legendas: não achei temporada/episódio no nome do torrent'); return; }
+    window.FdsTorSubs.attach(ctl, {
+      id: picked.id,
+      type: picked.type,
+      s: ep ? Number(ep[1]) : 0,
+      e: ep ? Number(ep[2]) : 0,
+      isDub: function () { return item.audio === 'dub' || item.audio === 'dual'; }
+    });
+  }
+
   function playTorrent(item) {
     var box = document.getElementById('torrentPlayerBox');
     if (!box) return;
@@ -223,6 +240,7 @@
           note('Não consegui abrir este torrent nos nós: ' + (tech || reason) + ' Tente outro resultado.', 'warn');
         }
       });
+      attachSubs(player, item);
       return;
     }
     log('sem nó configurado — usando WebTorrent do navegador');
@@ -536,6 +554,7 @@
 
   input.addEventListener('input', function () {
     input.dataset.original = '';
+    picked = null;
     clearTimeout(sugTimer);
     sugTimer = setTimeout(suggest, 250);
   });

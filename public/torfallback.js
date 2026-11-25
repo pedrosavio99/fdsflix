@@ -80,6 +80,15 @@
           onBad: function (hash) { if (my === seq) learn({ hash: hash, ok: false }); },
           onFail: function (reason, tech) { if (my === seq && o.onFail) o.onFail(reason, tech); }
         });
+        if (root.FdsTorSubs) {
+          root.FdsTorSubs.attach(cur.player, {
+            id: o.id,
+            type: 'movie',
+            isDub: function (hash) {
+              return d.candidates.some(function (c) { return c.dub && String(c.hash).toLowerCase() === String(hash).toLowerCase(); });
+            }
+          });
+        }
         return 'started';
       });
   }
