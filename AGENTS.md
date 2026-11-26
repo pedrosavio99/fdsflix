@@ -536,7 +536,7 @@ e `GET /api/admin/devices/roku.zip` (monta na hora com `lib/rokuKit.js`, embute 
 ## Nó lento não prende mais o vídeo (2026-11-25)
 
 Medido: os nós **Wasmer** passaram a entregar ~35–45 KB/s (os da Vercel, ~4,8 MB/s). Como os únicos 2 nós com proxy de mídia eram Wasmer, o que saía via AdFallback (VidLink) ficava em "Carregando…" para sempre, mesmo havendo fonte direta que tocava. O CDN do VidLink responde 428 a User-Agent de navegador (não dá para tocar direto).
-Agora (`watchRelayStart` em `public/index.html`): `via:'adshield'` sem o começo do vídeo em **20 s** ⇒ `switchVersion(true,'slow')` (próxima fonte, sem repetir 503); sem outra versão, filme vai para o torrent e série mostra o erro neutro. O decodificador do navegador que ainda carregava é abortado (`signal` em `cv/player.js`/`cv/engine.js`), senão tomava o `<video>` da versão nova. **A causa continua**: falta um nó de mídia rápido (kit AdFallback na Vercel, ainda não testado com o CDN do VidLink).
+Agora (`watchRelayStart` em `public/index.html`): `via:'adshield'` sem o começo do vídeo em **20 s** ⇒ consulta `/api/stream?...&probe=1&skip=...` **sem parar o carregamento**; só troca se vier versão que não passa por nó, senão continua esperando. **Não corte um vídeo lento sem ter outra versão na mão:** o corte seco (2026-11-25) deixou "Homem de Ferro" sem tocar (o índice do MP4 tem 7,7 MB e levava ~2 min; antes do corte carregava). O decodificador do navegador que ainda carregava é abortado (`signal` em `cv/player.js`/`cv/engine.js`), senão tomava o `<video>` da versão nova. **A causa continua**: falta um nó de mídia rápido (kit AdFallback na Vercel, ainda não testado com o CDN do VidLink).
 
 ## Dublado ou original (escolha antes de tocar)
 

@@ -53,6 +53,13 @@ test('503 depois de "Outra versão" diz que não havia segunda opção', async (
   assert.equal(r.errors[0].reason, 'Não havia outra versão além da descartada');
 });
 
+test('consulta do player lento (probe) não conta como falha nem como link entregue', async () => {
+  search('177.1.1.1', { status: 503, body: {} }, T0, { ...movie, probe: '1' });
+  search('177.1.1.1', { status: 200, body: { url: 'https://v.test/a.mp4', src: 'aaaaaa' } }, T0, { ...movie, probe: '1' });
+  const r = await reports.report({});
+  assert.deepEqual([r.errors.length, r.totals.delivered], [0, 0]);
+});
+
 test('uso por fonte em porcentagem; recarregar não infla; via nó aparece separado', async () => {
   client('177.1.1.1', { event: 'ok', src: 'aaaaaa' });
   client('177.1.1.1', { event: 'ok', src: 'aaaaaa' }, T0 + MIN);

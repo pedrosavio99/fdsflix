@@ -4489,6 +4489,7 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
         if (triedNow.length) params.set('skip', triedNow.join(','));
 
         reqStart = Date.now();
+        state.streamQuery = params.toString();
         diag('step', 'Pedindo ao servidor: GET ' + apiUrl('/api/stream?' + params.toString()));
         // Troca porque o nó não arrancou: um 503 aqui é "não há outra versão", não adianta insistir antes do torrent.
         var quick = state.quickSwitch;
@@ -4632,17 +4633,39 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
       });
   }
 
-  // Vídeo que vem por um nó pode ficar "carregando" para sempre se o nó estiver lento. Sem o começo do vídeo em 20 s,
-  // passa para a próxima versão; quando acabam as versões, o torrent entra (filmes).
+  // Vídeo que vem por um nó pode demorar muito para começar se o nó estiver lento. Sem o começo em 20 s, procura outra
+  // versão POR FORA, sem derrubar a que está carregando: só troca se existir uma que não passe por nó. Se não existir,
+  // continua esperando (lento ainda toca; cortar aqui deixava títulos que só têm essa versão sem tocar nunca).
   var RELAY_START_MS = 20000;
   function watchRelayStart(playToken) {
+    function stillLoading() {
+      return playToken === state.playToken && $('nativePlayer').readyState < 2 && !state.autoplayBlocked && navigator.onLine;
+    }
     clearTimeout(state.relayWatch);
     state.relayWatch = setTimeout(function () {
-      if (playToken !== state.playToken) return;
-      if ($('nativePlayer').readyState >= 2 || state.autoplayBlocked || !navigator.onLine) return;
+      if (!stillLoading()) return;
       if (document.hidden) { watchRelayStart(playToken); return; }   // aba escondida não carrega vídeo: espera voltar
-      diag('err', 'O nó não entregou o começo do vídeo em ' + (RELAY_START_MS / 1000) + ' s.');
-      switchVersion(true, 'slow');
+      diag('warn', 'O nó não entregou o começo do vídeo em ' + (RELAY_START_MS / 1000) + ' s. Procurando outra versão sem parar esta.');
+      var q = new URLSearchParams(state.streamQuery || '');
+      var tried = (state.triedSrc[titleKeyNow()] || []).concat([state.curSrc, state.curSv]).filter(Boolean);
+      q.set('skip', tried.join(','));
+      q.set('probe', '1');          // só consulta: o servidor não conta como "assistiu" nem como falha
+      q.delete('pick');
+      q.delete('fresh');
+      apiFetch('/api/stream?' + q.toString(), { signal: state.controller ? state.controller.signal : undefined })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (data) {
+          if (!stillLoading()) return;
+          if (data && data.url && data.via !== 'adshield' && !data.transcoded) { switchVersion(true, 'slow'); return; }
+          diag('info', 'Não há versão melhor: continuando a carregar esta.');
+          showOverlay('Este título está demorando um pouco mais para começar. Aguarde…', true);
+          var att = state.attempt;
+          if (att && !att.stalled) {
+            att.stalled = true;
+            reportPlay('fail', { stage: 'espera', reason: 'Nó lento: 20 s sem começar (sem outra versão, continuou carregando)', detail: videoDetail() });
+          }
+        })
+        .catch(function () { /* sem resposta: segue carregando */ });
     }, RELAY_START_MS);
   }
 
