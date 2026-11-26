@@ -74,6 +74,14 @@ Regra do dono: o público é do Brasil. A legenda padrão é SEMPRE português d
 - **Áudio decide o empate (navegador, só HLS):** com 240 s de áudio e a legenda atual sem prova, `autoSyncCompare` carrega as outras pt-BR em modo `hidden`, compara com o áudio (`FdsAutoSync.rankByAudio`) e troca para a que o áudio confirma; depois a sincronia automática de sempre aplica o atraso. MP4 direto (MGEB/TokyVideo/Archive/Catálogo) não tem áudio para medir: depende da escolha do servidor e da sincronia manual.
 - Diagnóstico: `debug` da resposta de `/api/stream` (admin) traz a linha "Legendas pt-BR" com a escolhida, a nota e os motivos de cada barrada. Testes: `test/subtitleBrain.test.js` (17), `test/autosync.test.js` (`rankByAudio`). Verificado no Firefox (Playwright): quebrada→opção 2, 404→opção 2, nunca inglês sozinho, preferência explícita respeitada, e a troca pelo áudio com HLS sintético.
 
+## Falhas de reprodução e uso das fontes (admin)
+
+`lib/playReports.js` + `supabase/play-reports-schema.sql` (tabelas `play_errors` e `play_source_daily`; o dono precisa rodar o SQL; sem elas fica em memória). Tela: **Configs** → "Falhas de reprodução e fontes mais usadas" (`public/reports.js`); em `visitors.html`, painéis "Fontes mais usadas"/"Títulos com falha" e colunas "Fontes usadas"/"Falhas".
+- Servidor: middleware no `/api/stream` (antes do `streamGuard`) registra 404/502/503 com o rastro da cascata e conta o link entregue.
+- Navegador (`reportPlay`/`reportFail` no `index.html`, `POST /api/play-report`): tocou (evento `playing`), erro do player, 25 s sem começar, saiu depois de 15 s sem começar, "Outra versão", rede, torrent, iframe externo. Manda só o `src` opaco; o nome da fonte é resolvido no servidor.
+- Falha seguida de reprodução do mesmo título em 15 min fica "tocou depois". **% de uso = vídeos que começaram a tocar.**
+- Não cobre TV ao vivo nem o app do Roku (do Roku entram só as falhas de busca e os links entregues). Testes: `test/playReports.test.js`.
+
 ## Fontes de vídeo (onde mexer)
 
 A cascata é `ALL_PROVIDERS` em `lib/fallbackCascade.js`: cada provedor é uma função

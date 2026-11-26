@@ -38,6 +38,7 @@ const registry = require('./lib/registry');
 const usageLedger = require('./lib/usageLedger');
 const visitors = require('./lib/visitors');
 const watchStats = require('./lib/watchStats');
+const playReports = require('./lib/playReports');
 const egress = require('./lib/egressMeter');
 egress.install(); // mede também o que o servidor ENVIA por iniciativa própria (o "Service-Initiated" do Render)
 const poolKit = require('./lib/poolKit');
@@ -1028,6 +1029,37 @@ app.get('/api/watch/top', requireStatsKey, async (req, res) => {
   }
 });
 
+// Falhas de reprodução e uso de cada fonte (lib/playReports.js). O navegador avisa aqui o que só ele sabe (tocou, travou,
+// erro do player); a resposta nunca traz detalhe nenhum.
+app.post('/api/play-report', requireApiKey, (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  try {
+    const out = playReports.onClientReport(req, { nameOfSrc, admin: statsKeyOK(req) });
+    res.status(out.limited ? 429 : out.ok ? 200 : 400).json({ ok: out.ok });
+  } catch (err) {
+    res.status(500).json({ ok: false });
+  }
+});
+
+app.get('/api/admin/play-report', requireApiKey, requireStatsKey, async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  try {
+    res.json(await playReports.report({ days: Number(req.query.days) || 7 }));
+  } catch (err) {
+    res.status(500).json({ error: 'Falha ao montar o relatório.' });
+  }
+});
+
+app.get('/api/admin/play-report/schema', requireApiKey, requireStatsKey, (req, res) => {
+  try {
+    res.type('text/plain; charset=utf-8').send(
+      fs.readFileSync(path.join(__dirname, 'supabase', 'play-reports-schema.sql'), 'utf8')
+    );
+  } catch (err) {
+    res.status(404).type('text').send('supabase/play-reports-schema.sql não está neste servidor.');
+  }
+});
+
 app.get('/api/visitors', requireStatsKey, async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   try {
@@ -1609,6 +1641,11 @@ function namesFromSrcIds(list) {
   return names.filter((n) => wanted.has(srcId(n)));
 }
 
+/** Nome da fonte a partir do id opaco (para os relatórios do administrador). */
+function nameOfSrc(id) {
+  return namesFromSrcIds(id)[0] || '';
+}
+
 /** true se entregar esta fonte ao navegador gastaria banda de saída do Render. */
 async function renderBound(info, { hevcOk, direct }) {
   if (direct) return false; // extensão fdsFlix Direct: o navegador busca no CDN
@@ -1822,7 +1859,7 @@ app.get('/api/stream/options', requireApiKey, async (req, res) => {
   }
 });
 
-app.get('/api/stream', requireApiKey, streamGuard.middleware, async (req, res) => {
+app.get('/api/stream', requireApiKey, playReports.observeStream({ nameOfSrc, isAdmin: statsKeyOK }), streamGuard.middleware, async (req, res) => {
   const id = String(req.query.id || '');
   const type = String(req.query.type || '');
 
@@ -1874,6 +1911,7 @@ app.get('/api/stream', requireApiKey, streamGuard.middleware, async (req, res) =
   const adminCall = statsKeyOK(req);
   res.json = (body) => {
     if (!body || typeof body !== 'object' || Array.isArray(body)) return jsonWithDebug(body);
+    res.locals.play = { provider: body.provider, error: body.error, trace }; // para o relatório (antes de esconder do público)
     if (adminCall) return jsonWithDebug({ ...body, ...(body.provider && body.url ? { src: srcId(body.provider), sv: urlId(body.url) } : {}), ...(body.url && expectMin ? { expectMin } : {}), debug: buildStreamDebug(trace, startedAt) });
     const { provider, note, edgeSkipped, debug, ...rest } = body;
     if (res.statusCode >= 500 && rest.error) rest.error = 'Não foi possível carregar este vídeo agora.';
@@ -2811,7 +2849,7 @@ function gracefulExit() {
   shutdown();
   // Envia os acessos que ainda não subiram ao Supabase antes de sair (o teto de 3 s continua valendo).
   const closing = () => server.close(() => process.exit(0));
-  Promise.allSettled([visitors.flush(), watchStats.flush(), egress.flush()]).then(closing, closing);
+  Promise.allSettled([visitors.flush(), watchStats.flush(), playReports.flush(), egress.flush()]).then(closing, closing);
   setTimeout(() => process.exit(0), 3000).unref();
 }
 

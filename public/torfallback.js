@@ -75,7 +75,11 @@
           rank: d.rank || [],
           runtimeMin: d.runtimeMin || 0,
           log: o.log || function () {},
-          onReady: function (r) { if (my === seq && r && r.kBs > 0) learn({ hash: r.hash, kBs: r.kBs, ok: true }); },
+          onReady: function (r) {
+            if (my !== seq) return;
+            if (o.onPlaying) o.onPlaying();
+            if (r && r.kBs > 0) learn({ hash: r.hash, kBs: r.kBs, ok: true });
+          },
           onSpeed: function (hash, kBs) { if (my === seq && kBs > 0) learn({ hash: hash, kBs: kBs, ok: true }); },
           onBad: function (hash) { if (my === seq) learn({ hash: hash, ok: false }); },
           onFail: function (reason, tech) { if (my === seq && o.onFail) o.onFail(reason, tech); }

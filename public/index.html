@@ -507,6 +507,18 @@
   details.cfg-sec{border:1px solid var(--line);border-radius:10px;margin:.6rem 0;background:rgba(0,0,0,.18)}
   details.cfg-sec>summary{cursor:pointer;padding:.55rem .8rem;font-weight:700;font-size:.9rem}
   details.cfg-sec>div{padding:0 .9rem .8rem}
+  .rp-src{position:relative;display:grid;grid-template-columns:minmax(0,1fr) auto;column-gap:.6rem;padding:.3rem .5rem;margin:.25rem 0;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  .rp-src i{position:absolute;left:0;top:0;bottom:0;background:#3d7be0;opacity:.22}
+  .rp-src span,.rp-src b,.rp-src small{position:relative}
+  .rp-src small{grid-column:1/-1;color:var(--muted);font-size:.72rem}
+  .rp-name{overflow-wrap:anywhere}
+  .rp-only{display:flex;gap:.4rem;align-items:center;font-size:.8rem;color:var(--muted)}
+  .rp-scroll{overflow-x:auto}
+  .rp-list{max-height:420px;overflow:auto}
+  .rp-err{border-bottom:1px solid var(--line);padding:.3rem 0;font-size:.8rem}
+  .rp-err summary{cursor:pointer;overflow-wrap:anywhere}
+  .rp-err>div{padding:.2rem 0 .2rem .8rem;overflow-x:auto;overflow-wrap:anywhere}
+  .rp-meta{color:var(--muted)}
   .site-live-row{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap}
   .site-live-row button{margin-left:auto;padding:.35rem .7rem;font-size:.78rem}
   .site-live .dot{width:.7rem;height:.7rem;border-radius:50%;background:#8c90a6;display:inline-block}
@@ -1282,6 +1294,29 @@ docker save fdsflix-torrent-streamer -o fdsflix-torrent-streamer.tar</pre>
         <p id="cfgBwNote"></p>
       </div>
 
+      <details class="cfg-sec" open id="rpSec">
+        <summary>🚨 Falhas de reprodução e fontes mais usadas</summary>
+        <div>
+          <div class="st-status"><span id="rpPill" class="st-pill">…</span><span id="rpMsg"></span></div>
+          <div class="cfg-row">
+            <select id="rpDays" aria-label="Período">
+              <option value="1">Hoje</option>
+              <option value="7" selected>7 dias</option>
+              <option value="30">30 dias</option>
+            </select>
+            <button id="rpRefresh" class="ghost" type="button">⟳ Atualizar</button>
+            <button id="rpSql" class="ghost" type="button" hidden>Copiar o SQL da tabela</button>
+          </div>
+          <p><strong>🎞️ Fontes mais usadas</strong> (% dos vídeos que começaram a tocar)</p>
+          <div id="rpSources"></div>
+          <p><strong>🚨 Títulos que deram falha</strong></p>
+          <label class="rp-only"><input id="rpOnly" type="checkbox"> mostrar só o que não tocou depois</label>
+          <div id="rpTitles" class="rp-scroll"></div>
+          <p>Cada ocorrência (toque para ver o motivo e as fontes tentadas):</p>
+          <div id="rpList" class="rp-list"></div>
+        </div>
+      </details>
+
       <details class="cfg-sec" open id="cfgDiagSec">
         <summary>🔎 Diagnóstico do servidor (CinePro e últimas consultas)</summary>
         <div>
@@ -1771,6 +1806,7 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
 <script src="/torfallback.js"></script>
 <script src="/torrents.js"></script>
 <script src="/load.js"></script>
+<script src="/reports.js"></script>
 <script src="/devices.js"></script>
 <script>
 (function () {
@@ -2267,6 +2303,7 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
         entry.e = Math.max(1, (entry.e || 2) - 1);
         progPersist();
       }
+      if (state.attempt) state.attempt.reported = true; // fim da série não é falha
       fail('Acabaram os episódios disponíveis. 🎉');
       return true;
     }
@@ -2298,6 +2335,7 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
 
     if (state.netRetries >= NET_MAX_RETRIES) {
       state.resumePending = false;
+      reportFail('rede', reason || 'Conexão instável.', 'desistiu depois de ' + NET_MAX_RETRIES + ' tentativas · ' + videoDetail());
       var giveUp = (reason || 'Conexão instável.') + ' Retomo' + at + ' quando você tentar de novo.';
       showOverlay(giveUp, false);
       setStatus('error', giveUp);
@@ -2429,6 +2467,12 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
     var provider = EMBED_PROVIDERS[index];
     if (!item || !provider) return;
     if (window.FdsTorFallback) window.FdsTorFallback.stop();
+    if (state.selected) {
+      var prev = state.attempt;
+      if (prev) prev.reported = true; // daqui em diante é o player externo: não conta como desistência
+      state.attempt = { type: state.selected.type, id: String(state.selected.id), s: state.curS, e: state.curE, title: state.selected.title || '', src: '', via: '', engine: '', t0: Date.now(), responded: false, ok: true, reported: true, stalled: false };
+      reportPlay('embed', { embed: provider.name });
+    }
 
     var url = provider.url(item.type, item.id, state.curS, state.curE);
     try { $('nativePlayer').pause(); } catch (err) { /* ignore */ }
@@ -2967,6 +3011,48 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
       ' · HEVC nativo: ' + (state.hevc ? 'sim' : 'não'));
   }
 
+  /* Relato de reprodução (lib/playReports.js no servidor): o administrador vê quais títulos falharam e qual fonte mais
+   * toca. Silencioso e sem texto na tela; o navegador só manda o id opaco da fonte (`src`), nunca nome de provedor. */
+  var ATTEMPT_GIVEUP_MS = 15000;   // saiu depois disso sem o vídeo começar = conta como falha
+  function reportPlay(event, extra) {
+    var a = state.attempt;
+    if (!a) return;
+    var body = Object.assign({ event: event, type: a.type, id: a.id, s: a.s, e: a.e, title: a.title, src: a.src, via: a.via, engine: a.engine }, extra || {});
+    try {
+      apiFetch('/api/play-report', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), keepalive: true })
+        .catch(function () { /* só estatística */ });
+    } catch (err) { /* ignore */ }
+  }
+  function reportFail(stage, reason, detail) {
+    var a = state.attempt;
+    if (!a || a.reported) return;
+    a.reported = true;
+    reportPlay('fail', { stage: stage, reason: String(reason || '').slice(0, 200), detail: String(detail || '').slice(0, 500) });
+  }
+  function reportStarted() {
+    var a = state.attempt;
+    if (!a || !a.responded || a.ok) return;
+    a.ok = true;
+    reportPlay('ok');
+  }
+  function videoDetail() {
+    var v = $('nativePlayer');
+    var e = v && v.error;
+    return [e ? 'video erro ' + e.code + (e.message ? ' ' + e.message : '') : '', state.hlsIssue ? 'hls ' + state.hlsIssue : '',
+      state.lastMode ? 'modo ' + state.lastMode : '', v && v.currentTime > 1 ? 'parou em ' + Math.round(v.currentTime) + ' s' : '']
+      .filter(Boolean).join(' · ');
+  }
+  // Fechou, trocou de título ou saiu da página sem o vídeo ter começado.
+  function reportGiveUp() {
+    var a = state.attempt;
+    if (!a || a.ok || a.reported || a.stalled || state.autoplayBlocked) return;
+    var waited = Date.now() - a.t0;
+    if (waited < ATTEMPT_GIVEUP_MS) return;
+    reportFail('espera', (a.responded || a.engine) ? 'Saiu sem o vídeo começar (ficou carregando)' : 'Saiu enquanto ainda procurava o vídeo',
+      'esperou ' + Math.round(waited / 1000) + ' s · ' + videoDetail());
+  }
+  window.addEventListener('pagehide', reportGiveUp);
+
   // 503 "retryable": a fonte principal (Vidsrc) caiu por instantes. Espera um pouco e pergunta de novo, até 2 vezes,
   // em vez de entregar o erro na primeira queda.
   function apiFetchStream(path, opts, playToken, maxTries) {
@@ -3111,6 +3197,7 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
   }
 
   function fail(message) {
+    reportFail('player', message, videoDetail());
     hideOverlay();
     setStatus('error', message);
   }
@@ -3123,6 +3210,8 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
   }
 
   function stopPlayback() {
+    reportGiveUp();
+    state.attempt = null;
     if (window.FdsTorFallback) window.FdsTorFallback.stop();
     hideLangPick();
     autoSyncStop();
@@ -4038,6 +4127,11 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
       var v = $('nativePlayer');
       if (!state.selected || (!v.paused && v.readyState >= 3 && v.currentTime > 0)) return;
       var msg = 'O vídeo não começou em 25 s.';
+      var att = state.attempt;
+      if (att && !att.ok && !att.stalled && !state.autoplayBlocked && !document.hidden) {
+        att.stalled = true;
+        reportPlay('fail', { stage: 'espera', reason: msg, detail: videoDetail() });
+      }
       if (isAdminView()) {
         msg += ' Player: ' + (state.hlsIssue || 'sem erro registrado') +
           ' · duração ' + (isFinite(v.duration) ? Math.round(v.duration) + 's' : '?') +
@@ -4086,6 +4180,7 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
 
   function clientHevcFallback(message, lowerRes) {
     if (!state.selected) return;
+    reportFail('player', message, videoDetail());
     progRemember(true);
     if (state.lastAbs >= PROG_MIN_SECONDS) $('startInput').value = secondsToStartMinutes(state.lastAbs);
     if (lowerRes) {
@@ -4398,6 +4493,7 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
         // Troca porque o nó não arrancou: um 503 aqui é "não há outra versão", não adianta insistir antes do torrent.
         var quick = state.quickSwitch;
         state.quickSwitch = false;
+        state.attempt = { type: item.type, id: String(item.id), s: season, e: episode, title: item.title || '', src: '', via: '', engine: '', t0: reqStart, responded: false, ok: false, reported: false, stalled: false };
         return apiFetchStream('/api/stream?' + params.toString(), { signal: controller.signal }, playToken, quick ? 0 : 2);
       })
       .then(function (response) {
@@ -4425,6 +4521,7 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
         state.sessionId = data.sessionId || null;
         state.curSrc = data.src || '';
         state.curSv = data.sv || '';
+        if (state.attempt) { state.attempt.src = state.curSrc; state.attempt.via = data.via || ''; state.attempt.responded = true; }
         state.expectMin = Number(data.expectMin) || 0;
         state.lastMode = data.mode;
         state.transcoded = Boolean(data.transcoded);
@@ -4508,6 +4605,7 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
         if (err && err.name === 'AbortError') return;
         if (playToken !== state.playToken) return;
         diag('err', 'FALHA: ' + ((err && err.message) || err));
+        if (err && err.status && state.attempt) state.attempt.reported = true; // a busca sem vídeo o servidor já registrou
         if (!navigator.onLine || /failed to fetch|networkerror|load failed/i.test((err && err.message) || '')) {
           scheduleNetResume('Sem conexão.');
           return;
@@ -4556,19 +4654,24 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
     diag('info', 'Nenhuma fonte entregou: chamando o motor de torrent (último recurso).');
     hideOverlay();
     setStatus('working', 'Carregando…');
+    // A busca sem vídeo já foi registrada; daqui o torrent é uma tentativa nova do mesmo título.
+    var att = state.attempt;
+    if (att) { att.engine = 'torrent'; att.src = ''; att.via = ''; att.t0 = Date.now(); att.reported = false; att.responded = true; }
     window.FdsTorFallback.start({
       id: item.id,
       host: $('torFbHost'),
+      onPlaying: function () { if (playToken === state.playToken) reportStarted(); },
       log: function (m) { diag('info', 'torrent: ' + m); },
       onFail: function (reason, tech) {
         if (playToken !== state.playToken) return;
         diag('err', 'torrent falhou: ' + (tech || reason));
+        reportFail('torrent', reason || 'O torrent não tocou', tech || '');
         window.FdsTorFallback.stop();
         plain();
       }
     }).then(function (r) {
       if (playToken !== state.playToken) return;
-      if (r === 'unavailable') { diag('info', 'torrent: indisponível (' + (window.FdsTorFallback.lastWhy || '?') + '): nodes=sem nós conhecidos, quota=nós sem banda, none=nenhum torrent achado, search=busca falhou, rate=limite por IP, tmdb=título não achado.' + (window.FdsTorFallback.lastDebug ? ' Detalhe: ' + window.FdsTorFallback.lastDebug : '')); plain(); }
+      if (r === 'unavailable') { if (state.attempt) state.attempt.reported = true; diag('info', 'torrent: indisponível (' + (window.FdsTorFallback.lastWhy || '?') + '): nodes=sem nós conhecidos, quota=nós sem banda, none=nenhum torrent achado, search=busca falhou, rate=limite por IP, tmdb=título não achado.' + (window.FdsTorFallback.lastDebug ? ' Detalhe: ' + window.FdsTorFallback.lastDebug : '')); plain(); }
       else if (r === 'started') setStatus('ok', '');
     });
     return true;
@@ -5129,6 +5232,10 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
   // "Outra versão": descarta a versão em uso (a que abriu errado ou não toca) e busca a próxima disponível.
   function switchVersion(auto, why) {
     if (!state.selected) return;
+    if (state.attempt) state.attempt.reported = false; // a troca é um relato próprio, mesmo que já tenha havido outro
+    reportFail('troca', why === 'slow' ? 'O nó não entregou o começo do vídeo em 20 s (troca automática)'
+      : auto ? 'Duração diferente da do filme: provável vídeo errado (troca automática)'
+        : 'A pessoa pediu outra versão (vídeo errado ou não tocava)', videoDetail());
     var key = titleKeyNow();
     var list = state.triedSrc[key] = state.triedSrc[key] || [];
     [state.curSrc, state.curSv].forEach(function (id) { if (id && list.indexOf(id) === -1) list.push(id); });
@@ -5276,6 +5383,7 @@ SUPABASE_SECRET_KEY=sb_secret_...</pre>
   }
 
   video.addEventListener('playing', function () {
+    reportStarted();
     hideOverlay();
     clearTimeout(state.hlsWatch);
     state.progReady = true;

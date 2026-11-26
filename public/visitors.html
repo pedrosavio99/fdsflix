@@ -39,7 +39,7 @@
   .series div:hover::after { content: attr(data-tip); position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 3px 6px; border-radius: 4px; white-space: nowrap; font-size: 11px; z-index: 2; }
   .banner { background: var(--warnbg); color: var(--warn); border-radius: 10px; padding: 9px 12px; margin-bottom: 12px; display: none; }
   .tablewrap { overflow-x: auto; }
-  table { border-collapse: collapse; width: 100%; min-width: 860px; }
+  table { border-collapse: collapse; width: 100%; min-width: 1100px; }
   th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
   th { color: var(--muted); font-weight: 600; font-size: 12px; }
   .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--line); margin-right: 6px; }
@@ -94,6 +94,12 @@
   </section>
   <div class="muted" id="topNote" style="font-size:12px;margin:-6px 0 14px"></div>
 
+  <section class="grid">
+    <div class="panel"><h2>🎞️ Fontes mais usadas</h2><div id="topSources"></div></div>
+    <div class="panel"><h2>🚨 Títulos com falha</h2><div id="topFails"></div></div>
+  </section>
+  <div class="muted" id="sourceNote" style="font-size:12px;margin:-6px 0 14px"></div>
+
   <section class="panel">
     <h2>Quem acessou</h2>
     <input id="q" class="search" placeholder="Filtrar por IP, cidade, aparelho, título...">
@@ -101,7 +107,7 @@
       <table>
         <thead><tr>
           <th>IP</th><th>Local</th><th>Aparelho</th><th>Provedor</th><th>Dias</th><th>Acessos</th><th>Vídeos</th>
-          <th>Último título</th><th>Primeira vez</th><th>Última vez</th>
+          <th>Fontes usadas</th><th>Falhas</th><th>Último título</th><th>Primeira vez</th><th>Última vez</th>
         </tr></thead>
         <tbody id="rows"></tbody>
       </table>
@@ -116,6 +122,7 @@
   var $ = function (id) { return document.getElementById(id); };
   var last = null;
   var timer = null;
+  var plays = {};      // visitante -> fontes usadas e falhas (lib/playReports.js)
   var regionNames = null;
   try { regionNames = new Intl.DisplayNames(['pt-BR'], { type: 'region' }); } catch (e) { regionNames = null; }
 
@@ -191,6 +198,50 @@
       .catch(function () { /* sem resposta: deixa como está */ });
   }
 
+  function share(list) {
+    return list.map(function (s) { return s.source + ' ' + Math.round(s.pct) + '%'; }).join(' · ');
+  }
+
+  function authHeaders(key) {
+    var h = { 'x-stats-key': key };
+    var apiKey = (window.__FDSFLIX_CONFIG__ || {}).apiKey;
+    if (apiKey) h['x-api-key'] = apiKey;
+    return h;
+  }
+
+  // Fontes mais usadas e falhas (lib/playReports.js). Os detalhes de cada falha ficam em Configs.
+  function loadSources(key) {
+    fetch(API_BASE + '/api/admin/play-report?days=' + encodeURIComponent($('days').value), { headers: authHeaders(key), cache: 'no-store' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) {
+        if (!d) return;
+        plays = d.visitors || {};
+        var max = d.sources.reduce(function (m, s) { return Math.max(m, s.plays); }, 0) || 1;
+        var box = $('topSources');
+        box.textContent = '';
+        if (!d.sources.length) box.appendChild(el('div', 'muted', 'Sem dados ainda.'));
+        d.sources.forEach(function (s) {
+          var row = el('div', 'row');
+          var fill = el('div', 'fill');
+          fill.style.width = Math.max(2, s.plays / max * 100) + '%';
+          row.appendChild(fill);
+          row.appendChild(el('span', '', s.source + (s.fails ? ' · ' + s.fails + ' com problema' : '')));
+          row.appendChild(el('b', '', String(s.pct).replace('.', ',') + '% (' + s.plays + ')'));
+          row.title = s.source;
+          box.appendChild(row);
+        });
+        bars($('topFails'), d.titles.slice(0, 10).map(function (t) { return { visitors: t.count, t: t }; }), function (i) {
+          return i.t.title + (i.t.season ? ' T' + i.t.season + 'E' + i.t.episode : '') + ' · ' + i.t.lastReason;
+        });
+        var st = d.storage || {};
+        $('sourceNote').textContent = '% = vídeos que começaram a tocar por cada fonte. Motivo completo de cada falha em Configs, no site. ' +
+          (st.tablesMissing ? 'Falta criar a tabela: rode supabase/play-reports-schema.sql; por enquanto só vale desde o último reinício.' :
+            (st.provider === 'memória' ? 'Sem Supabase: só vale desde o último reinício.' : ''));
+        renderRows();
+      })
+      .catch(function () { /* sem resposta: deixa como está */ });
+  }
+
   function card(n, l) {
     var c = el('div', 'card');
     c.appendChild(el('div', 'n', String(n)));
@@ -205,7 +256,9 @@
     var q = $('q').value.trim().toLowerCase();
     var n = 0;
     last.visitors.forEach(function (v) {
-      var hay = [v.visitor, v.location, v.device, v.isp, v.lastWatch].join(' ').toLowerCase();
+      var p = plays[v.visitor] || { sources: [], errors: 0, unresolved: 0, lastError: '' };
+      var used = share(p.sources);
+      var hay = [v.visitor, v.location, v.device, v.isp, v.lastWatch, used].join(' ').toLowerCase();
       if (q && hay.indexOf(q) === -1) return;
       n += 1;
       var tr = el('tr');
@@ -217,9 +270,10 @@
       var loc = el('td', '', v.country ? flag(v.country) + ' ' + (v.location || v.country) : '—');
       loc.title = v.location || '';
       tr.appendChild(loc);
-      [v.device || '—', v.isp || '—', v.daysActive, v.requests, v.watches, v.lastWatch || '—'].forEach(function (t) {
+      [v.device || '—', v.isp || '—', v.daysActive, v.requests, v.watches, used || '—',
+        p.errors ? p.errors + (p.unresolved ? ' (' + p.unresolved + ' sem tocar)' : '') : '—', v.lastWatch || '—'].forEach(function (t, i) {
         var td = el('td', '', String(t));
-        td.title = String(t);
+        td.title = i === 6 && p.lastError ? p.lastError : String(t);
         tr.appendChild(td);
       });
       tr.appendChild(el('td', 'muted', when(v.firstSeen)));
@@ -231,7 +285,7 @@
     if (!n) {
       var tr0 = el('tr');
       var td0 = el('td', 'muted', 'Ninguém encontrado.');
-      td0.colSpan = 10;
+      td0.colSpan = 12;
       tr0.appendChild(td0);
       tb.appendChild(tr0);
     }
@@ -304,6 +358,7 @@
         }
         render(r.body);
         loadTop(key);
+        loadSources(key);
       })
       .catch(function () { $('msg').textContent = 'Sem resposta do servidor.'; });
   }
